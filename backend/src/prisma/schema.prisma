@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,4 +5,65 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENT
+  LIVREUR
+  RESTAURANT
+  ADMIN
+}
+
+enum AccountStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUIRED
+}
+
+enum DietaryRestriction {
+  NO_RESTRICTIONS
+  VEGETARIAN
+  VEGAN
+  GLUTEN_FREE
+  DAIRY_FREE
+  NUT_FREE
+  HALAL
+}
+
+enum CuisinePreference {
+  ITALIAN
+  JAPANESE
+  HEALTHY
+  BURGERS
+  BAKERY
+  CAFE
+  SANDWICHES
+  VEGAN
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  passwordHash  String
+  role          Role
+  status        AccountStatus @default(PENDING)
+
+  emailVerifiedAt            DateTime?
+  emailVerificationTokenHash String?
+  emailVerificationExpiresAt DateTime?
+
+  // Client profile fields (mandatory after signup step 2)
+  fullName       String?
+  phone          String?
+  defaultAddress String?
+
+  cuisinePreferences  CuisinePreference[]
+  dietaryRestrictions DietaryRestriction[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([role])
+  @@index([status])
 }
