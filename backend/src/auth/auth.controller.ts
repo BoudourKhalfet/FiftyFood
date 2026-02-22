@@ -1,18 +1,8 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtPayload } from './jwt.strategy';
 import { Public } from './decorators/public.decorator';
 
@@ -34,7 +24,6 @@ export class AuthController {
     return this.auth.login(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Req() req: RequestWithUser) {
     return this.auth.me(req.user.sub);

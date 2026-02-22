@@ -1,6 +1,5 @@
 import { Body, Controller, Patch, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt.strategy';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UsersService } from './users.service';
@@ -13,7 +12,7 @@ type RequestWithUser = Request & { user: JwtPayload };
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @Roles(Role.CLIENT)
   @Patch('me/complete-profile')
   completeProfile(

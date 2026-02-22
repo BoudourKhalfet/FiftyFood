@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -19,13 +20,23 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
+    // No @Roles() metadata => no role restriction
     if (!requiredRoles || requiredRoles.length === 0) return true;
 
     const req = context.switchToHttp().getRequest<{ user?: JwtPayload }>();
     const user = req.user;
 
+    // Should normally be handled by JwtAuthGuard, but keep it explicit
     if (!user) throw new UnauthorizedException();
 
-    return requiredRoles.includes(user.role);
+    const allowed = requiredRoles.includes(user.role);
+    if (!allowed) {
+      throw new ForbiddenException({
+        code: 'ROLE_FORBIDDEN',
+        message: `Required roles: ${requiredRoles.join(', ')}`,
+      });
+    }
+
+    return true;
   }
 }
