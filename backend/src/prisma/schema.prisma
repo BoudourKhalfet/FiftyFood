@@ -53,17 +53,86 @@ model User {
   emailVerificationTokenHash String?
   emailVerificationExpiresAt DateTime?
 
+  // Role-specific profiles (1-1)
+  clientProfile ClientProfile?
+  restaurantProfile RestaurantProfile?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([status])
+}
+
+model ClientProfile {
+  id               String @id @default(cuid())
+  userId           String @unique
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Client profile fields (mandatory after signup step 2)
-  fullName       String?
-  phone          String?
-  defaultAddress String?
+  fullName         String?
+  phone            String?
+  defaultAddress   String?
 
   cuisinePreferences  CuisinePreference[]
   dietaryRestrictions DietaryRestriction[]
 
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
-  @@index([role])
-  @@index([status])
+enum EstablishmentType {
+  FAST_FOOD
+  CAFE
+  BAKERY
+  RESTAURANT
+  HOTEL
+}
+
+enum OwnershipType {
+  OWNER
+  MANAGER
+}
+
+enum PayoutMethod {
+  BANK_TRANSFER
+  MOBILE_WALLET
+  CASH
+  OTHER
+}
+
+model RestaurantProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Step 2 - Identity
+  restaurantName      String?
+  establishmentType   EstablishmentType?
+  phone               String?
+  address             String?
+  city                String?
+  logoUrl            String?
+  coverImageUrl       String?
+
+  // Step 3 - Legal
+  legalEntityName                   String?
+  registrationNumberRNE             String?
+  ownershipType                     OwnershipType?
+  businessRegistrationDocumentUrl   String?
+  hygieneCertificateUrl             String?
+  proofOfOwnershipOrLeaseUrl        String?
+
+  // Step 4 - Payout (optional)
+  payoutMethod   PayoutMethod?
+  payoutDetails  Json?
+
+  // Onboarding progress
+  identityCompletedAt DateTime?
+  legalCompletedAt    DateTime?
+  payoutCompletedAt   DateTime?
+  submittedAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

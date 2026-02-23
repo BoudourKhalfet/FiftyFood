@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { OnboardingJwtStrategy } from './onboarding.strategy';
 
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
@@ -19,6 +20,6 @@ if (!jwtSecret) {
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, OnboardingJwtStrategy],
 })
 export class AuthModule {}

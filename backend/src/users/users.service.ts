@@ -17,8 +17,10 @@ export class UsersService {
       );
     }
 
-    return this.prisma.user.update({
-      where: { id: userId },
+    // Because we create an empty ClientProfile at CLIENT registration,
+    // we can safely update it here.
+    const profile = await this.prisma.clientProfile.update({
+      where: { userId },
       data: {
         fullName: dto.fullName,
         phone: dto.phone,
@@ -27,11 +29,6 @@ export class UsersService {
         dietaryRestrictions: dto.dietaryRestrictions,
       },
       select: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
-        emailVerifiedAt: true,
         fullName: true,
         phone: true,
         defaultAddress: true,
@@ -40,5 +37,19 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    // Return a shape similar to what you returned before
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    return { ...user, clientProfile: profile };
   }
 }

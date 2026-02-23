@@ -7,9 +7,9 @@ import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ProfileCompleteGuard } from './auth/profile-complete.guard';
-
+import { RestaurantsModule } from './restaurants/restaurants.module';
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule],
+  imports: [PrismaModule, AuthModule, UsersModule, RestaurantsModule],
   controllers: [AppController],
   providers: [
     AppService,

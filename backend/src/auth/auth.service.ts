@@ -56,6 +56,12 @@ export class AuthService {
         emailVerifiedAt: null,
         emailVerificationTokenHash: tokenHash,
         emailVerificationExpiresAt: expires,
+
+        // Create empty role profiles at registration (so later steps can just "update")
+        clientProfile: dto.role === Role.CLIENT ? { create: {} } : undefined,
+        restaurantProfile:
+          dto.role === Role.RESTAURANT ? { create: {} } : undefined,
+        // TODO (later): livreurProfile: dto.role === Role.LIVREUR ? { create: {} } : undefined,
       },
       select: {
         id: true,
@@ -71,8 +77,25 @@ export class AuthService {
     // eslint-disable-next-line no-console
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
 
+    // Onboarding token for roles that cannot login until admin approval
+    const shouldReturnOnboardingToken =
+      user.role === Role.RESTAURANT || user.role === Role.LIVREUR;
+
+    const onboardingToken = shouldReturnOnboardingToken
+      ? await this.jwt.signAsync(
+          {
+            sub: user.id,
+            role: user.role,
+            status: user.status,
+            scope: 'ONBOARDING',
+          },
+          { expiresIn: '24h' },
+        )
+      : undefined;
+
     return {
       user,
+      onboardingToken,
       message: 'Registration successful. Please verify your email.',
     };
   }
@@ -116,13 +139,22 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
     if (!user.emailVerifiedAt) {
-      throw new ForbiddenException('Email not verified');
+      throw new ForbiddenException({ code: 'EMAIL_NOT_VERIFIED' });
+    }
+
+    // Block login for pending / rejected / changes-required accounts
+    if (user.status !== AccountStatus.APPROVED) {
+      throw new ForbiddenException({
+        code: 'ACCOUNT_NOT_APPROVED',
+        status: user.status,
+      });
     }
 
     const accessToken = await this.jwt.signAsync({
       sub: user.id,
       role: user.role,
       status: user.status,
+      scope: 'ACCESS',
     });
 
     return {
@@ -145,24 +177,55 @@ export class AuthService {
         role: true,
         status: true,
         emailVerifiedAt: true,
-        fullName: true,
-        phone: true,
-        defaultAddress: true,
-        cuisinePreferences: true,
-        dietaryRestrictions: true,
+        clientProfile: {
+          select: {
+            fullName: true,
+            phone: true,
+            defaultAddress: true,
+            cuisinePreferences: true,
+            dietaryRestrictions: true,
+          },
+        },
+        restaurantProfile: {
+          select: {
+            restaurantName: true,
+            establishmentType: true,
+            phone: true,
+            address: true,
+            city: true,
+            logoUrl: true,
+            coverImageUrl: true,
+
+            legalEntityName: true,
+            registrationNumberRNE: true,
+            ownershipType: true,
+            businessRegistrationDocumentUrl: true,
+            hygieneCertificateUrl: true,
+            proofOfOwnershipOrLeaseUrl: true,
+
+            payoutMethod: true,
+            payoutDetails: true,
+
+            identityCompletedAt: true,
+            legalCompletedAt: true,
+            payoutCompletedAt: true,
+            submittedAt: true,
+          },
+        },
       },
     });
 
     if (!user) return null;
 
+    const p = user.clientProfile;
     const isProfileComplete =
-      user.role !== 'CLIENT'
+      user.role !== Role.CLIENT
         ? true
-        : !!user.fullName &&
-          !!user.phone &&
-          !!user.defaultAddress &&
-          user.cuisinePreferences.length > 0 &&
-          user.dietaryRestrictions.length > 0;
+        : !!p?.fullName &&
+          !!p?.phone &&
+          !!p?.defaultAddress &&
+          (p?.cuisinePreferences?.length ?? 0) > 0 &&
+          (p?.dietaryRestrictions?.length ?? 0) > 0;
 
     return {
       ...user,
