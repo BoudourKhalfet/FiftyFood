@@ -5,11 +5,15 @@ import {
 } from '@nestjs/common';
 import { AccountStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 type PendingRoleFilter = 'RESTAURANT' | 'LIVREUR';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   async listPending(role?: PendingRoleFilter) {
     const roleFilter =
@@ -22,20 +26,16 @@ export class AdminService {
     const baseWhere = {
       status: AccountStatus.PENDING,
       role: roleFilter ? roleFilter : { in: [Role.RESTAURANT, Role.LIVREUR] },
-      emailVerifiedAt: { not: null }, // keeps only verified
+      emailVerifiedAt: { not: null },
     };
 
     return this.prisma.user.findMany({
       where: {
         ...baseWhere,
-
-        // Only show submitted restaurant applications
         ...(roleFilter === Role.RESTAURANT
           ? { restaurantProfile: { is: { submittedAt: { not: null } } } }
           : {}),
-
-        // For LIVREUR, once you create LivreurProfile with submittedAt,
-        // add a similar filter here.
+        // For LIVREUR: add similar filter if needed
       },
       select: {
         id: true,
@@ -71,7 +71,7 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
     this.ensureApprovableRole(user.role);
 
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
         status: AccountStatus.APPROVED,
@@ -85,6 +85,13 @@ export class AdminService {
         statusReason: true,
       },
     });
+
+    await this.mailService.sendMail(
+      user.email,
+      'Votre compte FiftyFood a été approuvé !',
+      `<p>Bonjour,<br>Votre compte a été <b>approuvé</b>. Vous pouvez maintenant vous connecter à FiftyFood.</p>`,
+    );
+    return updatedUser;
   }
 
   async rejectUser(userId: string, reason: string) {
@@ -92,7 +99,7 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
     this.ensureApprovableRole(user.role);
 
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
         status: AccountStatus.REJECTED,
@@ -106,6 +113,13 @@ export class AdminService {
         statusReason: true,
       },
     });
+
+    await this.mailService.sendMail(
+      user.email,
+      'Votre demande FiftyFood a été refusée',
+      `<p>Bonjour,<br>Votre demande a été <b>refusée</b>.<br>Raison : ${reason}</p>`,
+    );
+    return updatedUser;
   }
 
   async requireChanges(userId: string, reason: string) {
@@ -113,7 +127,7 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
     this.ensureApprovableRole(user.role);
 
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
         status: AccountStatus.CHANGES_REQUIRED,
@@ -127,6 +141,13 @@ export class AdminService {
         statusReason: true,
       },
     });
+
+    await this.mailService.sendMail(
+      user.email,
+      'Des modifications sont requises sur votre compte FiftyFood',
+      `<p>Bonjour,<br>Des modifications sont requises avant validation finale.<br>Raison : ${reason}</p>`,
+    );
+    return updatedUser;
   }
 
   async suspendClient(userId: string, reason: string) {
@@ -137,7 +158,7 @@ export class AdminService {
       throw new BadRequestException('This endpoint suspends CLIENT only.');
     }
 
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
         suspendedAt: new Date(),
@@ -151,6 +172,13 @@ export class AdminService {
         statusReason: true,
       },
     });
+
+    await this.mailService.sendMail(
+      user.email,
+      'Votre compte FiftyFood a été suspendu',
+      `<p>Bonjour,<br>Votre compte client vient d'être <b>suspendu</b>. Raison : ${reason}</p>`,
+    );
+    return updatedUser;
   }
 
   async unsuspendClient(userId: string) {
@@ -161,10 +189,17 @@ export class AdminService {
       throw new BadRequestException('This endpoint unsuspends CLIENT only.');
     }
 
-    return this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: { suspendedAt: null },
       select: { id: true, email: true, role: true, suspendedAt: true },
     });
+
+    await this.mailService.sendMail(
+      user.email,
+      'Votre compte FiftyFood a été réactivé',
+      `<p>Bonjour,<br>Votre compte client est maintenant <b>réactivé</b>.</p>`,
+    );
+    return updatedUser;
   }
 }
