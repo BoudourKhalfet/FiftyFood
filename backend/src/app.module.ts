@@ -8,8 +8,18 @@ import { UsersModule } from './users/users.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ProfileCompleteGuard } from './auth/profile-complete.guard';
 import { RestaurantsModule } from './restaurants/restaurants.module';
+import { AdminModule } from './admin/admin.module';
+import { LivreurModule } from './livreur/livreur.module';
+
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule, RestaurantsModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    RestaurantsModule,
+    AdminModule,
+    LivreurModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,

@@ -4,6 +4,7 @@ import { RestaurantIdentityDto } from './dto/restaurant-identity.dto';
 import { RestaurantLegalDto } from './dto/restaurant-legal.dto';
 import { RestaurantPayoutDto } from './dto/restaurant-payout.dto';
 import { RestaurantUploadType } from './uploads/restaurants-upload.constants';
+import { RestaurantProfile } from '@prisma/client';
 
 @Injectable()
 export class RestaurantsService {
@@ -65,6 +66,16 @@ export class RestaurantsService {
     return this.prisma.restaurantProfile.update({
       where: { userId },
       data,
+    });
+  }
+
+  async acceptTerms(userId: string, name?: string): Promise<RestaurantProfile> {
+    return this.prisma.restaurantProfile.update({
+      where: { userId },
+      data: {
+        termsAcceptedAt: new Date(),
+        termsAcceptedName: name,
+      },
     });
   }
 

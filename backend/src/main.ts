@@ -25,7 +25,6 @@ async function bootstrap() {
   // Bind on IPv4 (fixes Postman/127.0.0.1 connection issues when Nest binds to ::1)
   await app.listen(port, '0.0.0.0');
 
-  // eslint-disable-next-line no-console
   console.log(`Listening on http://127.0.0.1:${port}`);
 }
 void bootstrap();

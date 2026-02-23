@@ -53,9 +53,13 @@ model User {
   emailVerificationTokenHash String?
   emailVerificationExpiresAt DateTime?
 
+  statusReason String?
+  suspendedAt  DateTime?
+
   // Role-specific profiles (1-1)
   clientProfile ClientProfile?
   restaurantProfile RestaurantProfile?
+  livreurProfile LivreurProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -76,6 +80,8 @@ model ClientProfile {
 
   cuisinePreferences  CuisinePreference[]
   dietaryRestrictions DietaryRestriction[]
+
+  termsAcceptedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -126,13 +132,50 @@ model RestaurantProfile {
   // Step 4 - Payout (optional)
   payoutMethod   PayoutMethod?
   payoutDetails  Json?
+  
+  // Step 5 - terms acceptance
+  termsAcceptedAt     DateTime?
+  termsAcceptedName   String?    // optional: store typed name
 
   // Onboarding progress
   identityCompletedAt DateTime?
   legalCompletedAt    DateTime?
   payoutCompletedAt   DateTime?
+
   submittedAt         DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model LivreurProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Personal info
+  fullName      String?
+  phone         String?
+  vehicleType   String?    // "car", "bike", etc.
+  zone          String?    // Delivery zone/city
+  photoUrl      String?
+
+  // Legal documents
+  cinOrPassportNumber String?
+  cinOrPassportPhotoUrl String?
+  licensePhotoUrl     String?
+  insurancePhotoUrl   String?
+
+  // Banking info (optional at onboarding)
+  bankAccountNumber   String?
+  bankRibUrl          String?
+
+  // Platform fields
+  termsAcceptedAt     DateTime?
+  termsAcceptedName   String?
+
+  submittedAt         DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

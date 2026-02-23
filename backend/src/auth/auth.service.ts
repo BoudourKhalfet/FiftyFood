@@ -142,6 +142,25 @@ export class AuthService {
       throw new ForbiddenException({ code: 'EMAIL_NOT_VERIFIED' });
     }
 
+    if (user.role === Role.CLIENT && user.suspendedAt) {
+      throw new ForbiddenException({
+        code: 'ACCOUNT_SUSPENDED',
+        reason: user.statusReason ?? 'suspended',
+        suspendedAt: user.suspendedAt,
+      });
+    }
+
+    if (
+      (user.role === Role.RESTAURANT || user.role === Role.LIVREUR) &&
+      user.status !== AccountStatus.APPROVED
+    ) {
+      throw new ForbiddenException({
+        code: 'ACCOUNT_NOT_APPROVED',
+        status: user.status,
+        reason: user.statusReason ?? null,
+      });
+    }
+
     // Block login for pending / rejected / changes-required accounts
     if (user.status !== AccountStatus.APPROVED) {
       throw new ForbiddenException({

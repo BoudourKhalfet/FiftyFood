@@ -12,7 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { Role } from '@prisma/client';
+import { Role, RestaurantProfile } from '@prisma/client';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { join } from 'path';
@@ -61,12 +61,6 @@ export class RestaurantsController {
   updatePayout(@Req() req: ReqWithUser, @Body() dto: RestaurantPayoutDto) {
     this.ensureRestaurant(req);
     return this.restaurants.updatePayout(req.user.sub, dto);
-  }
-
-  @Post('submit')
-  submit(@Req() req: ReqWithUser) {
-    this.ensureRestaurant(req);
-    return this.restaurants.submit(req.user.sub);
   }
 
   @Post('upload/:type')
@@ -148,5 +142,20 @@ export class RestaurantsController {
       type as RestaurantUploadType,
       url,
     );
+  }
+
+  @Post('accept-terms')
+  async acceptTerms(
+    @Req() req: ReqWithUser,
+    @Body('name') name?: string, // optionally send name
+  ): Promise<RestaurantProfile> {
+    this.ensureRestaurant(req);
+    return this.restaurants.acceptTerms(req.user.sub, name);
+  }
+
+  @Post('submit')
+  submit(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.restaurants.submit(req.user.sub);
   }
 }
