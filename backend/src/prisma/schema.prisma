@@ -56,6 +56,14 @@ model User {
   statusReason String?
   suspendedAt  DateTime?
 
+  passwordResetTokenHash     String?
+  passwordResetTokenExpiresAt DateTime?
+
+  // Relations for Order (client)
+  clientOrders   Order[]      @relation("ClientOrders")
+  // Relations for Order (restaurant)
+  restaurantOrders Order[]    @relation("RestaurantOrders")
+
   // Role-specific profiles (1-1)
   clientProfile ClientProfile?
   restaurantProfile RestaurantProfile?
@@ -77,6 +85,8 @@ model ClientProfile {
   fullName         String?
   phone            String?
   defaultAddress   String?
+
+  notificationPreferences Json? @default("{}")
 
   cuisinePreferences  CuisinePreference[]
   dietaryRestrictions DietaryRestriction[]
@@ -135,7 +145,7 @@ model RestaurantProfile {
   
   // Step 5 - terms acceptance
   termsAcceptedAt     DateTime?
-  termsAcceptedName   String?    // optional: store typed name
+  termsAcceptedName   String?   
 
   // Onboarding progress
   identityCompletedAt DateTime?
@@ -178,4 +188,29 @@ model LivreurProfile {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  clientId     String
+  client       User        @relation("ClientOrders", fields: [clientId], references: [id])
+  restaurantId String
+  restaurant   User        @relation("RestaurantOrders", fields: [restaurantId], references: [id])
+  items        Json        // or a separate OrderItem model for high flexibility
+  total        Float
+  status       OrderStatus @default(PENDING)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Add more as needed (livreurId, deliveryAddress, etc.)
+}
+
+// Example enum for order status
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  READY
+  PICKED_UP
+  DELIVERED
+  CANCELLED
 }

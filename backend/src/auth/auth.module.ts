@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { OnboardingJwtStrategy } from './onboarding.strategy';
+import { MailModule } from '../mail/mail.module';
 
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
@@ -18,6 +19,7 @@ if (!jwtSecret) {
       secret: jwtSecret,
       signOptions: { expiresIn: '7d' },
     }),
+    MailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, OnboardingJwtStrategy],

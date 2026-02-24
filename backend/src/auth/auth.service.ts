@@ -11,6 +11,7 @@ import { AccountStatus, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
+import { MailService } from '../mail/mail.service';
 
 function sha256(input: string) {
   return crypto.createHash('sha256').update(input).digest('hex');
@@ -21,6 +22,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -58,7 +60,10 @@ export class AuthService {
         emailVerificationExpiresAt: expires,
 
         // Create empty role profiles at registration (so later steps can just "update")
-        clientProfile: dto.role === Role.CLIENT ? { create: {} } : undefined,
+        clientProfile:
+          dto.role === Role.CLIENT
+            ? { create: { termsAcceptedAt: new Date() } }
+            : undefined,
         restaurantProfile:
           dto.role === Role.RESTAURANT ? { create: {} } : undefined,
         // TODO (later): livreurProfile: dto.role === Role.LIVREUR ? { create: {} } : undefined,
@@ -185,6 +190,61 @@ export class AuthService {
         status: user.status,
       },
     };
+  }
+
+  async requestPasswordReset(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return; // Don't leak info
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetTokenHash: tokenHash,
+        passwordResetTokenExpiresAt: expires,
+      },
+    });
+
+    const resetUrl =
+      (process.env.PASSWORD_RESET_URL ||
+        'http://localhost:5173/reset-password') + `?token=${rawToken}`;
+    await this.mailService.sendMail(
+      user.email,
+      'Reset your FiftyFood password',
+      `<p>Hello,<br>To reset your password, <a href="${resetUrl}">click here</a>. This link is valid for 1 hour.<br>If you didn't request a reset, ignore this email.</p>`,
+    );
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        passwordResetTokenHash: tokenHash,
+        passwordResetTokenExpiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!user) throw new BadRequestException('Invalid or expired reset token');
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        passwordResetTokenHash: null,
+        passwordResetTokenExpiresAt: null,
+      },
+    });
+
+    return { message: 'Password reset successful' };
   }
 
   async me(userId: string) {
