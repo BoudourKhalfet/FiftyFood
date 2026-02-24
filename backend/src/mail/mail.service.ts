@@ -16,11 +16,17 @@ export class MailService {
   });
 
   async sendMail(to: string, subject: string, html: string) {
-    await this.transporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@fiftyfood.com',
-      to,
-      subject,
-      html,
-    });
+    try {
+      await this.transporter.sendMail({
+        from: process.env.SMTP_FROM || 'noreply@fiftyfood.com',
+        to,
+        subject,
+        html,
+      });
+      console.log('Mail sent!');
+    } catch (err) {
+      console.error('Error sending mail:', err);
+      throw err;
+    }
   }
 }

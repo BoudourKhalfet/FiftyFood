@@ -86,7 +86,7 @@ export class AdminService {
       },
     });
 
-    await this.mailService.sendMail(
+    this.mailService.sendMail(
       user.email,
       'Votre compte FiftyFood a été approuvé !',
       `<p>Bonjour,<br>Votre compte a été <b>approuvé</b>. Vous pouvez maintenant vous connecter à FiftyFood.</p>`,
@@ -114,7 +114,7 @@ export class AdminService {
       },
     });
 
-    await this.mailService.sendMail(
+    this.mailService.sendMail(
       user.email,
       'Votre demande FiftyFood a été refusée',
       `<p>Bonjour,<br>Votre demande a été <b>refusée</b>.<br>Raison : ${reason}</p>`,
@@ -142,7 +142,7 @@ export class AdminService {
       },
     });
 
-    await this.mailService.sendMail(
+    this.mailService.sendMail(
       user.email,
       'Des modifications sont requises sur votre compte FiftyFood',
       `<p>Bonjour,<br>Des modifications sont requises avant validation finale.<br>Raison : ${reason}</p>`,
@@ -173,7 +173,7 @@ export class AdminService {
       },
     });
 
-    await this.mailService.sendMail(
+    this.mailService.sendMail(
       user.email,
       'Votre compte FiftyFood a été suspendu',
       `<p>Bonjour,<br>Votre compte client vient d'être <b>suspendu</b>. Raison : ${reason}</p>`,
@@ -195,7 +195,7 @@ export class AdminService {
       select: { id: true, email: true, role: true, suspendedAt: true },
     });
 
-    await this.mailService.sendMail(
+    this.mailService.sendMail(
       user.email,
       'Votre compte FiftyFood a été réactivé',
       `<p>Bonjour,<br>Votre compte client est maintenant <b>réactivé</b>.</p>`,
