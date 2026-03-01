@@ -47,9 +47,12 @@ export class LivreurOnboardingController {
   }
 
   @Post('accept-terms')
-  acceptTerms(@Req() req: ReqWithUser): Promise<LivreurProfile> {
+  acceptTerms(
+    @Req() req: ReqWithUser,
+    @Body() body: { name?: string },
+  ): Promise<LivreurProfile> {
     this.ensureLivreur(req);
-    return this.livreur.acceptTerms(req.user.sub);
+    return this.livreur.acceptTerms(req.user.sub, body.name);
   }
 
   @Post('submit')

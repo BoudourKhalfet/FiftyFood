@@ -10,8 +10,38 @@ import { RestaurantProfile } from '@prisma/client';
 export class RestaurantsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async logProfileChanges<T>(
+    userId: string,
+    dto: T,
+    oldProfile: any,
+    fields: (keyof T)[],
+    actorRole: string = 'RESTAURANT',
+  ) {
+    for (const field of fields) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if (dto[field] !== undefined && dto[field] !== oldProfile[field]) {
+        await this.prisma.accountHistory.create({
+          data: {
+            userId,
+            action: 'PROFILE_EDIT',
+            field: field as string,
+            oldValue:
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              oldProfile[field] != null ? String(oldProfile[field]) : null,
+            newValue: dto[field] != null ? String(dto[field]) : null,
+            actorId: userId,
+            actorRole,
+          },
+        });
+      }
+    }
+  }
   async updateIdentity(userId: string, dto: RestaurantIdentityDto) {
-    return this.prisma.restaurantProfile.update({
+    const oldProfile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId },
+    });
+
+    const updatedProfile = await this.prisma.restaurantProfile.update({
       where: { userId },
       data: {
         restaurantName: dto.restaurantName,
@@ -22,10 +52,24 @@ export class RestaurantsService {
         identityCompletedAt: new Date(),
       },
     });
+
+    await this.logProfileChanges(
+      userId,
+      dto,
+      oldProfile,
+      ['restaurantName', 'establishmentType', 'phone', 'address', 'city'],
+      'RESTAURANT',
+    );
+
+    return updatedProfile;
   }
 
   async updateLegal(userId: string, dto: RestaurantLegalDto) {
-    return this.prisma.restaurantProfile.update({
+    const oldProfile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId },
+    });
+
+    const updatedProfile = await this.prisma.restaurantProfile.update({
       where: { userId },
       data: {
         legalEntityName: dto.legalEntityName,
@@ -34,10 +78,24 @@ export class RestaurantsService {
         legalCompletedAt: new Date(),
       },
     });
+
+    await this.logProfileChanges(
+      userId,
+      dto,
+      oldProfile,
+      ['legalEntityName', 'registrationNumberRNE', 'ownershipType'],
+      'RESTAURANT',
+    );
+
+    return updatedProfile;
   }
 
   async updatePayout(userId: string, dto: RestaurantPayoutDto) {
-    return this.prisma.restaurantProfile.update({
+    const oldProfile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId },
+    });
+
+    const updatedProfile = await this.prisma.restaurantProfile.update({
       where: { userId },
       data: {
         payoutMethod: dto.payoutMethod,
@@ -45,6 +103,20 @@ export class RestaurantsService {
         payoutCompletedAt: new Date(),
       },
     });
+
+    await this.logProfileChanges(
+      userId,
+      dto,
+      oldProfile,
+      [
+        'payoutMethod',
+        'payoutDetails',
+        // add more payout fields as needed
+      ],
+      'RESTAURANT',
+    );
+
+    return updatedProfile;
   }
 
   async saveUploadUrl(userId: string, type: RestaurantUploadType, url: string) {

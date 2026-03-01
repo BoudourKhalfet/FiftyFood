@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   BadRequestException,
   Injectable,
@@ -27,7 +29,7 @@ export class UsersService {
       );
     }
 
-    // Update client profile
+    // Update client profile and set submittedAt
     const profile = await this.prisma.clientProfile.update({
       where: { userId },
       data: {
@@ -36,6 +38,8 @@ export class UsersService {
         defaultAddress: dto.defaultAddress,
         cuisinePreferences: dto.cuisinePreferences,
         dietaryRestrictions: dto.dietaryRestrictions,
+        submittedAt: new Date(),
+        // Do NOT set joinedAt here
       },
       select: {
         fullName: true,
@@ -43,11 +47,12 @@ export class UsersService {
         defaultAddress: true,
         cuisinePreferences: true,
         dietaryRestrictions: true,
-        updatedAt: true,
+        submittedAt: true,
+        joinedAt: true,
       },
     });
 
-    // Return user with profile
+    // Check if email is verified, and if so, set joinedAt if profile is completed
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -59,7 +64,46 @@ export class UsersService {
       },
     });
 
+    // Set joinedAt ONLY if email is verified and profile is completed
+    if (user?.emailVerifiedAt && profile?.submittedAt && !profile?.joinedAt) {
+      await this.prisma.clientProfile.update({
+        where: { userId },
+        data: { joinedAt: new Date() },
+      });
+      // Optionally, reload profile to get updated joinedAt
+      profile.joinedAt = new Date();
+    }
+
     return { ...user, clientProfile: profile };
+  }
+
+  async submitClientProfile(userId: string) {
+    // Find clientProfile
+    const profile = await this.prisma.clientProfile.findUnique({
+      where: { userId },
+    });
+
+    // You can validate that required fields are completed here (optional)
+    if (!profile?.fullName || !profile?.phone || !profile?.defaultAddress) {
+      throw new BadRequestException('Profile is incomplete');
+    }
+
+    // Set submittedAt
+    await this.prisma.clientProfile.update({
+      where: { userId },
+      data: { submittedAt: new Date() },
+    });
+
+    // Optionally set joinedAt if email is verified
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user?.emailVerifiedAt) {
+      await this.prisma.clientProfile.update({
+        where: { userId },
+        data: { joinedAt: new Date() },
+      });
+    }
+
+    return { message: 'Profile submitted successfully.' };
   }
 
   // 1️⃣ Get current user profile and preferences
@@ -70,14 +114,35 @@ export class UsersService {
         id: true,
         email: true,
         role: true,
-        clientProfile: true,
+        clientProfile: {
+          select: {
+            fullName: true,
+            phone: true,
+            defaultAddress: true,
+            cuisinePreferences: true,
+            dietaryRestrictions: true,
+            submittedAt: true,
+            joinedAt: true,
+            notificationPreferences: true,
+          },
+        },
+        accountHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 50, // or however many you want to show
+        },
       },
     });
   }
 
   // 2️⃣ Update personal information
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    return this.prisma.clientProfile.update({
+    // 1. Fetch old profile
+    const oldProfile = await this.prisma.clientProfile.findUnique({
+      where: { userId },
+    });
+
+    // 2. Update profile
+    const updatedProfile = await this.prisma.clientProfile.update({
       where: { userId },
       data: {
         fullName: dto.fullName,
@@ -85,6 +150,34 @@ export class UsersService {
         defaultAddress: dto.defaultAddress,
       },
     });
+
+    // 3. Track changes in accountHistory
+    const fieldsToTrack: (keyof UpdateProfileDto)[] = [
+      'fullName',
+      'phone',
+      'defaultAddress',
+    ];
+    for (const field of fieldsToTrack) {
+      if (
+        dto[field] !== undefined &&
+        dto[field] !== (oldProfile as any)[field]
+      ) {
+        await this.prisma.accountHistory.create({
+          data: {
+            userId,
+            action: 'PROFILE_EDIT',
+            field,
+            oldValue: (oldProfile as any)[field],
+            newValue: dto[field],
+            actorId: userId,
+            actorRole: 'USER',
+          },
+        });
+      }
+    }
+
+    // 4. Return updated profile as before
+    return updatedProfile;
   }
 
   // 3️⃣ Update preferences (cuisinePreferences, dietaryRestrictions)

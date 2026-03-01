@@ -16,6 +16,221 @@ export class AdminService {
     private readonly mailService: MailService,
   ) {}
 
+  async listAll(role?: PendingRoleFilter) {
+    const roleFilter =
+      role === 'RESTAURANT'
+        ? Role.RESTAURANT
+        : role === 'LIVREUR'
+          ? Role.LIVREUR
+          : role === 'CLIENT'
+            ? Role.CLIENT
+            : undefined;
+
+    // Assign the result to 'users'
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: roleFilter ? roleFilter : { in: [Role.RESTAURANT, Role.LIVREUR] },
+        emailVerifiedAt: { not: null },
+        ...(roleFilter === Role.RESTAURANT
+          ? { restaurantProfile: { is: { submittedAt: { not: null } } } }
+          : {}),
+        ...(roleFilter === Role.LIVREUR
+          ? { livreurProfile: { is: { submittedAt: { not: null } } } }
+          : {}),
+        ...(roleFilter === Role.CLIENT
+          ? { clientProfile: { is: { joinedAt: { not: null } } } }
+          : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        statusReason: true,
+        emailVerifiedAt: true,
+        createdAt: true,
+        accountHistory: {
+          select: {
+            id: true,
+            userId: true,
+            actorId: true,
+            actorRole: true,
+            action: true,
+            field: true,
+            oldValue: true,
+            newValue: true,
+            reason: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        restaurantProfile: {
+          select: {
+            restaurantName: true,
+            establishmentType: true,
+            phone: true,
+            legalEntityName: true,
+            registrationNumberRNE: true,
+            city: true,
+            address: true,
+            logoUrl: true,
+            coverImageUrl: true,
+            submittedAt: true,
+            businessRegistrationDocumentUrl: true,
+            hygieneCertificateUrl: true,
+            proofOfOwnershipOrLeaseUrl: true,
+            termsAcceptedAt: true,
+            termsAcceptedName: true,
+          },
+        },
+        livreurProfile: {
+          select: {
+            fullName: true,
+            phone: true,
+            cinOrPassportNumber: true,
+            vehicleType: true,
+            zone: true,
+            licensePhotoUrl: true,
+            vehicleOwnershipDocUrl: true,
+            vehiclePhotoUrl: true,
+            submittedAt: true,
+          },
+        },
+        clientProfile: {
+          select: {
+            fullName: true,
+            phone: true,
+            defaultAddress: true,
+            joinedAt: true,
+            submittedAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    console.log('Returning these users:', users);
+
+    return users;
+  }
+
+  async logHistory({
+    userId,
+    actorId,
+    actorRole,
+    action,
+    field,
+    oldValue,
+    newValue,
+    reason,
+  }: {
+    userId: string;
+    actorId: string;
+    actorRole: string; // "ADMIN" or "USER"
+    action:
+      | 'SUSPEND'
+      | 'UNSUSPEND'
+      | 'APPROVE'
+      | 'REJECT'
+      | 'REQUIRE_CHANGES'
+      | 'PROFILE_EDIT';
+    field?: string;
+    oldValue?: string;
+    newValue?: string;
+    reason?: string;
+  }) {
+    return this.prisma.accountHistory.create({
+      data: {
+        userId,
+        actorId,
+        actorRole,
+        action,
+        field,
+        oldValue,
+        newValue,
+        reason,
+      },
+    });
+  }
+
+  async suspendRestaurant(userId: string, reason: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.role !== Role.RESTAURANT) {
+      throw new BadRequestException('This endpoint suspends RESTAURANT only.');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: AccountStatus.SUSPENDED, // ensure this is an enum or string as used in your DB
+        statusReason: reason,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        statusReason: true,
+      },
+    });
+
+    this.mailService.sendMail(
+      user.email,
+      'Votre compte restaurant FiftyFood a été suspendu',
+      `<p>Bonjour,<br>Votre compte restaurant vient d'être <b>suspendu</b>. Raison : ${reason}</p>`,
+    );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'SUSPEND',
+      reason,
+    });
+    return updatedUser;
+  }
+
+  async unsuspendRestaurant(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.role !== Role.RESTAURANT) {
+      throw new BadRequestException(
+        'This endpoint unsuspends RESTAURANT only.',
+      );
+    }
+
+    // Determine which status to revert to (e.g., APPROVED)
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: AccountStatus.APPROVED, // or whatever "reactivated" means
+        statusReason: null,
+      },
+      select: { id: true, email: true, role: true, status: true },
+    });
+
+    this.mailService.sendMail(
+      user.email,
+      'Votre compte restaurant FiftyFood a été réactivé',
+      `<p>Bonjour,<br>Votre compte restaurant est maintenant <b>réactivé</b>.</p>`,
+    );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'UNSUSPEND',
+    });
+    return updatedUser;
+  }
+
   async listPending(role?: PendingRoleFilter) {
     const roleFilter =
       role === 'RESTAURANT'
@@ -52,6 +267,16 @@ export class AdminService {
             establishmentType: true,
             city: true,
             submittedAt: true,
+            businessRegistrationDocumentUrl: true,
+            hygieneCertificateUrl: true,
+            proofOfOwnershipOrLeaseUrl: true,
+            termsAcceptedAt: true,
+            termsAcceptedName: true,
+            phone: true,
+            address: true,
+            legalEntityName: true,
+            registrationNumberRNE: true,
+            // add trustScore here if it's a field
           },
         },
       },
@@ -92,6 +317,16 @@ export class AdminService {
       'Votre compte FiftyFood a été approuvé !',
       `<p>Bonjour,<br>Votre compte a été <b>approuvé</b>. Vous pouvez maintenant vous connecter à FiftyFood.</p>`,
     );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'APPROVE',
+    });
+
     return updatedUser;
   }
 
@@ -120,6 +355,16 @@ export class AdminService {
       'Votre demande FiftyFood a été refusée',
       `<p>Bonjour,<br>Votre demande a été <b>refusée</b>.<br>Raison : ${reason}</p>`,
     );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'REJECT',
+      reason,
+    });
     return updatedUser;
   }
 
@@ -148,6 +393,16 @@ export class AdminService {
       'Des modifications sont requises sur votre compte FiftyFood',
       `<p>Bonjour,<br>Des modifications sont requises avant validation finale.<br>Raison : ${reason}</p>`,
     );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'REQUIRE_CHANGES',
+      reason,
+    });
     return updatedUser;
   }
 
@@ -162,6 +417,7 @@ export class AdminService {
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
+        status: AccountStatus.SUSPENDED,
         suspendedAt: new Date(),
         statusReason: reason,
       },
@@ -169,6 +425,7 @@ export class AdminService {
         id: true,
         email: true,
         role: true,
+        status: true,
         suspendedAt: true,
         statusReason: true,
       },
@@ -179,6 +436,16 @@ export class AdminService {
       'Votre compte FiftyFood a été suspendu',
       `<p>Bonjour,<br>Votre compte client vient d'être <b>suspendu</b>. Raison : ${reason}</p>`,
     );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'SUSPEND',
+      reason,
+    });
     return updatedUser;
   }
 
@@ -192,8 +459,19 @@ export class AdminService {
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
-      data: { suspendedAt: null },
-      select: { id: true, email: true, role: true, suspendedAt: true },
+      data: {
+        suspendedAt: null,
+        status: AccountStatus.APPROVED,
+        statusReason: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        suspendedAt: true,
+        statusReason: true,
+      },
     });
 
     this.mailService.sendMail(
@@ -201,6 +479,107 @@ export class AdminService {
       'Votre compte FiftyFood a été réactivé',
       `<p>Bonjour,<br>Votre compte client est maintenant <b>réactivé</b>.</p>`,
     );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use the actual admin user id in real code!
+
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'UNSUSPEND',
+    });
+
     return updatedUser;
+
+    return updatedUser;
+  }
+
+  async suspendLivreur(userId: string, reason: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role !== Role.LIVREUR) {
+      throw new BadRequestException('This endpoint suspends LIVREUR only.');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: AccountStatus.SUSPENDED,
+        statusReason: reason,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        statusReason: true,
+      },
+    });
+
+    // Mail (optional)
+    this.mailService.sendMail(
+      user.email,
+      'Votre compte livreur FiftyFood a été suspendu',
+      `<p>Bonjour,<br>Votre compte livreur vient d'être <b>suspendu</b>. Raison : ${reason}</p>`,
+    );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Replace with actual admin id
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'SUSPEND',
+      reason,
+    });
+
+    return updatedUser;
+  }
+
+  async unsuspendLivreur(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role !== Role.LIVREUR) {
+      throw new BadRequestException('This endpoint unsuspends LIVREUR only.');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: AccountStatus.APPROVED,
+        statusReason: null,
+      },
+      select: { id: true, email: true, role: true, status: true },
+    });
+
+    // Mail (optional)
+    this.mailService.sendMail(
+      user.email,
+      'Votre compte livreur FiftyFood a été réactivé',
+      `<p>Bonjour,<br>Votre compte livreur est maintenant <b>réactivé</b>.</p>`,
+    );
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Replace with actual admin id
+    await this.logHistory({
+      userId,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'UNSUSPEND',
+    });
+
+    return updatedUser;
+  }
+
+  async getAccountHistoryForUser(userId: string) {
+    return this.prisma.accountHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async deleteUser(userId: string) {
+    // Optionally: Check role/authorization, check existence
+    return this.prisma.user.delete({
+      where: { id: userId },
+    });
   }
 }

@@ -54,6 +54,11 @@ export class UsersController {
     return this.users.updatePreferences(req.user.sub, dto);
   }
 
+  @Patch('me/submit-profile')
+  @Roles(Role.CLIENT)
+  submitClientProfile(@Req() req: RequestWithUser) {
+    return this.users.submitClientProfile(req.user.sub);
+  }
   // 4️⃣ Update notification settings
   @Patch('me/notifications')
   updateNotifications(

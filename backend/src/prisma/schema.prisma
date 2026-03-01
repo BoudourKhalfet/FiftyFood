@@ -18,7 +18,10 @@ enum AccountStatus {
   PENDING
   APPROVED
   REJECTED
+  SUSPENDED
+  UNSUSPEND
   CHANGES_REQUIRED
+  PROFILE_EDIT
 }
 
 enum DietaryRestriction {
@@ -63,6 +66,8 @@ model User {
   clientOrders   Order[]      @relation("ClientOrders")
   // Relations for Order (restaurant)
   restaurantOrders Order[]    @relation("RestaurantOrders")
+  
+  accountHistory AccountHistory[]  
 
   // Role-specific profiles (1-1)
   clientProfile ClientProfile?
@@ -92,6 +97,9 @@ model ClientProfile {
   dietaryRestrictions DietaryRestriction[]
 
   termsAcceptedAt   DateTime?
+
+  submittedAt         DateTime?
+  joinedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -158,6 +166,29 @@ model RestaurantProfile {
   updatedAt DateTime @updatedAt
 }
 
+enum AccountAction {
+  SUSPEND
+  UNSUSPEND
+  APPROVE
+  REJECT
+  REQUIRE_CHANGES
+  PROFILE_EDIT
+}
+
+model AccountHistory {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actorId     String        // Who did the action (admin or user)
+  actorRole   String        // "ADMIN" | "USER"
+  action      AccountAction
+  field       String?       // For PROFILE_EDIT, what field changed
+  oldValue    String?       // For PROFILE_EDIT only
+  newValue    String?       // For PROFILE_EDIT only
+  reason      String?       // For SUSPEND, REJECT, REQUIRE_CHANGES
+  createdAt   DateTime      @default(now())
+}
+
 model LivreurProfile {
   id            String   @id @default(cuid())
   userId        String   @unique
@@ -172,13 +203,13 @@ model LivreurProfile {
 
   // Legal documents
   cinOrPassportNumber String?
-  cinOrPassportPhotoUrl String?
   licensePhotoUrl     String?
-  insurancePhotoUrl   String?
+  vehicleOwnershipDocUrl String? 
+  vehiclePhotoUrl        String? 
 
   // Banking info (optional at onboarding)
-  bankAccountNumber   String?
-  bankRibUrl          String?
+  payoutMethod   PayoutMethod?
+  payoutDetails  Json?
 
   // Platform fields
   termsAcceptedAt     DateTime?

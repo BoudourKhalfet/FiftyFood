@@ -87,8 +87,12 @@ export class RestaurantsController {
           file: Express.Multer.File,
           cb: (error: Error | null, filename: string) => void,
         ) => {
-          const type = (req as Request & { params: { type?: string } }).params
-            .type;
+          const paramsType =
+            req.params && req.params.type
+              ? req.params.type
+              : (req.originalUrl || req.url).split('/').pop();
+          const type = String(paramsType).split('?')[0];
+
           if (!RESTAURANT_UPLOAD_TYPES.includes(type as RestaurantUploadType)) {
             return cb(new Error('Invalid upload type'), '');
           }

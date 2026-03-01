@@ -19,10 +19,13 @@ export class LivreurService {
     });
   }
 
-  async acceptTerms(userId: string): Promise<LivreurProfile> {
+  async acceptTerms(userId: string, name?: string): Promise<LivreurProfile> {
     return this.prisma.livreurProfile.update({
       where: { userId },
-      data: { termsAcceptedAt: new Date() },
+      data: {
+        termsAcceptedAt: new Date(),
+        termsAcceptedName: name,
+      },
     });
   }
 
