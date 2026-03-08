@@ -61,7 +61,9 @@ class PendingApprovalPage extends StatelessWidget {
                 width: double.infinity,
                 child: OutlinedButton(
                   onPressed: () {
-                    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                    Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/home', (route) => false);
                   },
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),

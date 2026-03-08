@@ -21,8 +21,11 @@ async function bootstrap() {
   });
 
   const port = Number(process.env.PORT ?? 3000);
+  app.enableCors({
+    origin: '*', // Allow all origins for dev. For production, specify your allowed origins!
+    credentials: true,
+  });
 
-  // Bind on IPv4 (fixes Postman/127.0.0.1 connection issues when Nest binds to ::1)
   await app.listen(port, '0.0.0.0');
 
   console.log(`Listening on http://127.0.0.1:${port}`);

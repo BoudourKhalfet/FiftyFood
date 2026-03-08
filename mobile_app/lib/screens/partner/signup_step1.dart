@@ -1,5 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../api/api_service.dart';
+import 'signup_step2.dart';
 
 class PartnerSignupStep1 extends StatefulWidget {
   const PartnerSignupStep1({Key? key}) : super(key: key);
@@ -11,7 +14,8 @@ class PartnerSignupStep1 extends StatefulWidget {
 class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
   late TapGestureRecognizer _signInRecognizer;
   final _formKey = GlobalKey<FormState>();
-  bool _agreed = false;
+  bool _loading = false;
+  String? _error;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -29,16 +33,63 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
   @override
   void initState() {
     super.initState();
-    _signInRecognizer = TapGestureRecognizer()..onTap = () => Navigator.of(context).pushNamed('/signin/partner');
+    _signInRecognizer = TapGestureRecognizer()
+      ..onTap = () => Navigator.of(context).pushNamed('/signin/partner');
   }
 
-  void _onContinue() {
-    if (_formKey.currentState?.validate() == true && _agreed) {
-      Navigator.of(context).pushNamed('/partenaire/signup2');
-    } else if (!_agreed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must agree to terms of service.')),
-      );
+  Future<void> _onContinue() async {
+    if (_formKey.currentState?.validate() == true) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      try {
+        final response = await ApiService.post('auth/register', {
+          'email': _emailController.text.trim(),
+          'password': _passwordController.text.trim(),
+          'role': 'RESTAURANT',
+        });
+        print('RESTAURANT REGISTER RESPONSE: $response');
+
+        final onboardingToken = response['onboardingToken'];
+        final message = response['message']?.toString().toLowerCase() ?? '';
+
+        if (onboardingToken != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('jwt', onboardingToken);
+
+          // Go directly to next step
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const PartnerSignupStep2()),
+          );
+          return;
+        }
+
+        if (message.contains('already in use')) {
+          setState(() {
+            _error = "Email already in use";
+          });
+        } else if (response['success'] == true ||
+            response['statusCode'] == 201 ||
+            response['status'] == 'ok') {
+          // Defensive: Go to step 2 if success detected (if onboardingToken wasn't set above)
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const PartnerSignupStep2()),
+          );
+        } else {
+          setState(() {
+            _error = response['message'] ?? 'Registration failed';
+          });
+        }
+      } catch (e) {
+        setState(() {
+          _error = "Registration failed (exception): $e";
+        });
+      } finally {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -61,7 +112,10 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 12,
+          ),
           filled: true,
           fillColor: Colors.white,
           enabledBorder: OutlineInputBorder(
@@ -70,7 +124,9 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
@@ -92,10 +148,7 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: SafeArea(
         child: Padding(
@@ -104,61 +157,61 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 Center(
                   child: Image.asset(
                     'assets/images/logo.png',
                     width: 200,
                     height: 120,
-                    errorBuilder: (context, error, stack) => const Icon(
-                      Icons.fastfood,
-                      size: 64,
-                    ),
+                    errorBuilder: (context, error, stack) =>
+                        const Icon(Icons.fastfood, size: 64),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 const Text(
-                  'Create your account',
+                  'Create your restaurant account',
                   textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 29,
                     fontFamily: 'Roboto',
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF1A1A1A),
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Step 1 of 4 — Account',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
-                ),
-                const SizedBox(height: 24),
                 Container(
                   height: 6,
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 48,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.onBackground.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(3),
+                    color: Colors.white.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: FractionallySizedBox(
                     alignment: Alignment.centerLeft,
                     widthFactor: 0.33,
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF3D9176), Color(0xFF2D8066)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF3D9176),
+                            const Color(0xFF2D8066),
+                          ],
                         ),
-                        borderRadius: BorderRadius.circular(3),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
-
+                const SizedBox(height: 8),
+                const Text(
+                  'Start saving food and money as a restaurant partner',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+                ),
+                const SizedBox(height: 18),
                 Form(
                   key: _formKey,
                   child: Column(
@@ -166,12 +219,15 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                     children: [
                       _buildTextField(
                         controller: _emailController,
-                        label: 'Email address',
+                        label: 'Email',
                         icon: Icons.email,
                         keyboardType: TextInputType.emailAddress,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (!RegExp(r"^[^@]+@[^@]+\.[^@]+").hasMatch(v)) return 'Invalid email';
+                          if (!RegExp(
+                            r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                          ).hasMatch(v))
+                            return 'Invalid email format';
                           return null;
                         },
                       ),
@@ -183,7 +239,8 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                         obscureText: true,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (v.length < 8) return 'Must be at least 8 characters';
+                          if (v.length < 8)
+                            return 'Must be at least 8 characters';
                           return null;
                         },
                       ),
@@ -195,27 +252,29 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                         obscureText: true,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (v != _passwordController.text) return 'Passwords do not match';
+                          if (v != _passwordController.text)
+                            return 'Passwords do not match';
                           return null;
                         },
                       ),
                       const SizedBox(height: 8),
-                      Text('Must be at least 8 characters', style: theme.textTheme.bodySmall),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: _agreed,
-                            onChanged: (v) => setState(() => _agreed = v ?? false),
-                          ),
-                          const Expanded(
-                            child: Text('I agree to the Terms of Service and Privacy Policy', style: TextStyle(fontSize: 12)),
-                          ),
-                        ],
+                      Text(
+                        'Must be at least 8 characters',
+                        style: theme.textTheme.bodySmall,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      if (_loading)
+                        const Center(child: CircularProgressIndicator()),
                       ElevatedButton(
-                        onPressed: _onContinue,
+                        onPressed: _loading ? null : _onContinue,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2D8066),
                           foregroundColor: Colors.white,
@@ -229,7 +288,11 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                       const Text(
                         'OR CONTINUE WITH',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -237,12 +300,25 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {},
-                              icon: const Icon(Icons.g_mobiledata, color: Color(0xFF1F2937)),
-                              label: const Text('Google', style: TextStyle(color: Color(0xFF1F2937))),
+                              icon: const Icon(
+                                Icons.g_mobiledata,
+                                color: Color(0xFF1F2937),
+                              ),
+                              label: const Text(
+                                'Google',
+                                style: TextStyle(color: Color(0xFF1F2937)),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(
+                                  color: Color(0xFF1F9D7A),
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -250,12 +326,25 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {},
-                              icon: const Icon(Icons.facebook, color: Color(0xFF1F9D7A)),
-                              label: const Text('Facebook', style: TextStyle(color: Color(0xFF1F9D7A))),
+                              icon: const Icon(
+                                Icons.facebook,
+                                color: Color(0xFF1F9D7A),
+                              ),
+                              label: const Text(
+                                'Facebook',
+                                style: TextStyle(color: Color(0xFF1F9D7A)),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(
+                                  color: Color(0xFF1F9D7A),
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -266,10 +355,20 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                         child: Text.rich(
                           TextSpan(
                             children: [
-                              const TextSpan(text: 'Already have an account? ', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                              const TextSpan(
+                                text: 'Already have an account? ',
+                                style: TextStyle(
+                                  color: Color(0xFF6B7280),
+                                  fontSize: 13,
+                                ),
+                              ),
                               TextSpan(
                                 text: 'Sign in',
-                                style: const TextStyle(color: Color(0xFF1F9D7A), fontWeight: FontWeight.w600, fontSize: 13),
+                                style: const TextStyle(
+                                  color: Color(0xFF1F9D7A),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                                 recognizer: _signInRecognizer,
                               ),
                             ],

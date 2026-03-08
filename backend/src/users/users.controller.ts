@@ -31,6 +31,9 @@ export class UsersController {
     @Req() req: RequestWithUser,
     @Body() dto: CompleteProfileDto,
   ) {
+    console.log('=== [BACKEND] Got PATCH /users/me/complete-profile ===');
+    console.log('User ID:', req.user.sub);
+    console.log('DTO:', dto);
     return this.users.completeProfile(req.user.sub, dto);
   }
   // 1️⃣ Get my profile (personal info, preferences, notifications)

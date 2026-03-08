@@ -20,20 +20,18 @@ export class LivreurService {
   }
 
   async acceptTerms(userId: string, name?: string): Promise<LivreurProfile> {
-    return this.prisma.livreurProfile.update({
+    return this.prisma.livreurProfile.upsert({
       where: { userId },
-      data: {
-        termsAcceptedAt: new Date(),
-        termsAcceptedName: name,
-      },
+      create: { userId, termsAcceptedAt: new Date(), termsAcceptedName: name },
+      update: { termsAcceptedAt: new Date(), termsAcceptedName: name },
     });
   }
 
   async submit(userId: string): Promise<LivreurProfile> {
-    // Optionally validate docs/profile completion here
-    return this.prisma.livreurProfile.update({
+    return this.prisma.livreurProfile.upsert({
       where: { userId },
-      data: { submittedAt: new Date() },
+      create: { userId, submittedAt: new Date() },
+      update: { submittedAt: new Date() },
     });
   }
 
@@ -44,16 +42,16 @@ export class LivreurService {
   ): Promise<LivreurProfile> {
     const fieldMap: Record<LivreurUploadType, string> = {
       photo: 'photoUrl',
-      cinOrPassport: 'cinOrPassportPhotoUrl',
       license: 'licensePhotoUrl',
-      insurance: 'insurancePhotoUrl',
-      bankRib: 'bankRibUrl',
+      ownership: 'vehicleOwnershipDocUrl',
+      vehicle: 'vehiclePhotoUrl',
     };
     const field = fieldMap[type];
     if (!field) throw new BadRequestException('Invalid upload type');
-    return this.prisma.livreurProfile.update({
+    return this.prisma.livreurProfile.upsert({
       where: { userId },
-      data: { [field]: url },
+      create: { userId, [field]: url },
+      update: { [field]: url },
     });
   }
 }

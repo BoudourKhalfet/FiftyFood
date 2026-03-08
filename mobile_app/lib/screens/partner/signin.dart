@@ -5,5 +5,5 @@ class PartnerSignInPage extends StatelessWidget {
   const PartnerSignInPage({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) => const SignInPage(role: 'Partner');
+  Widget build(BuildContext context) => const SignInPage(role: 'RESTAURANT');
 }

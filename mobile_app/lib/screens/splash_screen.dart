@@ -13,8 +13,17 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 1500), () {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final modalRoute = ModalRoute.of(context);
+      final routeName = modalRoute?.settings.name;
+      // If this splash screen was loaded as the root ("/"), do the redirect.
+      if (routeName == null || routeName == '/') {
+        Timer(const Duration(milliseconds: 1500), () {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        });
+      }
     });
   }
 
@@ -34,7 +43,8 @@ class _SplashScreenState extends State<SplashScreen> {
                 Image.asset(
                   'assets/images/logo.png',
                   height: 80,
-                  errorBuilder: (context, error, stack) => const Icon(Icons.fastfood, size: 80),
+                  errorBuilder: (context, error, stack) =>
+                      const Icon(Icons.fastfood, size: 80),
                 ),
               ],
             ),

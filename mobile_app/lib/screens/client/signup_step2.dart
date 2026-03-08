@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../api/api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SignupStep2 extends StatefulWidget {
   const SignupStep2({Key? key}) : super(key: key);
@@ -9,42 +11,44 @@ class SignupStep2 extends StatefulWidget {
 
 class _SignupStep2State extends State<SignupStep2> {
   final _formKey = GlobalKey<FormState>();
+  bool _loading = false;
+  String? _error;
 
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
 
   final List<String> _foodTypes = [
-    'Italian',
-    'Japanese',
-    'Healthy',
-    'Burgers',
-    'Bakery',
-    'Café',
-    'Sandwiches',
-    'Vegan',
+    'ITALIAN',
+    'JAPANESE',
+    'HEALTHY',
+    'BURGERS',
+    'BAKERY',
+    'CAFE',
+    'SANDWICHES',
+    'VEGAN',
   ];
 
-  // emojis from design
   final Map<String, String> _foodEmoji = {
-    'Italian': '🍕',
-    'Japanese': '🍣',
-    'Healthy': '🥗',
-    'Burgers': '🍔',
-    'Bakery': '🥖',
-    'Café': '☕',
-    'Sandwiches': '🥪',
-    'Vegan': '🌱',
+    'ITALIAN': '🍕',
+    'JAPANESE': '🍣',
+    'HEALTHY': '🥗',
+    'BURGERS': '🍔',
+    'BAKERY': '🥖',
+    'CAFE': '☕',
+    'SANDWICHES': '🥪',
+    'VEGAN': '🌱',
   };
 
   final Set<String> _selectedFood = {};
   final Map<String, bool> _restrictions = {
-    'Vegetarian': false,
-    'Vegan': false,
-    'Gluten-Free': false,
-    'Dairy-Free': false,
-    'Nut-Free': false,
-    'Halal': false,
+    'NO_RESTRICTIONS': false,
+    'VEGETARIAN': false,
+    'VEGAN': false,
+    'GLUTEN_FREE': false,
+    'DAIRY_FREE': false,
+    'NUT_FREE': false,
+    'HALAL': false,
   };
 
   void _toggleFood(String type) {
@@ -61,10 +65,42 @@ class _SignupStep2State extends State<SignupStep2> {
     Navigator.of(context).pop();
   }
 
-  void _onComplete() {
+  void _onComplete() async {
     if (_formKey.currentState?.validate() == true) {
-      // CHANGE ONLY THIS PART: go to Available Offers page
-      Navigator.pushReplacementNamed(context, '/offers');
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      try {
+        final restrictions = _restrictions.entries
+            .where((e) => e.value)
+            .map((e) => e.key.replaceAll('-', '_').toUpperCase())
+            .toList();
+
+        final prefs = await SharedPreferences.getInstance();
+        final jwtToken = prefs.getString('jwt');
+        if (jwtToken == null) {
+          setState(() => _error = "Not logged in. Please sign in again.");
+          return;
+        }
+        final response = await ApiService.patch(
+          'users/me/complete-profile',
+          {
+            'fullName': _nameController.text.trim(),
+            'phone': _phoneController.text.trim(),
+            'defaultAddress': _addressController.text.trim(),
+            'cuisinePreferences': _selectedFood.toList(),
+            'dietaryRestrictions': restrictions,
+          },
+          headers: {'Authorization': 'Bearer $jwtToken'},
+        );
+        print('COMPLETE PROFILE RESPONSE: $response');
+        Navigator.pushReplacementNamed(context, '/offers');
+      } catch (e) {
+        setState(() => _error = "Profile completion failed: $e");
+      } finally {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -87,7 +123,10 @@ class _SignupStep2State extends State<SignupStep2> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 12,
+          ),
           filled: true,
           fillColor: Colors.white,
           enabledBorder: OutlineInputBorder(
@@ -96,7 +135,9 @@ class _SignupStep2State extends State<SignupStep2> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
@@ -144,10 +185,8 @@ class _SignupStep2State extends State<SignupStep2> {
                     'assets/images/logo.png',
                     width: 200,
                     height: 120,
-                    errorBuilder: (context, error, stack) => const Icon(
-                      Icons.fastfood,
-                      size: 64,
-                    ),
+                    errorBuilder: (context, error, stack) =>
+                        const Icon(Icons.fastfood, size: 64),
                   ),
                 ),
                 const SizedBox(height: 0),
@@ -253,9 +292,10 @@ class _SignupStep2State extends State<SignupStep2> {
                               ? theme.colorScheme.primary.withOpacity(0.1)
                               : Colors.white,
                           border: Border.all(
-                              color: selected
-                                  ? theme.colorScheme.primary
-                                  : Colors.grey.shade300),
+                            color: selected
+                                ? theme.colorScheme.primary
+                                : Colors.grey.shade300,
+                          ),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -271,7 +311,7 @@ class _SignupStep2State extends State<SignupStep2> {
                               type,
                               style: theme.textTheme.bodySmall,
                               textAlign: TextAlign.center,
-                            )
+                            ),
                           ],
                         ),
                       ),
@@ -308,7 +348,9 @@ class _SignupStep2State extends State<SignupStep2> {
                         onPressed: _onBack,
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(
-                              color: Color(0xFF2D8066), width: 2),
+                            color: Color(0xFF2D8066),
+                            width: 2,
+                          ),
                           foregroundColor: const Color(0xFF2D8066),
                         ),
                         child: const Padding(
@@ -325,9 +367,14 @@ class _SignupStep2State extends State<SignupStep2> {
                           backgroundColor: const Color(0xFF1F9D7A),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16.0),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        child: const Text('Complete Signup', style: TextStyle(fontWeight: FontWeight.w700)),
+                        child: const Text(
+                          'Complete Signup',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
                   ],

@@ -13,21 +13,29 @@ export class RestaurantsService {
   async logProfileChanges<T>(
     userId: string,
     dto: T,
-    oldProfile: any,
+    oldProfile: Record<string, any> | null, // <= this works!
     fields: (keyof T)[],
     actorRole: string = 'RESTAURANT',
   ) {
+    // Only log changes if the profile has been submitted previously
+    const hasBeenSubmitted = !!(oldProfile && oldProfile.submittedAt);
+    if (!hasBeenSubmitted) return; // Don't log if profile hasn't been submitted
+
     for (const field of fields) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      if (dto[field] !== undefined && dto[field] !== oldProfile[field]) {
+      // Only log if field changes and is not undefined
+      if (
+        dto[field] !== undefined &&
+        dto[field] !== oldProfile?.[field as string]
+      ) {
         await this.prisma.accountHistory.create({
           data: {
             userId,
             action: 'PROFILE_EDIT',
             field: field as string,
             oldValue:
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-              oldProfile[field] != null ? String(oldProfile[field]) : null,
+              oldProfile && oldProfile[field as string] != null
+                ? String(oldProfile[field as string])
+                : null,
             newValue: dto[field] != null ? String(dto[field]) : null,
             actorId: userId,
             actorRole,
@@ -36,6 +44,7 @@ export class RestaurantsService {
       }
     }
   }
+
   async updateIdentity(userId: string, dto: RestaurantIdentityDto) {
     const oldProfile = await this.prisma.restaurantProfile.findUnique({
       where: { userId },

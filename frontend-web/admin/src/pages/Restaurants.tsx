@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
 import {
   FaSearch,
@@ -42,6 +43,7 @@ export default function Restaurants() {
     async function fetchRestaurants() {
       setLoading(true);
       try {
+        console.log("Bearer token", localStorage.getItem("access_token"));
         const resp = await fetch("/admin/users?role=RESTAURANT", {
           headers: {
             Authorization: "Bearer " + localStorage.getItem("access_token"),

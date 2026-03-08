@@ -1,19 +1,35 @@
-import {FaFlag, FaRobot, FaUtensils, FaUsers, FaTruck, FaClipboardList, FaChartBar, FaRegChartBar, FaSignOutAlt, FaCog } from "react-icons/fa";
+import {
+  FaFlag,
+  FaRobot,
+  FaUtensils,
+  FaUsers,
+  FaTruck,
+  FaClipboardList,
+  FaChartBar,
+  FaSignOutAlt,
+  FaCog,
+} from "react-icons/fa";
 import { Link } from "react-router-dom";
-import logoImg from '../assets/fiftyfood_logo.png';
+import logoImg from "../assets/fiftyfood_logo.png";
 
 interface SidebarProps {
   current: string;
   onNavigate: (key: string) => void;
 }
 
-const menu = [
+const menu: Array<{
+  label: string;
+  key: string;
+  icon: React.ReactNode;
+  disabled?: boolean;
+  badge?: string | number;
+}> = [
   { label: "Overview", key: "overview", icon: <FaChartBar /> },
-  { label: "Restaurants", key: "restaurants", icon: <FaUtensils />},
+  { label: "Restaurants", key: "restaurants", icon: <FaUtensils /> },
   { label: "Clients", key: "clients", icon: <FaUsers /> },
   { label: "Deliverers", key: "deliverers", icon: <FaTruck /> },
-  { label: "Orders", key: "orders", icon: <FaClipboardList />},
-  { label: "Reports", key: "reports", icon: <FaFlag  /> },
+  { label: "Orders", key: "orders", icon: <FaClipboardList /> },
+  { label: "Reports", key: "reports", icon: <FaFlag /> },
   { label: "AI Insights", key: "insights", icon: <FaRobot /> },
 ];
 
@@ -33,23 +49,26 @@ export default function AdminSidebar({ current, onNavigate }: SidebarProps) {
       </div>
       {/* Navigation */}
       <ul className="flex-1 space-y-2">
-        {menu.map(item => (
+        {menu.map((item) => (
           <li
             key={item.key}
             className={`flex items-center gap-3 px-4 py-2 rounded-lg cursor-pointer relative transition
-              ${item.disabled
-                ? "text-gray-400 cursor-not-allowed"
-                : current === item.key
-                ? "bg-[#16807a] text-white font-semibold"
-                : "text-gray-700 hover:bg-[#e6f8f6]"
+              ${
+                item.disabled
+                  ? "text-gray-400 cursor-not-allowed"
+                  : current === item.key
+                    ? "bg-[#16807a] text-white font-semibold"
+                    : "text-gray-700 hover:bg-[#e6f8f6]"
               }`}
             onClick={() => !item.disabled && onNavigate(item.key)}
           >
             {item.icon}
             <span>{item.label}</span>
             {item.badge != null && (
-              <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full
-                ${current === item.key ? "bg-white text-[#16807a]" : "bg-[#e2f6ee] text-[#16807a]"}`}>
+              <span
+                className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full
+                ${current === item.key ? "bg-white text-[#16807a]" : "bg-[#e2f6ee] text-[#16807a]"}`}
+              >
                 {item.badge}
               </span>
             )}
@@ -63,7 +82,13 @@ export default function AdminSidebar({ current, onNavigate }: SidebarProps) {
         <FaCog className="w-4 h-4" />
         <span>Settings</span>
       </button>
-      <button className="mt-4 flex items-center gap-3 text-red-600 font-semibold hover:underline">
+      <button
+        className="mt-4 flex items-center gap-3 text-red-600 font-semibold hover:underline"
+        onClick={() => {
+          localStorage.removeItem("access_token");
+          window.location.href = "/admin/login";
+        }}
+      >
         <FaSignOutAlt /> <span>Sign Out</span>
       </button>
     </nav>

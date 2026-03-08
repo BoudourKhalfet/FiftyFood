@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from '../mail/mail.service';
+import { User } from '@prisma/client';
 
 function sha256(input: string) {
   return crypto.createHash('sha256').update(input).digest('hex');
@@ -24,6 +25,21 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly mailService: MailService,
   ) {}
+
+  // Helper to generate and save new verification token for user
+  private async generateEmailVerificationToken(user: Pick<User, 'id'>) {
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = sha256(rawToken);
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerificationTokenHash: tokenHash,
+        emailVerificationExpiresAt: expires,
+      },
+    });
+    return rawToken;
+  }
 
   async register(dto: RegisterDto) {
     const allowed =
@@ -58,15 +74,13 @@ export class AuthService {
         emailVerifiedAt: null,
         emailVerificationTokenHash: tokenHash,
         emailVerificationExpiresAt: expires,
-
-        // Create empty role profiles at registration (so later steps can just "update")
         clientProfile:
           dto.role === Role.CLIENT
             ? { create: { termsAcceptedAt: new Date() } }
             : undefined,
         restaurantProfile:
           dto.role === Role.RESTAURANT ? { create: {} } : undefined,
-        // TODO (later): livreurProfile: dto.role === Role.LIVREUR ? { create: {} } : undefined,
+        livreurProfile: dto.role === Role.LIVREUR ? { create: {} } : undefined,
       },
       select: {
         id: true,
@@ -81,6 +95,15 @@ export class AuthService {
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
     // eslint-disable-next-line no-console
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
+
+    // (Optional) Send actual email at registration
+    await this.mailService.sendMail(
+      user.email,
+      'Verify your email for FiftyFood',
+      `<h2>Welcome to FiftyFood!</h2>
+       <p>Please <a href="${verifyUrl}">click here to verify your email</a>.</p>
+       <p>If you did not request this, you can ignore this email.</p>`,
+    );
 
     // Onboarding token for roles that cannot login until admin approval
     const shouldReturnOnboardingToken =
@@ -131,7 +154,7 @@ export class AuthService {
       },
     });
 
-    return { ok: true };
+    return user;
   }
 
   async login(dto: LoginDto) {
@@ -157,20 +180,37 @@ export class AuthService {
 
     if (
       (user.role === Role.RESTAURANT || user.role === Role.LIVREUR) &&
-      user.status !== AccountStatus.APPROVED
+      (user.status === AccountStatus.PENDING || !user.emailVerifiedAt)
+    ) {
+      // Issue an ONBOARDING JWT, limited to onboarding endpoints
+      const onboardingToken = await this.jwt.signAsync({
+        sub: user.id,
+        role: user.role,
+        status: user.status,
+        scope: 'ONBOARDING',
+      });
+      return {
+        onboardingToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+        },
+        message: user.emailVerifiedAt
+          ? 'Your account needs admin approval to start deliveries.'
+          : 'Please verify your email and finish onboarding.',
+      };
+    }
+
+    if (
+      (user.role === Role.RESTAURANT || user.role === Role.LIVREUR) &&
+      (user.status !== AccountStatus.APPROVED || !user.emailVerifiedAt)
     ) {
       throw new ForbiddenException({
         code: 'ACCOUNT_NOT_APPROVED',
         status: user.status,
         reason: user.statusReason ?? null,
-      });
-    }
-
-    // Block login for pending / rejected / changes-required accounts
-    if (user.status !== AccountStatus.APPROVED) {
-      throw new ForbiddenException({
-        code: 'ACCOUNT_NOT_APPROVED',
-        status: user.status,
       });
     }
 
@@ -194,13 +234,10 @@ export class AuthService {
 
   async requestPasswordReset(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) return; // Don't leak info
+    if (!user) return;
 
     const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto
-      .createHash('sha256')
-      .update(rawToken)
-      .digest('hex');
+    const tokenHash = sha256(rawToken);
     const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await this.prisma.user.update({
@@ -213,7 +250,7 @@ export class AuthService {
 
     const resetUrl =
       (process.env.PASSWORD_RESET_URL ||
-        'http://localhost:5173/reset-password') + `?token=${rawToken}`;
+        'http://localhost:52530/#/reset-password') + `?token=${rawToken}`;
     await this.mailService.sendMail(
       user.email,
       'Reset your FiftyFood password',
@@ -222,7 +259,7 @@ export class AuthService {
   }
 
   async resetPassword(token: string, newPassword: string) {
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const tokenHash = sha256(token);
 
     const user = await this.prisma.user.findFirst({
       where: {
@@ -274,17 +311,14 @@ export class AuthService {
             city: true,
             logoUrl: true,
             coverImageUrl: true,
-
             legalEntityName: true,
             registrationNumberRNE: true,
             ownershipType: true,
             businessRegistrationDocumentUrl: true,
             hygieneCertificateUrl: true,
             proofOfOwnershipOrLeaseUrl: true,
-
             payoutMethod: true,
             payoutDetails: true,
-
             identityCompletedAt: true,
             legalCompletedAt: true,
             payoutCompletedAt: true,
@@ -310,5 +344,24 @@ export class AuthService {
       ...user,
       isProfileComplete,
     };
+  }
+
+  async resendVerificationEmail(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+    if (!user) return;
+    if (user.emailVerifiedAt) throw new ForbiddenException('Already verified');
+    const token = await this.generateEmailVerificationToken(user);
+    const verifyUrl = `${process.env.PUBLIC_BACKEND_URL}/auth/verify-email?token=${token}`;
+    await this.mailService.sendMail(
+      user.email,
+      'Verify your email for FiftyFood',
+      `
+        <h2>Welcome to FiftyFood!</h2>
+        <p>Please <a href="${verifyUrl}">click here to verify your email</a>.</p>
+        <p>If you did not request this, you can ignore this email.</p>
+      `,
+    );
   }
 }

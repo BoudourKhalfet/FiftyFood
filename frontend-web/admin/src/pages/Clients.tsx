@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
 import { FaEye, FaPause, FaPlay, FaSearch } from "react-icons/fa";
 import { StatusBadge } from "../components/StatusBadge";

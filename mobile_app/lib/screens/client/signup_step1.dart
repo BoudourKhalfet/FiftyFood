@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../../api/api_service.dart';
 
 class SignupStep1 extends StatefulWidget {
   const SignupStep1({Key? key}) : super(key: key);
@@ -12,6 +13,8 @@ class _SignupStep1State extends State<SignupStep1> {
   late TapGestureRecognizer _signInRecognizer;
   final _formKey = GlobalKey<FormState>();
   bool _agreed = false;
+  bool _loading = false;
+  String? _error;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -31,14 +34,71 @@ class _SignupStep1State extends State<SignupStep1> {
   @override
   void initState() {
     super.initState();
-    _signInRecognizer = TapGestureRecognizer()..onTap = () => Navigator.of(context).pushNamed('/signin/client');
+    _signInRecognizer = TapGestureRecognizer()
+      ..onTap = () => Navigator.of(context).pushNamed('/signin/client');
   }
 
-  void _onContinue() {
+  void _onContinue() async {
     if (_formKey.currentState?.validate() == true && _agreed) {
-      // Optional: you can pass the selected role to step2 later if you want:
-      // Navigator.of(context).pushNamed('/signup2', arguments: _selectedRole);
-      Navigator.of(context).pushNamed('/client/signup2');
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      try {
+        final response = await ApiService.post(
+          'auth/register', // Use your backend endpoint!
+          {
+            'email': _emailController.text.trim(),
+            'password': _passwordController.text.trim(),
+            'role': 'CLIENT', // or whatever your backend expects
+          },
+        );
+        print('REGISTER RESPONSE: $response');
+
+        // Defensive: Only proceed if backend says user created
+        // Check if server said to verify email
+        final message = response['message']?.toString().toLowerCase() ?? '';
+        if (message.contains('verify your email')) {
+          // Show a dialog or "success" banner
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Almost there!'),
+              content: const Text(
+                'Registration successful.\n\nPlease check your email inbox (and spam) and verify your email to continue.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Okay'),
+                ),
+              ],
+            ),
+          );
+          setState(() {
+            _error = null; // Clear error
+          });
+        } else if (response['success'] == true ||
+            response['statusCode'] == 201 ||
+            response['status'] == 'ok') {
+          Navigator.of(context).pushNamed(
+            '/client/signup2',
+            arguments: _emailController.text.trim(),
+          );
+        } else {
+          setState(() {
+            _error = "${response['message'] ?? response.toString()}";
+          });
+        }
+      } catch (e) {
+        setState(() {
+          _error = "Registration failed (exception): $e";
+        });
+      } finally {
+        setState(() {
+          _loading = false;
+        });
+      }
     } else if (!_agreed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You must agree to terms of service.')),
@@ -72,10 +132,8 @@ class _SignupStep1State extends State<SignupStep1> {
                     'assets/images/logo.png',
                     width: 200,
                     height: 120,
-                    errorBuilder: (context, error, stack) => const Icon(
-                      Icons.fastfood,
-                      size: 64,
-                    ),
+                    errorBuilder: (context, error, stack) =>
+                        const Icon(Icons.fastfood, size: 64),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -145,9 +203,10 @@ class _SignupStep1State extends State<SignupStep1> {
                         keyboardType: TextInputType.emailAddress,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (!RegExp(r"^[^@]+@[^@]+\.[^@]+").hasMatch(v)) {
-                            return 'Invalid email';
-                          }
+                          if (!RegExp(
+                            r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                          ).hasMatch(v))
+                            return 'Invalid email format';
                           return null;
                         },
                       ),
@@ -173,7 +232,8 @@ class _SignupStep1State extends State<SignupStep1> {
                         obscureText: true,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (v != _passwordController.text) return 'Passwords do not match';
+                          if (v != _passwordController.text)
+                            return 'Passwords do not match';
                           return null;
                         },
                       ),
@@ -202,6 +262,15 @@ class _SignupStep1State extends State<SignupStep1> {
                         ],
                       ),
                       const SizedBox(height: 24),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      if (_loading) Center(child: CircularProgressIndicator()),
                       ElevatedButton(
                         onPressed: _onContinue,
                         style: ElevatedButton.styleFrom(
@@ -217,7 +286,11 @@ class _SignupStep1State extends State<SignupStep1> {
                       const Text(
                         'OR CONTINUE WITH',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -225,12 +298,25 @@ class _SignupStep1State extends State<SignupStep1> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {},
-                              icon: const Icon(Icons.g_mobiledata, color: Color(0xFF1F2937)),
-                              label: const Text('Google', style: TextStyle(color: Color(0xFF1F2937))),
+                              icon: const Icon(
+                                Icons.g_mobiledata,
+                                color: Color(0xFF1F2937),
+                              ),
+                              label: const Text(
+                                'Google',
+                                style: TextStyle(color: Color(0xFF1F2937)),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(
+                                  color: Color(0xFF1F9D7A),
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -238,12 +324,25 @@ class _SignupStep1State extends State<SignupStep1> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {},
-                              icon: const Icon(Icons.facebook, color: Color(0xFF1F9D7A)),
-                              label: const Text('Facebook', style: TextStyle(color: Color(0xFF1F9D7A))),
+                              icon: const Icon(
+                                Icons.facebook,
+                                color: Color(0xFF1F9D7A),
+                              ),
+                              label: const Text(
+                                'Facebook',
+                                style: TextStyle(color: Color(0xFF1F9D7A)),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(
+                                  color: Color(0xFF1F9D7A),
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -254,10 +353,20 @@ class _SignupStep1State extends State<SignupStep1> {
                         child: Text.rich(
                           TextSpan(
                             children: [
-                              const TextSpan(text: 'Already have an account? ', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                              const TextSpan(
+                                text: 'Already have an account? ',
+                                style: TextStyle(
+                                  color: Color(0xFF6B7280),
+                                  fontSize: 13,
+                                ),
+                              ),
                               TextSpan(
                                 text: 'Sign in',
-                                style: const TextStyle(color: Color(0xFF1F9D7A), fontWeight: FontWeight.w600, fontSize: 13),
+                                style: const TextStyle(
+                                  color: Color(0xFF1F9D7A),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                                 recognizer: _signInRecognizer,
                               ),
                             ],
@@ -294,7 +403,10 @@ class _SignupStep1State extends State<SignupStep1> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 12,
+          ),
           filled: true,
           fillColor: Colors.white,
           enabledBorder: OutlineInputBorder(
@@ -303,7 +415,9 @@ class _SignupStep1State extends State<SignupStep1> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),

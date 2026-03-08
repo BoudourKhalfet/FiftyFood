@@ -1,4 +1,5 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { PayoutMethod } from '@prisma/client';
 
 export class LivreurProfileDto {
   @IsString() @IsOptional() fullName?: string;
@@ -10,4 +11,6 @@ export class LivreurProfileDto {
   @IsString() @IsOptional() licensePhotoUrl?: string;
   @IsString() @IsOptional() vehicleOwnershipDocUrl?: string;
   @IsString() @IsOptional() vehiclePhotoUrl?: string;
+  @IsEnum(PayoutMethod) @IsOptional() payoutMethod?: PayoutMethod;
+  @IsString() @IsOptional() payoutDetails?: string;
 }

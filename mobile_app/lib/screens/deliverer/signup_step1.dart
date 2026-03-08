@@ -1,5 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../api/api_service.dart';
 import 'signup_step2.dart';
 
 class DelivererSignupStep1 extends StatefulWidget {
@@ -12,6 +14,8 @@ class DelivererSignupStep1 extends StatefulWidget {
 class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
   late TapGestureRecognizer _signInRecognizer;
   final _formKey = GlobalKey<FormState>();
+  bool _loading = false;
+  String? _error;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -29,22 +33,131 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
   @override
   void initState() {
     super.initState();
-    _signInRecognizer = TapGestureRecognizer()..onTap = () => Navigator.of(context).pushNamed('/signin/deliverer');
+    _signInRecognizer = TapGestureRecognizer()
+      ..onTap = () => Navigator.of(context).pushNamed('/signin/deliverer');
   }
 
-  void _onContinue() {
+  Future<void> _onContinue() async {
     if (_formKey.currentState?.validate() == true) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => const DelivererSignupStep2()),
-      );
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      try {
+        final response = await ApiService.post('auth/register', {
+          'email': _emailController.text.trim(),
+          'password': _passwordController.text.trim(),
+          'role': 'LIVREUR',
+        });
+        print('DELIVERER REGISTER RESPONSE: $response');
+
+        // Handle onboardingToken logic for LIVREUR onboarding flow
+        final onboardingToken = response['onboardingToken'];
+        final message = response['message']?.toString().toLowerCase() ?? '';
+
+        if (onboardingToken != null) {
+          // SAVE JWT for subsequent steps!
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('jwt', onboardingToken);
+
+          // Go directly to next step
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const DelivererSignupStep2(),
+            ),
+          );
+          // Do NOT show the email verification dialog for livreur
+          return;
+        }
+
+        if (message.contains('already in use')) {
+          setState(() {
+            _error = "Email already in use";
+          });
+        } else if (response['success'] == true ||
+            response['statusCode'] == 201 ||
+            response['status'] == 'ok') {
+          // Defensive: Go to step 2 if success detected (if onboardingToken wasn't set above)
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const DelivererSignupStep2(),
+            ),
+          );
+        } else if (message.contains('verify your email')) {
+        } else {
+          setState(() {
+            _error = response['message'] ?? 'Registration failed';
+          });
+        }
+      } catch (e) {
+        setState(() {
+          _error = "Registration failed (exception): $e";
+        });
+      } finally {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool obscureText = false,
+    TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    return SizedBox(
+      width: 289,
+      height: 50,
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 12,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF9CA3AF)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(backgroundColor: Colors.white, elevation: 0, iconTheme: const IconThemeData(color: Colors.black)),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -58,10 +171,8 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                     'assets/images/logo.png',
                     width: 200,
                     height: 120,
-                    errorBuilder: (context, error, stack) => const Icon(
-                      Icons.fastfood,
-                      size: 64,
-                    ),
+                    errorBuilder: (context, error, stack) =>
+                        const Icon(Icons.fastfood, size: 64),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -78,7 +189,10 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                 const SizedBox(height: 8),
                 Container(
                   height: 6,
-                  margin: const EdgeInsets.symmetric(horizontal: 48, vertical: 8),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 48,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(6),
@@ -88,7 +202,12 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                     widthFactor: 0.33,
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [const Color(0xFF3D9176), const Color(0xFF2D8066)]),
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF3D9176),
+                            const Color(0xFF2D8066),
+                          ],
+                        ),
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
@@ -114,7 +233,10 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                         keyboardType: TextInputType.emailAddress,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (!RegExp(r"^[^@]+@[^@]+\.[^@]+").hasMatch(v)) return 'Invalid email';
+                          if (!RegExp(
+                            r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                          ).hasMatch(v))
+                            return 'Invalid email format';
                           return null;
                         },
                       ),
@@ -126,7 +248,8 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                         obscureText: true,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (v.length < 8) return 'Must be at least 8 characters';
+                          if (v.length < 8)
+                            return 'Must be at least 8 characters';
                           return null;
                         },
                       ),
@@ -138,16 +261,33 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                         obscureText: true,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
-                          if (v != _passwordController.text) return 'Passwords do not match';
+                          if (v != _passwordController.text)
+                            return 'Passwords do not match';
                           return null;
                         },
                       ),
                       const SizedBox(height: 8),
-                      Text('Must be at least 8 characters', style: theme.textTheme.bodySmall),
+                      Text(
+                        'Must be at least 8 characters',
+                        style: theme.textTheme.bodySmall,
+                      ),
                       const SizedBox(height: 24),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      if (_loading)
+                        const Center(child: CircularProgressIndicator()),
                       ElevatedButton(
-                        onPressed: _onContinue,
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D8066), foregroundColor: Colors.white),
+                        onPressed: _loading ? null : _onContinue,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2D8066),
+                          foregroundColor: Colors.white,
+                        ),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 16.0),
                           child: Text('Continue'),
@@ -157,7 +297,11 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                       const Text(
                         'OR CONTINUE WITH',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -165,12 +309,25 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {},
-                              icon: const Icon(Icons.g_mobiledata, color: Color(0xFF1F2937)),
-                              label: const Text('Google', style: TextStyle(color: Color(0xFF1F2937))),
+                              icon: const Icon(
+                                Icons.g_mobiledata,
+                                color: Color(0xFF1F2937),
+                              ),
+                              label: const Text(
+                                'Google',
+                                style: TextStyle(color: Color(0xFF1F2937)),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(
+                                  color: Color(0xFF1F9D7A),
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -178,12 +335,25 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {},
-                              icon: const Icon(Icons.facebook, color: Color(0xFF1F9D7A)),
-                              label: const Text('Facebook', style: TextStyle(color: Color(0xFF1F9D7A))),
+                              icon: const Icon(
+                                Icons.facebook,
+                                color: Color(0xFF1F9D7A),
+                              ),
+                              label: const Text(
+                                'Facebook',
+                                style: TextStyle(color: Color(0xFF1F9D7A)),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(
+                                  color: Color(0xFF1F9D7A),
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -194,10 +364,20 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                         child: Text.rich(
                           TextSpan(
                             children: [
-                              const TextSpan(text: 'Already have an account? ', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                              const TextSpan(
+                                text: 'Already have an account? ',
+                                style: TextStyle(
+                                  color: Color(0xFF6B7280),
+                                  fontSize: 13,
+                                ),
+                              ),
                               TextSpan(
                                 text: 'Sign in',
-                                style: const TextStyle(color: Color(0xFF1F9D7A), fontWeight: FontWeight.w600, fontSize: 13),
+                                style: const TextStyle(
+                                  color: Color(0xFF1F9D7A),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                                 recognizer: _signInRecognizer,
                               ),
                             ],
@@ -209,49 +389,6 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator,
-  }) {
-    return SizedBox(
-      width: 289,
-      height: 50,
-      child: TextFormField(
-        controller: controller,
-        obscureText: obscureText,
-        keyboardType: keyboardType,
-        validator: validator,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-          filled: true,
-          fillColor: Colors.white,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF9CA3AF)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
           ),
         ),
       ),
