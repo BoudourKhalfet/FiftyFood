@@ -55,6 +55,11 @@ type RestaurantModalProps = {
       icon?: React.ReactNode;
       color?: string;
     }>;
+    legalAgreements?: {
+      type: string;
+      acceptedAt: string;
+      signerName: string;
+    }[];
   };
 };
 
@@ -64,6 +69,18 @@ const statusColor: Record<string, string> = {
   rejected: "bg-red-100 text-red-700",
   suspended: "bg-red-100 text-red-700",
 };
+function agreementLabel(type: string) {
+  switch (type) {
+    case "hygiene":
+      return "Hygiene Responsibility";
+    case "no-preparation":
+      return "No Preparation/Storage";
+    case "liability":
+      return "100% Company Liability";
+    default:
+      return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+}
 
 export function RestaurantModal({
   open,
@@ -245,14 +262,29 @@ export function RestaurantModal({
               <span className="text-gray-400">N/A</span>
             )}
           </InfoRow>
-          {restaurant.termsAcceptedAt && (
-            <InfoRow icon={<FaCheckCircle />} label="Terms Accepted">
-              {restaurant.termsAcceptedAt.slice(0, 10)}
-              {restaurant.termsAcceptedName && (
-                <span className="text-xs text-gray-400 ml-2">
-                  (by {restaurant.termsAcceptedName})
-                </span>
-              )}
+          {restaurant.legalAgreements &&
+          restaurant.legalAgreements.length > 0 ? (
+            <>
+              {restaurant.legalAgreements.map((ag, idx) => (
+                <InfoRow
+                  icon={<FaCheckCircle />}
+                  label={agreementLabel(ag.type)}
+                  key={ag.type + idx}
+                >
+                  {ag.acceptedAt
+                    ? new Date(ag.acceptedAt).toLocaleDateString()
+                    : "N/A"}
+                  {ag.signerName && (
+                    <span className="text-xs text-gray-400 ml-2">
+                      (by {ag.signerName})
+                    </span>
+                  )}
+                </InfoRow>
+              ))}
+            </>
+          ) : (
+            <InfoRow icon={<FaCheckCircle />} label="Agreements">
+              <span className="text-gray-400">No agreements accepted</span>
             </InfoRow>
           )}
         </SectionCard>

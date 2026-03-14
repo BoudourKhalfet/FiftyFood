@@ -18,7 +18,10 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
   String _ownership = 'Owner';
   bool _loading = false;
   String? _error;
-  bool _acceptedTerms = false;
+
+  bool _acceptedHygiene = false;
+  bool _acceptedNoPreparation = false;
+  bool _acceptedLiability = false;
 
   String? _businessRegFileName, _hygieneCertFileName, _ownershipFileName;
   bool _businessRegUploading = false,
@@ -167,8 +170,8 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
     if (_hygieneCertFileName == null) {
       return "Please upload your Hygiene Certificate.";
     }
-    if (!_acceptedTerms) {
-      return "You must agree to the Terms of Service and Privacy Policy.";
+    if (!_acceptedHygiene || !_acceptedNoPreparation || !_acceptedLiability) {
+      return "You must agree to all legal agreements.";
     }
     if (_termsNameController.text.trim().isEmpty) {
       return "Type your full name as signature.";
@@ -206,7 +209,14 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
 
       final termsResp = await ApiService.post(
         'restaurant/onboarding/accept-terms',
-        {'name': _termsNameController.text.trim()},
+        {
+          'name': _termsNameController.text.trim(),
+          'agreements': [
+            {'type': 'hygiene', 'accepted': _acceptedHygiene},
+            {'type': 'no-preparation', 'accepted': _acceptedNoPreparation},
+            {'type': 'liability', 'accepted': _acceptedLiability},
+          ],
+        },
         headers: {'Authorization': 'Bearer $jwt'},
       );
       print("Accept Terms response: $termsResp");
@@ -422,34 +432,74 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 6),
+                // Agreement Checkboxes (FIXED: No Expanded in Row!)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8, top: 4),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Checkbox(
-                        value: _acceptedTerms,
-                        onChanged: (v) =>
-                            setState(() => _acceptedTerms = v ?? false),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _acceptedHygiene,
+                            onChanged: (v) =>
+                                setState(() => _acceptedHygiene = v ?? false),
+                          ),
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: Text(
+                              'I am solely responsible for the hygiene of the dishes sold via FiftyFood.',
+                            ),
+                          ),
+                        ],
                       ),
-                      const Expanded(
-                        child: Text(
-                          'I agree to the Terms of Service and Privacy Policy',
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _acceptedNoPreparation,
+                            onChanged: (v) => setState(
+                              () => _acceptedNoPreparation = v ?? false,
+                            ),
+                          ),
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: Text(
+                              'FiftyFood neither prepares nor stores the dishes.',
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _acceptedLiability,
+                            onChanged: (v) =>
+                                setState(() => _acceptedLiability = v ?? false),
+                          ),
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: Text(
+                              'In the event of food poisoning, the company (restaurant) assumes 100% responsibility.',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        height: 52,
+                        child: TextFormField(
+                          controller: _termsNameController,
+                          decoration: const InputDecoration(
+                            labelText: "Type your full name as signature",
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.edit_note),
+                          ),
+                          validator: (v) => v == null || v.isEmpty
+                              ? 'Signature required'
+                              : null,
                         ),
                       ),
                     ],
-                  ),
-                ),
-                SizedBox(
-                  height: 52,
-                  child: TextFormField(
-                    controller: _termsNameController,
-                    decoration: const InputDecoration(
-                      labelText: "Type your full name as signature",
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.edit_note),
-                    ),
-                    validator: (v) =>
-                        v == null || v.isEmpty ? 'Signature required' : null,
                   ),
                 ),
                 // ---- ERROR is shown ONLY HERE ----

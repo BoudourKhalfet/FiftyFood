@@ -25,14 +25,14 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> get(
+  static Future<dynamic> get(
     String endpoint, {
     Map<String, String>? headers,
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
     final res = await http.get(url, headers: headers);
     print('RAW RESPONSE: ${res.statusCode} ${res.body}');
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    return jsonDecode(res.body);
   }
 
   static Future<Map<String, dynamic>> patch(
@@ -47,6 +47,9 @@ class ApiService {
       body: jsonEncode(data),
     );
     print('RAW RESPONSE PATCH: ${res.statusCode} ${res.body}');
+    print('PATCH to $url');
+    print('Request headers: ${headers.toString()}');
+    print('Request body: $data');
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
@@ -93,5 +96,16 @@ class ApiService {
     final response = await http.Response.fromStream(streamed);
     print('MULTIPART RESPONSE: ${response.statusCode} ${response.body}');
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> delete(
+    String endpoint, {
+    Map<String, String>? headers,
+  }) async {
+    final url = Uri.parse('$apiBaseUrl$endpoint');
+    final res = await http.delete(url, headers: headers);
+    print('RAW RESPONSE DELETE: ${res.statusCode} ${res.body}');
+    if (res.body.isEmpty) return {};
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 }

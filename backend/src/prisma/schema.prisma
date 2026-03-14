@@ -69,6 +69,8 @@ model User {
   
   accountHistory AccountHistory[]  
 
+  legalAgreements     LegalAgreement[]
+
   // Role-specific profiles (1-1)
   clientProfile ClientProfile?
   restaurantProfile RestaurantProfile?
@@ -164,6 +166,16 @@ model RestaurantProfile {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model LegalAgreement {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String   // E.g. 'hygiene', 'no-preparation', 'liability'
+  content    String   // (optional) You can store the agreement legal text/snapshot here
+  acceptedAt DateTime @default(now())
+  signerName String   // Full name as digital signature
 }
 
 enum AccountAction {

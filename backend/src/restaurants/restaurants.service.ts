@@ -150,14 +150,42 @@ export class RestaurantsService {
     });
   }
 
-  async acceptTerms(userId: string, name?: string): Promise<RestaurantProfile> {
-    return this.prisma.restaurantProfile.update({
+  // New signature: also take agreements!
+  async acceptTerms(
+    userId: string,
+    name: string,
+    agreements: { type: string; accepted: boolean }[],
+  ): Promise<RestaurantProfile> {
+    // 1. Save legacy termsAcceptedAt/termsAcceptedName, or remove if not needed
+    await this.prisma.restaurantProfile.update({
       where: { userId },
-      data: {
-        termsAcceptedAt: new Date(),
-        termsAcceptedName: name,
-      },
+      data: {},
     });
+
+    // 2. (Good practice!) Remove existing agreements for this user, to avoid duplicates:
+    await this.prisma.legalAgreement.deleteMany({ where: { userId } });
+
+    // 3. Insert an agreement for each checked agreement
+    for (const ag of agreements) {
+      if (ag.accepted) {
+        await this.prisma.legalAgreement.create({
+          data: {
+            userId,
+            type: ag.type,
+            acceptedAt: new Date(),
+            signerName: name,
+            content: '', // Or the agreement text if you want to store it (optional)
+          },
+        });
+      }
+    }
+
+    // 4. Optionally: return latest profile
+    const profile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId },
+    });
+    if (!profile) throw new BadRequestException('Profile not found');
+    return profile;
   }
 
   async submit(userId: string) {

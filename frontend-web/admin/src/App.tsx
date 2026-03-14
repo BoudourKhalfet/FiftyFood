@@ -1,4 +1,4 @@
-import React, { useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import AdminSidebar from "./components/AdminSidebar";

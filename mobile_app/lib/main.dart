@@ -8,6 +8,7 @@ import 'screens/client/signup_step1.dart';
 
 import 'screens/client/signup_step2.dart' as client;
 import 'screens/client/available_offers.dart';
+import 'screens/client/profile.dart';
 import 'screens/partner/signup_step2.dart' as partner;
 import 'screens/partner/signup_step1.dart' as partner1;
 import 'screens/partner/signup_step3.dart' as partner3;
@@ -131,6 +132,11 @@ class MyApp extends StatelessWidget {
           case '/forgot-password':
             return MaterialPageRoute(
               builder: (_) => const ForgotPasswordPage(),
+            );
+          case '/profile':
+            return MaterialPageRoute(
+              builder: (_) => const ClientProfileScreen(),
+              settings: settings,
             );
           // add any extra routes as needed...
           default:

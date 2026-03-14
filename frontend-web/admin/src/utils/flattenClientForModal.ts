@@ -22,33 +22,38 @@ export function flattenClientForModal(user: any) {
       .map((entry: AccountHistoryEntry) => {
         let label = "";
         let description = entry.reason || "";
-        switch (entry.action) {
-          case "SUSPEND":
-            label = "Account suspended";
-            break;
-          case "UNSUSPEND":
-            label = "Account reactivated";
-            break;
-          case "PROFILE_EDIT":
-          case "PROFILE_UPDATED":
-            label = "Profile updated";
-            if (!description && entry.field)
-              description = `Changed ${entry.field}: ${entry.oldValue ?? ""} → ${entry.newValue ?? ""}`;
-            break;
-          case "ACCOUNT_CREATED":
-            label = "Account created";
-            if (!description) description = "Signed up via email";
-            break;
-          case "EMAIL_VERIFIED":
-          case "ACCOUNT_VERIFIED":
-            label = "Account verified";
-            if (!description) description = "Email verified";
-            break;
-          case "WARNING":
-            label = "Warning issued";
-            break;
-          default:
-            label = entry.action;
+        if (entry.action === "PROFILE_EDIT" && entry.field === "password") {
+          label = "Profile updated";
+          description = "Password changed";
+        } else {
+          switch (entry.action) {
+            case "SUSPEND":
+              label = "Account suspended";
+              break;
+            case "UNSUSPEND":
+              label = "Account reactivated";
+              break;
+            case "PROFILE_EDIT":
+            case "PROFILE_UPDATED":
+              label = "Profile updated";
+              if (!description && entry.field)
+                description = `Changed ${entry.field}: ${entry.oldValue ?? ""} → ${entry.newValue ?? ""}`;
+              break;
+            case "ACCOUNT_CREATED":
+              label = "Account created";
+              if (!description) description = "Signed up via email";
+              break;
+            case "EMAIL_VERIFIED":
+            case "ACCOUNT_VERIFIED":
+              label = "Account verified";
+              if (!description) description = "Email verified";
+              break;
+            case "WARNING":
+              label = "Warning issued";
+              break;
+            default:
+              label = entry.action;
+          }
         }
         let actor = "";
         if (entry.actorId) {

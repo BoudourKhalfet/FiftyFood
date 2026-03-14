@@ -15,6 +15,13 @@ export function flattenRestaurantForModal(user: any) {
   if (user.restaurantProfile) Object.assign(base, user.restaurantProfile);
   if (user.livreurProfile) Object.assign(base, user.livreurProfile);
   if (user.clientProfile) Object.assign(base, user.clientProfile);
+  if (user.legalAgreements) {
+    base.legalAgreements = user.legalAgreements.map((ag: any) => ({
+      type: ag.type,
+      acceptedAt: ag.acceptedAt,
+      signerName: ag.signerName,
+    }));
+  }
 
   if (user.accountHistory) {
     base.accountHistory = user.accountHistory

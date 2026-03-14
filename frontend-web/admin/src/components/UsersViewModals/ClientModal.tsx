@@ -8,6 +8,7 @@ import {
   FaRegClock,
   FaRegIdCard,
   FaStar,
+  FaLock,
 } from "react-icons/fa";
 import { MdClose } from "react-icons/md";
 import { useState } from "react";
@@ -58,7 +59,14 @@ export function ClientModal({ open, onClose, client }: ClientModalProps) {
   };
 
   // Icon mapping for account history timeline
-  function getHistoryIcon(actionType: string) {
+  function getHistoryIcon(actionType: string, description?: string) {
+    if (
+      actionType === "PROFILE_EDIT" &&
+      description &&
+      description.toLowerCase().includes("password changed")
+    ) {
+      return <FaLock className="text-green-700" />;
+    }
     switch (actionType) {
       case "SUSPEND":
       case "ACCOUNT_SUSPENDED":
@@ -223,7 +231,7 @@ export function ClientModal({ open, onClose, client }: ClientModalProps) {
             {client.accountHistory?.map((entry, i) => (
               <li key={i} className="mb-4 flex items-start gap-2">
                 <span className="mt-1 flex-shrink-0">
-                  {getHistoryIcon(entry.actionType)}
+                  {getHistoryIcon(entry.actionType, entry.description)}
                 </span>
                 <div>
                   <div className="font-semibold text-green-900 text-sm">

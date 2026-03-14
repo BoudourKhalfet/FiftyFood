@@ -83,6 +83,13 @@ export class AdminService {
             termsAcceptedName: true,
           },
         },
+        legalAgreements: {
+          select: {
+            type: true,
+            acceptedAt: true,
+            signerName: true,
+          },
+        },
         livreurProfile: {
           select: {
             fullName: true,
@@ -277,6 +284,13 @@ export class AdminService {
             legalEntityName: true,
             registrationNumberRNE: true,
             // add trustScore here if it's a field
+          },
+        },
+        legalAgreements: {
+          select: {
+            type: true,
+            acceptedAt: true,
+            signerName: true,
           },
         },
       },

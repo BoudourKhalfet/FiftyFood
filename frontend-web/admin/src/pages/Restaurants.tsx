@@ -26,6 +26,11 @@ type RestaurantUser = {
     proofOfOwnershipOrLeaseUrl?: string | null;
     // Extend as needed (docs, trustScore, etc.)
   };
+  legalAgreements?: {
+    type: string;
+    acceptedAt: string;
+    signerName: string;
+  }[];
 };
 
 export default function Restaurants() {

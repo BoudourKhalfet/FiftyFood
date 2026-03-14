@@ -151,10 +151,15 @@ export class RestaurantsController {
   @Post('accept-terms')
   async acceptTerms(
     @Req() req: ReqWithUser,
-    @Body('name') name?: string, // optionally send name
+    @Body()
+    body: { name: string; agreements: { type: string; accepted: boolean }[] },
   ): Promise<RestaurantProfile> {
     this.ensureRestaurant(req);
-    return this.restaurants.acceptTerms(req.user.sub, name);
+    return this.restaurants.acceptTerms(
+      req.user.sub,
+      body.name,
+      body.agreements,
+    );
   }
 
   @Post('submit')

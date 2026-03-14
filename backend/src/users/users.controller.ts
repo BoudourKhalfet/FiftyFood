@@ -6,6 +6,7 @@ import {
   Patch,
   Req,
   UseGuards,
+  Delete,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -50,13 +51,14 @@ export class UsersController {
 
   // 3️⃣ Update preferences (cuisinePreferences, dietaryRestrictions)
   @Patch('me/preferences')
-  updatePreferences(
+  async updatePreferences(
     @Req() req: RequestWithUser,
     @Body() dto: UpdatePreferencesDto,
   ) {
-    return this.users.updatePreferences(req.user.sub, dto);
+    const result = await this.users.updatePreferences(req.user.sub, dto);
+    console.log('[Controller] PATCH result:', result);
+    return result;
   }
-
   @Patch('me/submit-profile')
   @Roles(Role.CLIENT)
   submitClientProfile(@Req() req: RequestWithUser) {
@@ -81,5 +83,11 @@ export class UsersController {
   @Get('me/orders')
   getMyOrders(@Req() req: RequestWithUser) {
     return this.users.getMyOrders(req.user.sub);
+  }
+
+  @Delete('me')
+  @Roles(Role.CLIENT)
+  deleteMyAccount(@Req() req: RequestWithUser) {
+    return this.users.deleteAccount(req.user.sub);
   }
 }

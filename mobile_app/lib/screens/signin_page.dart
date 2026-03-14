@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:mobile_app/api/client_profile_service.dart';
 import '../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,6 +87,23 @@ class _SignInPageState extends State<SignInPage> {
 
       if (accessToken != null) {
         await prefs.setString('jwt', accessToken);
+        if (user != null && user['role'] == 'CLIENT') {
+          try {
+            final profile = await ProfileService.getProfile(accessToken);
+            print("Fetched profile: ${profile.fullName}");
+            if (profile.fullName != null &&
+                profile.fullName.trim().isNotEmpty) {
+              await prefs.setString('clientName', profile.fullName.trim());
+              print(
+                "Saved clientName to prefs: ${prefs.getString('clientName')}",
+              );
+            } else {
+              print("Fetched profile has null/empty fullName!");
+            }
+          } catch (e) {
+            print('Failed to fetch client profile after login: $e');
+          }
+        }
         if (response['message'] != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(response['message'].toString())),
@@ -94,11 +112,10 @@ class _SignInPageState extends State<SignInPage> {
 
         // Dashboard navigation for active roles
         if (user != null && user['role'] == 'CLIENT') {
-          final isProfileComplete = user['isProfileComplete'] ?? false;
-          if (!isProfileComplete) {
-            Navigator.of(context).pushReplacementNamed('/client/signup2');
-          } else {
+          if (user['status'] == 'APPROVED') {
             Navigator.of(context).pushReplacementNamed('/offers');
+          } else {
+            Navigator.of(context).pushReplacementNamed('/client/signup2');
           }
         } else if (role == 'restaurant') {
           Navigator.of(context).pushReplacementNamed('/partenaire/dashboard');
@@ -498,11 +515,11 @@ class _SignInPageState extends State<SignInPage> {
                           child: OutlinedButton.icon(
                             onPressed: () {},
                             icon: const Icon(
-                              Icons.apple,
+                              Icons.facebook,
                               color: Color(0xFF1F9D7A),
                             ),
                             label: const Text(
-                              'Apple',
+                              'Facebook',
                               style: TextStyle(color: Color(0xFF1F9D7A)),
                             ),
                             style: OutlinedButton.styleFrom(

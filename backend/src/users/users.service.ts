@@ -182,7 +182,7 @@ export class UsersService {
 
   // 3️⃣ Update preferences (cuisinePreferences, dietaryRestrictions)
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
-    return this.prisma.clientProfile.update({
+    const updated = await this.prisma.clientProfile.update({
       where: { userId },
       data: {
         cuisinePreferences: dto.cuisinePreferences?.map(
@@ -193,8 +193,8 @@ export class UsersService {
         ),
       },
     });
+    return { message: 'Preferences updated', profile: updated };
   }
-
   // 4️⃣ Update notification settings (as plain object)
   async updateNotifications(userId: string, dto: UpdateNotificationsDto) {
     return this.prisma.clientProfile.update({
@@ -218,6 +218,18 @@ export class UsersService {
       where: { id: userId },
       data: { passwordHash: newHash },
     });
+
+    await this.prisma.accountHistory.create({
+      data: {
+        userId,
+        action: 'PROFILE_EDIT',
+        field: 'password',
+        oldValue: null,
+        newValue: null,
+        actorId: userId,
+        actorRole: 'USER',
+      },
+    });
     return { message: 'Password changed.' };
   }
 
@@ -227,5 +239,18 @@ export class UsersService {
       where: { clientId: userId },
       orderBy: [{ createdAt: 'desc' }],
     });
+  }
+
+  async deleteAccount(userId: string): Promise<{ message: string }> {
+    // If you want a soft-delete:
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { status: 'SUSPENDED' }, // or any other 'deleted'/'inactive' status
+    });
+    return { message: 'Account deleted.' };
+
+    // For a hard delete:
+    // await this.prisma.user.delete({ where: { id: userId } });
+    // return { message: 'Account deleted.' };
   }
 }
