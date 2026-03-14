@@ -36,7 +36,6 @@ class _SignInPageState extends State<SignInPage> {
         'email': _emailController.text.trim(),
         'password': _passwordController.text.trim(),
       });
-      print("LOGIN RESPONSE: $response");
 
       if (response['code'] == 'EMAIL_NOT_VERIFIED') {
         setState(() {

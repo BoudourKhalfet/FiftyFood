@@ -89,16 +89,12 @@ class _DelivererSignupStep2State extends State<DelivererSignupStep2> {
           _photoBytes = result.files.single.bytes;
           _photoFileName = result.files.single.name;
         });
-        print(
-          "Web picked photo: $_photoFileName, ${_photoBytes?.length ?? 0} bytes",
-        );
       } else {
         setState(() {
           _photoLocalPath = result.files.single.path;
           _photoBytes = null;
           _photoFileName = result.files.single.name;
         });
-        print("Mobile picked photo: $_photoLocalPath");
       }
     }
   }

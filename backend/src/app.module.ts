@@ -10,6 +10,7 @@ import { ProfileCompleteGuard } from './auth/profile-complete.guard';
 import { RestaurantsModule } from './restaurants/restaurants.module';
 import { AdminModule } from './admin/admin.module';
 import { LivreurModule } from './livreur/livreur.module';
+import { OffersModule } from './offers/offers.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { LivreurModule } from './livreur/livreur.module';
     RestaurantsModule,
     AdminModule,
     LivreurModule,
+    OffersModule,
   ],
   controllers: [AppController],
   providers: [

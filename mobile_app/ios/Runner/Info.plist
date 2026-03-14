@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to upload food images for offers.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to take photos for food offers.</string>
+	<key>NSPhotoLibraryAddOnlyUsageDescription</key>
+	<string>This app needs access to save photos from the camera.</string>
 </dict>
 </plist>

@@ -1,2 +1,2 @@
 const String apiBaseUrl =
-    'http://192.168.236.51:3000/'; // real PC IP if using physical device instead of emulator, otherwise use 'http://localhost:3000/' for emulator
+    'http://192.168.1.16:3000/'; // use your PC's local IP for physical device, or 'http://localhost:3000/' for emulator/web

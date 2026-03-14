@@ -16,7 +16,6 @@ class ApiService {
       headers: {'Content-Type': 'application/json', ...?headers},
       body: jsonEncode(data),
     );
-    print('RAW RESPONSE: ${res.statusCode} ${res.body}');
     // FIX: Accept any 2xx as success
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -31,8 +30,16 @@ class ApiService {
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
     final res = await http.get(url, headers: headers);
-    print('RAW RESPONSE: ${res.statusCode} ${res.body}');
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  static Future<List<dynamic>> getList(
+    String endpoint, {
+    Map<String, String>? headers,
+  }) async {
+    final url = Uri.parse('$apiBaseUrl$endpoint');
+    final res = await http.get(url, headers: headers);
+    return jsonDecode(res.body) as List<dynamic>;
   }
 
   static Future<Map<String, dynamic>> patch(
@@ -46,7 +53,6 @@ class ApiService {
       headers: {'Content-Type': 'application/json', ...?headers},
       body: jsonEncode(data),
     );
-    print('RAW RESPONSE PATCH: ${res.statusCode} ${res.body}');
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
@@ -91,7 +97,16 @@ class ApiService {
 
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
-    print('MULTIPART RESPONSE: ${response.statusCode} ${response.body}');
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> delete(
+    String endpoint, {
+    Map<String, String>? headers,
+  }) async {
+    final url = Uri.parse('$apiBaseUrl$endpoint');
+    final res = await http.delete(url, headers: headers);
+    if (res.body.isEmpty) return {'success': true};
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 }

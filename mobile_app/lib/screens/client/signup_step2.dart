@@ -94,7 +94,6 @@ class _SignupStep2State extends State<SignupStep2> {
           },
           headers: {'Authorization': 'Bearer $jwtToken'},
         );
-        print('COMPLETE PROFILE RESPONSE: $response');
         Navigator.pushReplacementNamed(context, '/offers');
       } catch (e) {
         setState(() => _error = "Profile completion failed: $e");

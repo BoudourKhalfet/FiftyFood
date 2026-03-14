@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../api/api_service.dart';
 
 class PartnerDashboardPage extends StatefulWidget {
   const PartnerDashboardPage({Key? key}) : super(key: key);
@@ -9,6 +14,99 @@ class PartnerDashboardPage extends StatefulWidget {
 }
 
 class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
+    void _showEditProfileDialog() {
+      final nameController = TextEditingController(text: _restaurantInfo['name']);
+      final emailController = TextEditingController(text: _restaurantInfo['email']);
+      final phoneController = TextEditingController(text: _restaurantInfo['phone']);
+      final addressController = TextEditingController(text: _restaurantInfo['address']);
+      final cityController = TextEditingController(text: _restaurantInfo['city']);
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Edit Profile'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Restaurant Name'),
+                  ),
+                  TextField(
+                    controller: emailController,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                  ),
+                  TextField(
+                    controller: phoneController,
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                  ),
+                  TextField(
+                    controller: addressController,
+                    decoration: const InputDecoration(labelText: 'Address'),
+                  ),
+                  TextField(
+                    controller: cityController,
+                    decoration: const InputDecoration(labelText: 'City'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  // Update profile via API
+                  try {
+                    final prefs = await SharedPreferences.getInstance();
+                    final jwt = prefs.getString('jwt');
+                    if (jwt == null) return;
+
+                    await ApiService.patch(
+                      'auth/me/profile',
+                      {
+                        'restaurantName': nameController.text,
+                        'address': addressController.text,
+                        'city': cityController.text,
+                        'phone': phoneController.text,
+                      },
+                      headers: {'Authorization': 'Bearer $jwt'},
+                    );
+
+                    setState(() {
+                      _restaurantInfo['name'] = nameController.text;
+                      _restaurantInfo['email'] = emailController.text;
+                      _restaurantInfo['phone'] = phoneController.text;
+                      _restaurantInfo['address'] = addressController.text;
+                      _restaurantInfo['city'] = cityController.text;
+                    });
+                    
+                    if (mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Profile updated!'), backgroundColor: Color(0xFF1F9D7A)),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error updating profile: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   int _activeTab = 0; // 0: offers, 1: orders, 2: stats, 3: profile
   bool _showCreateOffer = false;
   bool _showQrScanner = false;
@@ -29,8 +127,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
 
   // Image Upload
   String? _offerImagePreview;
+  String? _offerImageBase64; // base64 data URL for AI verification
   bool _aiVerifying = false;
   Map<String, dynamic>? _aiResult;
+  // Removed _photoTakenAt and all EXIF/photo date logic
 
   // Mode Fête Form
   String _modeFeteDuration = '60';
@@ -40,8 +140,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String _qrInput = '';
   Map<String, dynamic>? _qrResult;
 
-  // Empty Data (No Backend Yet)
-  final List<Map<String, dynamic>> _offers = [];
+  // Offers Data (from backend)
+  List<Map<String, dynamic>> _offers = [];
+  bool _offersLoading = false;
 
   final Map<String, dynamic> _stats = {
     'totalSales': 0,
@@ -52,9 +153,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
 
   final List<Map<String, dynamic>> _orders = [];
 
-  final Map<String, dynamic> _restaurantInfo = {
+  Map<String, dynamic> _restaurantInfo = {
     'name': 'Restaurant Name',
     'address': 'Address not set',
+    'city': 'City not set',
     'phone': '+1 (000) 000-0000',
     'email': 'email@example.com',
     'trustScore': 0,
@@ -62,9 +164,44 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    _fetchRestaurantProfile();
+    _fetchOffers();
+  }
+
+  @override
   void dispose() {
     _modeFeteTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _fetchRestaurantProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+      final response = await ApiService.get(
+        'auth/me',
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+      final restaurant = response['restaurantProfile'];
+      if (restaurant != null && mounted) {
+        setState(() {
+          _restaurantInfo = {
+            'name': restaurant['restaurantName'] ?? 'Restaurant Name',
+            'address': restaurant['address'] ?? 'Address not set',
+            'city': restaurant['city'] ?? 'City not set',
+            'phone': restaurant['phone'] ?? '+1 (000) 000-0000',
+            'email': response['email'] ?? 'email@example.com',
+            'trustScore': _restaurantInfo['trustScore'],
+            'documentsVerified': _restaurantInfo['documentsVerified'],
+          };
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching restaurant profile: $e');
+    }
   }
 
   void _startModeFete() {
@@ -116,57 +253,145 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     });
   }
 
-  void _simulateAiVerification() async {
-    setState(() => _aiVerifying = true);
-    
-    await Future.delayed(Duration(milliseconds: 2500));
-
-    List<String> reasons = [];
-    bool passed = true;
-
-    if (passed) {
-      reasons.addAll([
-        '✅ Metadata verified — photo is recent',
-        '✅ Image quality check passed',
-        '✅ Food content detected (confidence: ${85 + (DateTime.now().millisecond % 14)}%)',
-      ]);
-    }
-
-    setState(() {
-      _aiResult = {'passed': passed, 'reasons': reasons};
-      _aiVerifying = false;
-    });
-  }
-
-  void _toggleOfferStatus(int index) {
-    setState(() {
-      if (_offers[index]['status'] == 'active') {
-        _offers[index]['status'] = 'paused';
-      } else {
-        _offers[index]['status'] = 'active';
-      }
-    });
-  }
-
-  void _createOffer() {
-    if (_aiResult?['passed'] != true) return;
-
-    setState(() {
-      _showCreateOffer = false;
-      _offerImagePreview = null;
-      _aiResult = null;
-      _offerDescription = '';
-      _originalPrice = '';
-      _discountedPrice = '';
-      _quantity = '';
-      _pickupTime = '';
-      _visibility = 'identified';
-      _deliveryAvailable = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('✅ Offer published successfully!'), backgroundColor: Color(0xFF1F9D7A)),
+  /// Pick a photo from camera or gallery using ImagePicker.
+  Future<void> _pickOfferImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 85,
     );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final base64Str = base64Encode(bytes);
+
+    setState(() {
+      _offerImagePreview = picked.path;
+      _offerImageBase64 = base64Str;  // Send plain base64, not data URL
+    });
+  }
+
+
+
+  /// Fetch existing offers from the backend.
+  Future<void> _fetchOffers() async {
+    setState(() => _offersLoading = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) {
+        return;
+      }
+
+      final response = await ApiService.getList(
+        'offers/my',
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      if (mounted) {
+        setState(() {
+          _offers = List<Map<String, dynamic>>.from(response);
+          _offersLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _offersLoading = false);
+    }
+  }
+
+  /// Toggle offer status between ACTIVE and PAUSED via backend.
+  Future<void> _toggleOfferStatus(String offerId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+      await ApiService.patch('offers/$offerId/status', {}, headers: {'Authorization': 'Bearer $jwt'});
+      _fetchOffers();
+    } catch (e) {
+      debugPrint('Toggle status error: $e');
+    }
+  }
+
+  Future<void> _createOffer() async {
+    if (_offerImageBase64 == null) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+
+      final response = await ApiService.post(
+        'offers',
+        {
+          'photoUrl': _offerImageBase64!,
+          'description': _offerDescription,
+          'originalPrice': double.tryParse(_originalPrice) ?? 0,
+          'discountedPrice': double.tryParse(_discountedPrice) ?? 0,
+          'quantity': int.tryParse(_quantity) ?? 1,
+          'pickupTime': _pickupTime,
+          'visibility': _visibility.toUpperCase(),
+          'deliveryAvailable': _deliveryAvailable,
+        },
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      setState(() {
+        _showCreateOffer = false;
+        _offerImagePreview = null;
+        _offerImageBase64 = null;
+        _aiResult = null;
+        _offerDescription = '';
+        _originalPrice = '';
+        _discountedPrice = '';
+        _quantity = '';
+        _pickupTime = '';
+        _visibility = 'identified';
+        _deliveryAvailable = false;
+      });
+
+      // Refresh offers list
+      _fetchOffers();
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Offer published successfully!'), backgroundColor: Color(0xFF1F9D7A)),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error creating offer: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to publish offer: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Delete an offer via the backend.
+  Future<void> _deleteOffer(String offerId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+
+      await ApiService.delete(
+        'offers/$offerId',
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      _fetchOffers();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Offer deleted.'), backgroundColor: Color(0xFF1F9D7A)),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error deleting offer: $e');
+    }
   }
 
   Widget _buildStatCard(String title, String value, IconData icon, Color iconColor) {
@@ -206,11 +431,24 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       children: [
         const Text('Your Offers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
         const SizedBox(height: 12),
-        if (_offers.isEmpty)
+        if (_offersLoading)
+          const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Color(0xFF1F9D7A))))
+        else if (_offers.isEmpty)
           Container(
             height: 200,
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFF3F4F6))),
-            child: const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.inventory_2_outlined, size: 40, color: Color(0xFF9CA3AF)), SizedBox(height: 8), Text('No offers yet', style: TextStyle(color: Color(0xFF9CA3AF)))])),
+            child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.inventory_2_outlined, size: 40, color: Color(0xFF9CA3AF)),
+              const SizedBox(height: 8),
+              const Text('No offers yet', style: TextStyle(color: Color(0xFF9CA3AF))),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: _showCreateOfferDialog,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Create your first offer'),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF1F9D7A)),
+              ),
+            ])),
           )
         else
           ListView.builder(
@@ -219,50 +457,92 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
             itemCount: _offers.length,
             itemBuilder: (context, index) {
               final offer = _offers[index];
+              final status = (offer['status'] ?? 'ACTIVE').toString().toUpperCase();
+              final visibility = (offer['visibility'] ?? 'IDENTIFIED').toString().toUpperCase();
+              final discount = offer['originalPrice'] != null && offer['originalPrice'] > 0
+                  ? ((offer['originalPrice'] - offer['discountedPrice']) / offer['originalPrice'] * 100).round()
+                  : 0;
+
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFF3F4F6))),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFF3F4F6)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))]),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      height: 120,
-                      decoration: const BoxDecoration(color: Color(0xFFEFEFEF), borderRadius: BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10))),
-                      child: const Center(child: Icon(Icons.fastfood, size: 40, color: Color(0xFF9CA3AF))),
+                    // Image with badges
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
+                          child: offer['photoUrl'] != null
+                              ? Image.memory(
+                                  base64Decode(
+                                    offer['photoUrl'].toString().startsWith('data:')
+                                        ? offer['photoUrl'].toString().split(',').last
+                                        : offer['photoUrl'].toString(),
+                                  ),
+                                  height: 150,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(height: 150, decoration: const BoxDecoration(color: Color(0xFFEFEFEF)), child: const Center(child: Icon(Icons.fastfood, size: 40, color: Color(0xFF9CA3AF)))),
+                        ),
+                        // Visibility badge
+                        Positioned(
+                          top: 10, left: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: visibility == 'IDENTIFIED' ? const Color(0xFF1F9D7A) : const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(12)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(visibility == 'IDENTIFIED' ? Icons.visibility : Icons.visibility_off, size: 12, color: visibility == 'IDENTIFIED' ? Colors.white : const Color(0xFF6B7280)),
+                              const SizedBox(width: 4),
+                              Text(visibility == 'IDENTIFIED' ? 'Identified' : 'Anonymous', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: visibility == 'IDENTIFIED' ? Colors.white : const Color(0xFF6B7280))),
+                            ]),
+                          ),
+                        ),
+                        // Discount badge
+                        Positioned(
+                          top: 10, right: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: const Color(0xFFFF6B35), borderRadius: BorderRadius.circular(12)),
+                            child: Text('-$discount%', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                        // Status badge
+                        Positioned(
+                          bottom: 10, right: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: status == 'ACTIVE' ? const Color(0xFF10B981) : (status == 'SOLD_OUT' ? const Color(0xFFE5E7EB) : const Color(0xFFFFA500)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              status == 'ACTIVE' ? 'Active' : (status == 'SOLD_OUT' ? 'Sold Out' : 'Paused'),
+                              style: TextStyle(color: status == 'ACTIVE' ? Colors.white : const Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(child: Text(offer['description'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14))),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: offer['status'] == 'active' ? const Color(0xFF10B981) : (offer['status'] == 'sold_out' ? const Color(0xFFE5E7EB) : const Color(0xFFFFA500)),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  offer['status'] == 'active' ? 'Active' : (offer['status'] == 'sold_out' ? 'Sold Out' : 'Paused'),
-                                  style: TextStyle(color: offer['status'] == 'active' ? Colors.white : const Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                            ],
-                          ),
+                          Text(offer['description'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 8),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               RichText(
                                 text: TextSpan(children: [
-                                  TextSpan(text: '€${offer['discountedPrice'].toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF1F9D7A), fontWeight: FontWeight.w800, fontSize: 16)),
-                                  TextSpan(text: ' €${offer['originalPrice'].toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF9CA3AF), decoration: TextDecoration.lineThrough, fontSize: 12)),
+                                  TextSpan(text: '€${(offer['discountedPrice'] ?? 0).toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF1F9D7A), fontWeight: FontWeight.w800, fontSize: 16)),
+                                  TextSpan(text: ' €${(offer['originalPrice'] ?? 0).toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF9CA3AF), decoration: TextDecoration.lineThrough, fontSize: 12)),
                                 ]),
                               ),
-                              Text('${offer['quantity']} left', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                              Text('${offer['quantity'] ?? 0} left', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -270,15 +550,11 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             children: [
                               const Icon(Icons.access_time, size: 14, color: Color(0xFF6B7280)),
                               const SizedBox(width: 4),
-                              Text(offer['pickupTime'], style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(offer['deliveryAvailable'] ? Icons.local_shipping : Icons.store, size: 14, color: offer['deliveryAvailable'] ? const Color(0xFF10B981) : const Color(0xFF6B7280)),
+                              Text(offer['pickupTime'] ?? '', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                              const Spacer(),
+                              Icon(offer['deliveryAvailable'] == true ? Icons.local_shipping : Icons.store, size: 14, color: offer['deliveryAvailable'] == true ? const Color(0xFF10B981) : const Color(0xFF6B7280)),
                               const SizedBox(width: 4),
-                              Text(offer['deliveryAvailable'] ? 'Delivery available' : 'Pickup only', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                              Text(offer['deliveryAvailable'] == true ? 'Delivery' : 'Pickup only', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -286,9 +562,25 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             children: [
                               Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.edit, size: 14), label: const Text('Edit'), style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8), foregroundColor: const Color(0xFF1F9D7A), side: const BorderSide(color: Color(0xFF1F9D7A))))),
                               const SizedBox(width: 8),
-                              OutlinedButton(onPressed: () => _toggleOfferStatus(index), child: Icon(offer['status'] == 'active' ? Icons.visibility_off : Icons.visibility, size: 14), style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), foregroundColor: const Color(0xFF1F9D7A), side: const BorderSide(color: Color(0xFF1F9D7A)))),
+                              OutlinedButton(
+                                onPressed: () async {
+                                  final prefs = await SharedPreferences.getInstance();
+                                  final jwt = prefs.getString('jwt');
+                                  if (jwt == null) return;
+                                  try {
+                                    await ApiService.patch('offers/${offer['id']}/visibility', {}, headers: {'Authorization': 'Bearer $jwt'});
+                                    _fetchOffers();
+                                  } catch (e) { debugPrint('Toggle visibility error: $e'); }
+                                },
+                                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), foregroundColor: const Color(0xFF1F9D7A), side: const BorderSide(color: Color(0xFF1F9D7A))),
+                                child: Icon(visibility == 'IDENTIFIED' ? Icons.visibility_off : Icons.visibility, size: 14),
+                              ),
                               const SizedBox(width: 8),
-                              OutlinedButton(onPressed: () {}, child: const Icon(Icons.delete, size: 14, color: Colors.red), style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), foregroundColor: Colors.red, side: const BorderSide(color: Colors.red))),
+                              OutlinedButton(
+                                onPressed: () => _deleteOffer(offer['id']),
+                                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
+                                child: const Icon(Icons.delete, size: 14, color: Colors.red),
+                              ),
                             ],
                           ),
                         ],
@@ -447,7 +739,18 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Restaurant Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Restaurant Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
+            ElevatedButton.icon(
+              onPressed: _showEditProfileDialog,
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('Edit'),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(12),
@@ -464,6 +767,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
               _buildInfoField('Phone', _restaurantInfo['phone']),
               const SizedBox(height: 8),
               _buildInfoField('Address', _restaurantInfo['address']),
+              const SizedBox(height: 8),
+              _buildInfoField('City', _restaurantInfo['city']),
             ],
           ),
         ),
@@ -543,7 +848,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('FiftyFood Partner', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
+        title: null, // Remove the 'FiftyFood Partner' header
         centerTitle: false,
         actions: [
           Padding(
@@ -675,45 +980,235 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     return Drawer(
       backgroundColor: Colors.white,
       child: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Column(
-              children: [
-                Center(
-                  child: Image.asset('assets/images/logo.png', width: 120, height: 80, fit: BoxFit.contain,
-                    errorBuilder: (context, error, stack) => Container(width: 120, height: 80, decoration: BoxDecoration(color: const Color(0xFF1F9D7A), borderRadius: BorderRadius.circular(12)), child: const Center(child: Icon(Icons.spa, color: Colors.white, size: 40))),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Logo + Restaurant Portal
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Image.asset(
+                              'assets/images/logo.png',
+                              height: 120,
+                              width: 120,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1F9D7A),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(Icons.eco, color: Colors.white, size: 60),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Restaurant Portal',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+
+                      // My Offers - Active tab styling
+                      _buildDrawerItem(
+                        icon: Icons.inventory_2,
+                        label: 'My Offers',
+                        index: 0,
+                      ),
+                      const SizedBox(height: 4),
+
+                      // Orders with badge
+                      _buildDrawerItem(
+                        icon: Icons.grid_view_rounded,
+                        label: 'Orders',
+                        index: 1,
+                        badgeCount: _orders.length,
+                      ),
+                      const SizedBox(height: 4),
+
+                      // Statistics
+                      _buildDrawerItem(
+                        icon: Icons.bar_chart_rounded,
+                        label: 'Statistics',
+                        index: 2,
+                      ),
+                      const SizedBox(height: 4),
+
+                      // Profile
+                      _buildDrawerItem(
+                        icon: Icons.person_outline,
+                        label: 'Profile',
+                        index: 3,
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Celebration Mode card
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context);
+                          setState(() => _showModeFete = true);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF9),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFD1FAE5)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD1FAE5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.eco, color: Color(0xFF1F9D7A), size: 18),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: const [
+                                    Text(
+                                      'Celebration Mode',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                        color: Color(0xFF1A1A1A),
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'Click here to temporarily activate Celebration Mode to publish special offers during events',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF6B7280),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 24),
-                Material(color: Colors.transparent, child: Container(decoration: BoxDecoration(color: _activeTab == 0 ? const Color(0xFF1F9D7A) : Colors.transparent, borderRadius: BorderRadius.circular(8)), child: ListTile(leading: const Icon(Icons.inventory_2, color: Colors.white), title: const Text('My Offers', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)), onTap: () { setState(() => _activeTab = 0); Navigator.pop(context); }))),
-                const SizedBox(height: 12),
-                Container(decoration: BoxDecoration(color: _activeTab == 1 ? const Color(0xFF1F9D7A).withOpacity(0.1) : Colors.transparent, borderRadius: BorderRadius.circular(8)), child: ListTile(leading: const Icon(Icons.widgets, color: Color(0xFF9CA3AF)), title: const Text('Orders', style: TextStyle(color: Color(0xFF6B7280))), trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: const Color(0xFFFF7A59), borderRadius: BorderRadius.circular(12)), child: Text('${_orders.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12))), onTap: () { setState(() => _activeTab = 1); Navigator.pop(context); })),
-                Container(decoration: BoxDecoration(color: _activeTab == 2 ? const Color(0xFF1F9D7A).withOpacity(0.1) : Colors.transparent, borderRadius: BorderRadius.circular(8)), child: ListTile(leading: const Icon(Icons.bar_chart, color: Color(0xFF9CA3AF)), title: const Text('Statistics', style: TextStyle(color: Color(0xFF6B7280))), onTap: () { setState(() => _activeTab = 2); Navigator.pop(context); })),
-                Container(decoration: BoxDecoration(color: _activeTab == 3 ? const Color(0xFF1F9D7A).withOpacity(0.1) : Colors.transparent, borderRadius: BorderRadius.circular(8)), child: ListTile(leading: const Icon(Icons.person, color: Color(0xFF9CA3AF)), title: const Text('Profile', style: TextStyle(color: Color(0xFF6B7280))), onTap: () { setState(() => _activeTab = 3); Navigator.pop(context); })),
-                const SizedBox(height: 18),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: const Color(0xFFE0F2F1), borderRadius: BorderRadius.circular(10)),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [const Icon(Icons.celebration, color: Color(0xFF1F9D7A), size: 18), const SizedBox(width: 8), Expanded(child: const Text('Mode Fête', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1F9D7A))))]),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () { Navigator.pop(context); setState(() => _showModeFete = true); },
-                        icon: const Icon(Icons.celebration, size: 14),
-                        label: const Text('Déclarer'),
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 8)),
-                      ),
-                    ),
-                  ]),
-                ),
-                const SizedBox(height: 24),
-                ListTile(leading: const Icon(Icons.settings, color: Color(0xFF6B7280)), title: const Text('Settings')),
-                ListTile(leading: const Icon(Icons.logout, color: Color(0xFFEF4444)), title: const Text('Sign Out', style: TextStyle(color: Color(0xFFEF4444)))),
-              ],
+              ),
             ),
+
+            // Bottom items: Settings + Sign Out
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  const Divider(color: Color(0xFFF3F4F6)),
+                  ListTile(
+                    leading: const Icon(Icons.settings_outlined, color: Color(0xFF6B7280), size: 22),
+                    title: const Text('Settings', style: TextStyle(fontSize: 14, color: Color(0xFF374151))),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {},
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Color(0xFFEF4444), size: 22),
+                    title: const Text('Sign Out', style: TextStyle(fontSize: 14, color: Color(0xFFEF4444))),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {},
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String label,
+    required int index,
+    int badgeCount = 0,
+  }) {
+    final bool isActive = _activeTab == index;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          setState(() => _activeTab = index);
+          Navigator.pop(context);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF1F9D7A) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: isActive ? Colors.white : const Color(0xFF9CA3AF),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isActive ? Colors.white : const Color(0xFF6B7280),
+                  ),
+                ),
+              ),
+              if (badgeCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$badgeCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -721,197 +1216,238 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   }
 
   void _showCreateOfferDialog() {
+    // Reset form state
+    _offerImagePreview = null;
+    _offerImageBase64 = null;
+    // _photoTakenAt removed: no EXIF/photo date logic
+    _offerDescription = '';
+    _originalPrice = '';
+    _discountedPrice = '';
+    _quantity = '';
+    _pickupTime = '';
+    _visibility = 'identified';
+    _deliveryAvailable = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        builder: (context, controller) => Container(
-          color: Colors.white,
-          child: SingleChildScrollView(
-            controller: controller,
-            child: Padding(
-              padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Create New Offer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 2),
-                  const Text('List your surplus food and help reduce waste', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                  const SizedBox(height: 16),
-
-                  // Image Upload
-                  const Text('Food Photo (required)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  const SizedBox(height: 8),
-                  if (_offerImagePreview == null)
-                    GestureDetector(
-                      onTap: () {},
-                      child: Container(
-                        height: 130,
-                        decoration: BoxDecoration(border: Border.all(color: const Color(0xFF9CA3AF), style: BorderStyle.none), borderRadius: BorderRadius.circular(10), color: const Color(0xFFF3F4F6)),
-                        child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.camera_alt, size: 32, color: Color(0xFF9CA3AF)), SizedBox(height: 8), Text('Upload Food Photo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)), SizedBox(height: 2), Text('Take a fresh photo or select from gallery', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))]),
-                      ),
-                    )
-                  else
-                    Column(
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.9,
+            maxChildSize: 0.95,
+            builder: (context, controller) {
+              return Container(
+                color: Colors.white,
+                child: SingleChildScrollView(
+                  controller: controller,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ClipRRect(borderRadius: BorderRadius.circular(10), child: Container(height: 150, width: double.infinity, color: const Color(0xFFE5E7EB), child: Stack(alignment: Alignment.topRight, children: [Container(color: const Color(0xFFE5E7EB), height: 150, width: double.infinity), Padding(padding: const EdgeInsets.all(8), child: IconButton(onPressed: () => setState(() { _offerImagePreview = null; _aiResult = null; }), icon: const Icon(Icons.close), style: IconButton.styleFrom(backgroundColor: Colors.white), iconSize: 18))]))),
+                        const Text('Create New Offer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 2),
+                        const Text('List your surplus food and help reduce waste', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                        const SizedBox(height: 16),
+                        // Image Upload
+                        const Text('Food Photo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const Text('Required — must be taken today', style: TextStyle(fontSize: 11, color: Color(0xFFEF4444))),
                         const SizedBox(height: 8),
-                        if (!_aiVerifying && _aiResult == null)
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: _simulateAiVerification,
-                              icon: const Icon(Icons.shield_outlined, size: 16),
-                              label: const Text('Verify Photo with AI'),
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 10)),
-                            ),
-                          )
-                        else if (_aiVerifying)
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(10)),
-                            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('AI Verification in progress...', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12)), Text('Checking metadata, quality, and food content', style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)))]))]),
-                          )
-                        else if (_aiResult != null)
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: _aiResult!['passed'] ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(10), border: Border.all(color: _aiResult!['passed'] ? const Color(0xFF10B981) : const Color(0xFFEF4444))),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(_aiResult!['passed'] ? Icons.check_circle : Icons.cancel, size: 18, color: _aiResult!['passed'] ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
-                                    const SizedBox(width: 8),
-                                    Text(_aiResult!['passed'] ? 'Verification Passed' : 'Verification Failed', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: _aiResult!['passed'] ? const Color(0xFF10B981) : const Color(0xFFEF4444))),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                ...(_aiResult!['reasons'] as List).map((r) => Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(r, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))))).toList(),
-                              ],
+                        if (_offerImagePreview == null)
+                          GestureDetector(
+                            onTap: () async {
+                              try {
+                                final picker = ImagePicker();
+                                final picked = await picker.pickImage(
+                                  source: ImageSource.gallery,
+                                  maxWidth: 1200,
+                                  maxHeight: 1200,
+                                  imageQuality: 85,
+                                );
+                                if (picked == null) return;
+                                final bytes = await File(picked.path).readAsBytes();
+                                final base64Str = base64Encode(bytes);
+                                setSheetState(() {
+                                  _offerImagePreview = picked.path;
+                                  _offerImageBase64 = base64Str;
+                                });
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Image picker error: $e'),
+                                      backgroundColor: Colors.red,
+                                      duration: const Duration(seconds: 5),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: Container(
+                              height: 200,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F4F6),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFF9CA3AF)),
+                              ),
+                              child: const Center(
+                                child: Icon(Icons.add_a_photo, size: 48, color: Color(0xFF9CA3AF)),
+                              ),
                             ),
                           ),
-                      ],
-                    ),
-                  const SizedBox(height: 16),
-
-                  // Form Fields
-                  const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  TextField(onChanged: (v) => _offerDescription = v, decoration: InputDecoration(hintText: 'Describe your offer...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)))),
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        if (_offerImagePreview != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.file(
+                              File(_offerImagePreview!),
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
+                        // Form Fields
+                        const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        TextField(onChanged: (v) => _offerDescription = v, decoration: InputDecoration(hintText: 'e.g. Surprise pasta bag, Chef\'s selection...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)))),
+                        const SizedBox(height: 12),
+                        Row(
                           children: [
-                            const Text('Original Price (€)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            const SizedBox(height: 6),
-                            TextField(onChanged: (v) => _originalPrice = v, decoration: InputDecoration(hintText: '18.50', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))), keyboardType: TextInputType.number),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Discounted Price (€)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            const SizedBox(height: 6),
-                            TextField(onChanged: (v) => _discountedPrice = v, decoration: InputDecoration(hintText: '6.90', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))), keyboardType: TextInputType.number),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Quantity', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            const SizedBox(height: 6),
-                            TextField(onChanged: (v) => _quantity = v, decoration: InputDecoration(hintText: '5', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))), keyboardType: TextInputType.number),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Pickup Time', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            const SizedBox(height: 6),
-                            DropdownButton<String>(
-                              value: _pickupTime.isEmpty ? null : _pickupTime,
-                              isExpanded: true,
-                              underline: Container(),
-                              items: ['18-19', '19-20', '20-21', '21-22'].map((v) => DropdownMenuItem(value: v, child: Text(v == '18-19' ? '18:00 - 19:00' : (v == '19-20' ? '19:00 - 20:00' : (v == '20-21' ? '20:00 - 21:00' : '21:00 - 22:00')), style: const TextStyle(fontSize: 12)))).toList(),
-                              onChanged: (v) => setState(() => _pickupTime = v ?? ''),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Original Price (€)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 6),
+                                  TextField(onChanged: (v) => _originalPrice = v, decoration: InputDecoration(hintText: '18.50', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))), keyboardType: TextInputType.number),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Discounted Price (€)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 6),
+                                  TextField(onChanged: (v) => _discountedPrice = v, decoration: InputDecoration(hintText: '6.90', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))), keyboardType: TextInputType.number),
+                                ],
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Visibility
-                  const Text('Offer Visibility', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  const SizedBox(height: 8),
-                  _buildVisibilityOption('identified', 'Identified Restaurant', 'Your restaurant name and branding will be visible'),
-                  const SizedBox(height: 8),
-                  _buildVisibilityOption('anonymous', 'Anonymous', 'Only price, quantity, pickup time and distance shown'),
-                  const SizedBox(height: 16),
-
-                  // Delivery Toggle
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(children: [const Icon(Icons.local_shipping, size: 16, color: Color(0xFF9CA3AF)), const SizedBox(width: 8), const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Enable Delivery', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)), Text('Allow customers to order delivery', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))])]),
-                        Switch(value: _deliveryAvailable, onChanged: (v) => setState(() => _deliveryAvailable = v), activeColor: const Color(0xFF1F9D7A)),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Quantity', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 6),
+                                  TextField(onChanged: (v) => _quantity = v, decoration: InputDecoration(hintText: '5', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))), keyboardType: TextInputType.number),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Pickup Time', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 6),
+                                  DropdownButtonFormField<String>(
+                                    value: _pickupTime.isEmpty ? null : _pickupTime,
+                                    isExpanded: true,
+                                    decoration: InputDecoration(
+                                      hintText: 'Select time',
+                                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF9CA3AF))),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    ),
+                                    items: [
+                                      '11:00 - 12:00', '12:00 - 13:00', '13:00 - 14:00',
+                                      '17:00 - 18:00', '18:00 - 19:00', '19:00 - 20:00', '20:00 - 21:00',
+                                    ].map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 12)))).toList(),
+                                    onChanged: (v) => setSheetState(() => _pickupTime = v ?? ''),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // Visibility
+                        const Text('Offer Visibility', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 8),
+                        _buildVisibilityOptionSheet('identified', 'Identified Restaurant', 'Your restaurant name and branding will be visible', setSheetState),
+                        const SizedBox(height: 8),
+                        _buildVisibilityOptionSheet('anonymous', 'Anonymous', 'Only price, quantity, pickup time and distance shown', setSheetState),
+                        const SizedBox(height: 16),
+                        // Delivery Toggle
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Row(children: [Icon(Icons.local_shipping, size: 16, color: Color(0xFF9CA3AF)), SizedBox(width: 8), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Enable Delivery', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)), Text('Allow customers to order delivery', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))])]),
+                              Switch(value: _deliveryAvailable, onChanged: (v) => setSheetState(() => _deliveryAvailable = v), activeColor: const Color(0xFF1F9D7A)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Price validation hint
+                        if (_originalPrice.isNotEmpty && _discountedPrice.isNotEmpty)
+                          Builder(builder: (_) {
+                            final orig = double.tryParse(_originalPrice) ?? 0;
+                            final disc = double.tryParse(_discountedPrice) ?? 0;
+                            if (orig > 0 && disc > 0 && disc < orig) {
+                              final pct = ((orig - disc) / orig * 100).round();
+                              if (pct < 10) {
+                                return Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('⚠️ Discount must be at least 10%', style: TextStyle(fontSize: 11, color: Colors.orange[700])));
+                              } else if (pct > 90) {
+                                return Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('⚠️ Discount seems unrealistic (>90%)', style: TextStyle(fontSize: 11, color: Colors.orange[700])));
+                              }
+                              return Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('✅ $pct% discount applied', style: const TextStyle(fontSize: 11, color: Color(0xFF10B981))));
+                            }
+                            return const SizedBox.shrink();
+                          }),
+                        // Buttons
+                        Row(
+                          children: [
+                            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1F9D7A), padding: const EdgeInsets.symmetric(vertical: 10)))),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _offerImageBase64 != null ? _createOffer : null,
+                                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 10), disabledBackgroundColor: const Color(0xFF9CA3AF)),
+                                child: const Text('Publish Offer'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Buttons
-                  Row(
-                    children: [
-                      Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1F9D7A), padding: const EdgeInsets.symmetric(vertical: 10)))),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _aiResult?['passed'] == true ? _createOffer : null,
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 10), disabledBackgroundColor: const Color(0xFF9CA3AF)),
-                          child: Text(_aiResult?['passed'] == true ? 'Publish Offer' : 'Verify photo first'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                ],
-              ),
-            ),
-          ),
-        ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
 
-  Widget _buildVisibilityOption(String value, String title, String subtitle) {
+  Widget _buildVisibilityOptionSheet(String value, String title, String subtitle, void Function(void Function()) setSheetState) {
     return GestureDetector(
-      onTap: () => setState(() => _visibility = value),
+      onTap: () => setSheetState(() => _visibility = value),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -921,9 +1457,23 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         ),
         child: Row(
           children: [
-            Radio<String>(value: value, groupValue: _visibility, onChanged: (v) => setState(() => _visibility = v!), activeColor: const Color(0xFF1F9D7A)),
+            Radio<String>(
+              value: value,
+              groupValue: _visibility,
+              onChanged: (v) => setSheetState(() => _visibility = v!),
+              activeColor: const Color(0xFF1F9D7A),
+            ),
             const SizedBox(width: 8),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)), SizedBox(height: 2, child: Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))))]))
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                ],
+              ),
+            ),
           ],
         ),
       ),

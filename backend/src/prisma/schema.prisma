@@ -66,6 +66,8 @@ model User {
   clientOrders   Order[]      @relation("ClientOrders")
   // Relations for Order (restaurant)
   restaurantOrders Order[]    @relation("RestaurantOrders")
+  // Relations for Offers (restaurant)
+  restaurantOffers Offer[]    @relation("RestaurantOffers")
   
   accountHistory AccountHistory[]  
 
@@ -244,4 +246,40 @@ enum OrderStatus {
   PICKED_UP
   DELIVERED
   CANCELLED
+}
+
+enum OfferVisibility {
+  IDENTIFIED   // Restaurant name visible
+  ANONYMOUS    // Restaurant name hidden
+}
+
+enum OfferStatus {
+  ACTIVE
+  PAUSED
+  SOLD_OUT
+  EXPIRED
+}
+
+model Offer {
+  id                  String            @id @default(cuid())
+  restaurantId        String
+  restaurant          User              @relation("RestaurantOffers", fields: [restaurantId], references: [id], onDelete: Restrict)
+  
+  description         String
+  originalPrice       Float
+  discountedPrice     Float
+  quantity            Int
+  pickupTime          String
+  photoUrl            String
+  
+  visibility          OfferVisibility   @default(IDENTIFIED)
+  deliveryAvailable   Boolean           @default(false)
+  status              OfferStatus       @default(ACTIVE)
+  
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  
+  @@index([restaurantId])
+  @@index([status])
+  @@index([createdAt])
 }

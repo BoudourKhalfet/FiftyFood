@@ -49,7 +49,6 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
           'password': _passwordController.text.trim(),
           'role': 'RESTAURANT',
         });
-        print('RESTAURANT REGISTER RESPONSE: $response');
 
         final onboardingToken = response['onboardingToken'];
         final message = response['message']?.toString().toLowerCase() ?? '';

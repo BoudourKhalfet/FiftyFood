@@ -202,14 +202,12 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
         },
         headers: {'Authorization': 'Bearer $jwt'},
       );
-      print("Legal PATCH response: $patchResponse");
 
       final termsResp = await ApiService.post(
         'restaurant/onboarding/accept-terms',
         {'name': _termsNameController.text.trim()},
         headers: {'Authorization': 'Bearer $jwt'},
       );
-      print("Accept Terms response: $termsResp");
 
       Navigator.of(context).pushNamed('/partenaire/signup4');
     } catch (e) {

@@ -70,7 +70,7 @@ class AvailableOffersPage extends StatelessWidget {
                             spacing: 8,
                             runSpacing: 6,
                             children: [
-                              Flexible(
+                              Container(
                                 child: Text(
                                   'Showing offers near Paris, France',
                                   style: TextStyle(
