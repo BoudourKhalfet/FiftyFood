@@ -6,6 +6,20 @@ import { RestaurantPayoutDto } from './dto/restaurant-payout.dto';
 import { RestaurantUploadType } from './uploads/restaurants-upload.constants';
 import { RestaurantProfile } from '@prisma/client';
 
+export type PublicReview = {
+  user: string;
+  rating: number;
+  comment: string;
+  date: Date;
+};
+
+export type RawReviewResult = {
+  reviewer: { email: string };
+  rating: number;
+  comment: string;
+  createdAt: Date;
+};
+
 @Injectable()
 export class RestaurantsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -221,5 +235,47 @@ export class RestaurantsService {
       where: { userId },
       data: { submittedAt: new Date() },
     });
+  }
+
+  async findRestaurantById(id: string) {
+    console.log('findRestaurantById INPUT:', id);
+    let profile = await this.prisma.restaurantProfile.findUnique({
+      where: { id },
+    });
+    if (profile) {
+      console.log('[Profile found by id]', id, profile);
+    }
+    if (!profile) {
+      profile = await this.prisma.restaurantProfile.findUnique({
+        where: { userId: id },
+      });
+      if (profile) {
+        console.log('[Profile found by userId]', id, profile);
+      } else {
+        console.log('[No profile found for id or userId]', id);
+      }
+    }
+    return profile;
+  }
+
+  async findReviewsForRestaurant(
+    restaurantId: string,
+  ): Promise<PublicReview[]> {
+    const reviews = (await this.prisma.review.findMany({
+      where: { restaurantId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        reviewer: { select: { email: true } },
+        rating: true,
+        comment: true,
+        createdAt: true,
+      },
+    })) as RawReviewResult[];
+    return reviews.map((r) => ({
+      user: r.reviewer.email,
+      rating: r.rating,
+      comment: r.comment,
+      date: r.createdAt,
+    }));
   }
 }

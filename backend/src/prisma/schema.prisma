@@ -66,10 +66,16 @@ model User {
   clientOrders   Order[]      @relation("ClientOrders")
   // Relations for Order (restaurant)
   restaurantOrders Order[]    @relation("RestaurantOrders")
+  // Relations for Offers (restaurant)
+  restaurantOffers Offer[]    @relation("RestaurantOffers")
   
   accountHistory AccountHistory[]  
 
   legalAgreements     LegalAgreement[]
+
+  reviewsGiven Review[]     @relation("Reviewer") 
+  restaurantReviews Review[] @relation("RestaurantReview") 
+  delivererReviews Review[] @relation("DelivererReview")
 
   // Role-specific profiles (1-1)
   clientProfile ClientProfile?
@@ -140,6 +146,8 @@ model RestaurantProfile {
   city                String?
   logoUrl            String?
   coverImageUrl       String?
+
+  avgRating     Float?   @default(0)
 
   // Step 3 - Legal
   legalEntityName                   String?
@@ -212,7 +220,9 @@ model LivreurProfile {
   vehicleType   String?    // "car", "bike", etc.
   zone          String?    // Delivery zone/city
   photoUrl      String?
-
+  
+  avgRating     Float?   @default(0)
+  
   // Legal documents
   cinOrPassportNumber String?
   licensePhotoUrl     String?
@@ -245,6 +255,8 @@ model Order {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
+  reviews Review[]
+
   // Add more as needed (livreurId, deliveryAddress, etc.)
 }
 
@@ -256,4 +268,63 @@ enum OrderStatus {
   PICKED_UP
   DELIVERED
   CANCELLED
+}
+
+enum OfferVisibility {
+  IDENTIFIED   // Restaurant name visible
+  ANONYMOUS    // Restaurant name hidden
+}
+
+enum OfferStatus {
+  ACTIVE
+  PAUSED
+  SOLD_OUT
+  EXPIRED
+}
+
+model Offer {
+  id                  String            @id @default(cuid())
+  restaurantId        String
+  restaurant          User              @relation("RestaurantOffers", fields: [restaurantId], references: [id], onDelete: Restrict)
+  
+  description         String
+  originalPrice       Float
+  discountedPrice     Float
+  quantity            Int
+  pickupTime          String
+  photoUrl            String
+  
+  visibility          OfferVisibility   @default(IDENTIFIED)
+  deliveryAvailable   Boolean           @default(false)
+  status              OfferStatus       @default(ACTIVE)
+  
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  
+  @@index([restaurantId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  orderId      String?  // <-- Nullable! Set if review is attached to a specific order, otherwise null
+  order        Order?   @relation(fields: [orderId], references: [id])
+
+  reviewerId   String
+  reviewer     User     @relation("Reviewer", fields: [reviewerId], references: [id])
+
+  restaurantId String?
+  restaurant   User?    @relation("RestaurantReview", fields: [restaurantId], references: [id])
+
+  delivererId  String?
+  deliverer    User?    @relation("DelivererReview", fields: [delivererId], references: [id])
+
+  rating       Int
+  comment      String
+  createdAt    DateTime @default(now())
+
+  @@index([orderId])
+  @@index([restaurantId])
+  @@index([delivererId])
 }

@@ -49,7 +49,6 @@ class _DelivererSignupStep1State extends State<DelivererSignupStep1> {
           'password': _passwordController.text.trim(),
           'role': 'LIVREUR',
         });
-        print('DELIVERER REGISTER RESPONSE: $response');
 
         // Handle onboardingToken logic for LIVREUR onboarding flow
         final onboardingToken = response['onboardingToken'];

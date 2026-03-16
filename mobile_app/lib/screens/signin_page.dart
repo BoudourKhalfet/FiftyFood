@@ -37,7 +37,6 @@ class _SignInPageState extends State<SignInPage> {
         'email': _emailController.text.trim(),
         'password': _passwordController.text.trim(),
       });
-      print("LOGIN RESPONSE: $response");
 
       if (response['code'] == 'EMAIL_NOT_VERIFIED') {
         setState(() {
@@ -117,9 +116,10 @@ class _SignInPageState extends State<SignInPage> {
           } else {
             Navigator.of(context).pushReplacementNamed('/client/signup2');
           }
-        } else if (role == 'restaurant') {
+        } else if (user != null &&
+            user['role']?.toLowerCase() == 'restaurant') {
           Navigator.of(context).pushReplacementNamed('/partenaire/dashboard');
-        } else if (role == 'deliverer') {
+        } else if (user != null && user['role']?.toLowerCase() == 'livreur') {
           Navigator.of(context).pushReplacementNamed('/deliverer/dashboard');
         }
       } else if (onboardingToken != null) {

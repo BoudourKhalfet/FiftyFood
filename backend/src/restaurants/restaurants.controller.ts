@@ -10,6 +10,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Get,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Role, RestaurantProfile } from '@prisma/client';
@@ -31,6 +32,8 @@ import {
   makeRestaurantUploadPublicUrl,
 } from './uploads/restaurants-upload.util';
 import { ensureDir } from './uploads/ensure-dir';
+import { Public } from '../auth/decorators/public.decorator';
+import { NotFoundException } from '@nestjs/common';
 
 type ReqWithUser = Request & { user: { sub: string; role: Role } };
 
@@ -166,5 +169,38 @@ export class RestaurantsController {
   submit(@Req() req: ReqWithUser) {
     this.ensureRestaurant(req);
     return this.restaurants.submit(req.user.sub);
+  }
+}
+
+@Public()
+@Controller('api/restaurants')
+export class PublicRestaurantsController {
+  constructor(private readonly restaurants: RestaurantsService) {}
+
+  // GET /api/restaurants/:id
+  @Get(':id')
+  async getRestaurantById(@Param('id') id: string) {
+    // Replace with your restaurant fetching logic!
+    // (For real project, select only public fields)
+    const profile = await this.restaurants.findRestaurantById(id);
+
+    if (!profile) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    // Fetch reviews!
+    const reviews = await this.restaurants.findReviewsForRestaurant(id);
+
+    // Adapt the returned structure for your frontend:
+    return {
+      id: profile.id,
+      restaurantName: profile.restaurantName,
+      avgRating: profile.avgRating,
+      address: profile.address,
+      phone: profile.phone,
+      coverUrl: profile.coverImageUrl,
+      reviews, // Already mapped to the correct type
+      reviewsCount: reviews.length,
+    };
   }
 }

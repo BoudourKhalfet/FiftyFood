@@ -25,7 +25,6 @@ import 'screens/forgot_password_page.dart';
 import 'screens/reset_password_page.dart';
 
 void main() {
-  print('CURRENT API BASE URL: $apiBaseUrl');
   runApp(const MyApp());
 }
 
@@ -44,7 +43,6 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/',
       onGenerateRoute: (settings) {
-        print('ROUTER: ${settings.name}');
         // Reset password (extract token from query for web, or arguments for mobile)
         if (settings.name != null &&
             settings.name!.startsWith('/reset-password')) {

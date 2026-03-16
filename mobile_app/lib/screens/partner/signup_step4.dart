@@ -146,7 +146,6 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
         'auth/me',
         headers: {'Authorization': 'Bearer $jwt'},
       );
-      print('Partner onboarding userResponse: $userResponse');
 
       if (userResponse['emailVerifiedAt'] == null) {
         Navigator.of(context).pushReplacementNamed('/verify_email_reminder');

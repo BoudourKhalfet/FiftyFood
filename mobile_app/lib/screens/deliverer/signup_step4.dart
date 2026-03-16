@@ -109,7 +109,6 @@ class _DelivererSignupStep4State extends State<DelivererSignupStep4> {
         'auth/me',
         headers: {'Authorization': 'Bearer $jwt'},
       );
-      print('Deliverer onboarding userResponse: $userResponse');
       if (userResponse['emailVerifiedAt'] == null) {
         Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
         return;
@@ -144,7 +143,6 @@ class _DelivererSignupStep4State extends State<DelivererSignupStep4> {
         'auth/me',
         headers: {'Authorization': 'Bearer $jwt'},
       );
-      print('Deliverer onboarding userResponse: $userResponse');
       if (userResponse['emailVerifiedAt'] == null) {
         Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
         return;

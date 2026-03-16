@@ -57,12 +57,8 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
     );
     if (result != null) {
       if (kIsWeb) {
-        print(
-          "Web picked: ${result.files.single.name}, ${result.files.single.bytes?.length ?? 0} bytes",
-        );
         onPicked(null, result.files.single.bytes, result.files.single.name);
       } else {
-        print("Mobile picked: ${result.files.single.path}");
         onPicked(result.files.single.path, null, result.files.single.name);
       }
     }

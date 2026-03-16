@@ -53,7 +53,6 @@ class _SignupStep1State extends State<SignupStep1> {
             'role': 'CLIENT', // or whatever your backend expects
           },
         );
-        print('REGISTER RESPONSE: $response');
 
         // Defensive: Only proceed if backend says user created
         // Check if server said to verify email
