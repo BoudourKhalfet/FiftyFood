@@ -344,9 +344,11 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                           offer['restaurant']?['restaurantProfile'];
                       final imgUrl = offer['photoUrl'] ?? "";
                       final desc = offer['description'] ?? "";
-                      final restName =
-                          offer['restaurant']?['restaurantProfile']?['restaurantName'] ??
-                          'Restaurant';
+                      final isAnonymous = offer['visibility'] == 'ANONYMOUS';
+                      final restName = isAnonymous
+                          ? 'Anonymous'
+                          : (offer['restaurant']?['restaurantProfile']?['restaurantName'] ??
+                                'Restaurant');
                       final rating = (restProfile?['avgRating'] ?? 4.5)
                           .toDouble();
                       final discounted =

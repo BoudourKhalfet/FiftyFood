@@ -245,6 +245,7 @@ model LivreurProfile {
 
 model Order {
   id           String      @id @default(uuid())
+  reference    String      @unique
   clientId     String
   client       User        @relation("ClientOrders", fields: [clientId], references: [id])
   restaurantId String
@@ -254,10 +255,27 @@ model Order {
   status       OrderStatus @default(PENDING)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+  collectionMethod  CollectionMethod?
+  deliveryAddress   String? // only if delivery selected
+  deliveryPhone     String? // client’s phone for delivery
+  deliveryFee       Float?  
+  paymentMethod     String?
+  paymentDetails    Json? 
 
   reviews Review[]
 
   // Add more as needed (livreurId, deliveryAddress, etc.)
+}
+
+enum CollectionMethod {
+  PICKUP
+  DELIVERY
+}
+
+enum PaymentMethod {
+  CARD
+  D17
+  CASH
 }
 
 // Example enum for order status
