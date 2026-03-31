@@ -5,5 +5,5 @@ class DelivererSignInPage extends StatelessWidget {
   const DelivererSignInPage({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) => const SignInPage(role: 'Deliverer');
+  Widget build(BuildContext context) => const SignInPage(role: 'LIVREUR');
 }

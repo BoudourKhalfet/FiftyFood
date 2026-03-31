@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'LocationConsentPage.dart' as client_consent;
+import '../../api/client_profile_service.dart';
 
 class SignupStep2 extends StatefulWidget {
   const SignupStep2({Key? key}) : super(key: key);
@@ -83,7 +85,7 @@ class _SignupStep2State extends State<SignupStep2> {
           setState(() => _error = "Not logged in. Please sign in again.");
           return;
         }
-        final response = await ApiService.patch(
+        await ApiService.patch(
           'users/me/complete-profile',
           {
             'fullName': _nameController.text.trim(),
@@ -94,7 +96,18 @@ class _SignupStep2State extends State<SignupStep2> {
           },
           headers: {'Authorization': 'Bearer $jwtToken'},
         );
-        Navigator.pushReplacementNamed(context, '/offers');
+
+        // fetch latest profile
+        final updatedProfile = await ProfileService.getProfile(jwtToken);
+        if (updatedProfile.locationConsentGiven != true) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => client_consent.LocationConsentPage(),
+            ),
+          );
+        } else {
+          Navigator.pushReplacementNamed(context, '/offers');
+        }
       } catch (e) {
         setState(() => _error = "Profile completion failed: $e");
       } finally {

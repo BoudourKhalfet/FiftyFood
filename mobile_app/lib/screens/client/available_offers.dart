@@ -6,7 +6,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 Uint8List? decodeImg(String imgUrl) {
-  // Remove data prefix if needed
   if (imgUrl.startsWith('data:image')) {
     final base64Data = imgUrl.split(',').last;
     return base64Decode(base64Data);
@@ -26,14 +25,33 @@ class AvailableOffersPage extends StatefulWidget {
 }
 
 class _AvailableOffersPageState extends State<AvailableOffersPage> {
+  final TextEditingController _searchController = TextEditingController();
+  final Map<String, Uint8List> _imageCache = {};
+  String _searchTerm = '';
+  List<dynamic> filteredOffers = [];
   List<dynamic> offers = [];
   bool isLoading = true;
   String? error;
+
+  void _updateFilteredOffers() {
+    setState(() {
+      _searchTerm = _searchController.text.trim().toLowerCase();
+      filteredOffers = offers.where((offer) {
+        final name =
+            (offer['restaurant']?['restaurantProfile']?['restaurantName'] ?? '')
+                .toString()
+                .toLowerCase();
+        final desc = (offer['description'] ?? '').toString().toLowerCase();
+        return name.contains(_searchTerm) || desc.contains(_searchTerm);
+      }).toList();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     fetchOffers();
+    _searchController.addListener(_updateFilteredOffers);
   }
 
   Future<void> fetchOffers() async {
@@ -45,6 +63,7 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
       final data = await ApiService.getList('offers');
       setState(() {
         offers = data;
+        filteredOffers = data;
         isLoading = false;
         error = null;
       });
@@ -52,39 +71,60 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
       setState(() {
         error = 'Failed to load offers. Try again.';
         offers = [];
+        filteredOffers = [];
         isLoading = false;
       });
     }
   }
 
   Widget buildOfferImage(String imgUrl) {
+    const height = 180.0;
+
     if (imgUrl.isEmpty) {
-      return Container(height: 180, color: Colors.grey[200]);
+      return Container(height: height, color: Colors.grey[200]);
     }
+
+    // NETWORK IMAGE
     if (imgUrl.startsWith('http')) {
       return Image.network(
         imgUrl,
-        height: 180,
+        height: height,
         width: double.infinity,
         fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(height: height, color: Colors.grey[200]);
+        },
+        errorBuilder: (_, __, ___) =>
+            Container(height: height, color: Colors.grey[200]),
       );
     }
-    try {
-      final bytes = decodeImg(imgUrl);
+
+    // BASE64 IMAGE
+    if (!_imageCache.containsKey(imgUrl)) {
+      final decoded = decodeImg(imgUrl);
+      if (decoded != null) {
+        _imageCache[imgUrl] = decoded;
+      }
+    }
+
+    final bytes = _imageCache[imgUrl];
+
+    if (bytes != null) {
       return Image.memory(
-        bytes ?? Uint8List(0),
-        height: 180,
+        bytes,
+        height: height,
         width: double.infinity,
         fit: BoxFit.cover,
+        gaplessPlayback: true,
       );
-    } catch (_) {
-      return Container(height: 180, color: Colors.grey[200]);
     }
+
+    return Container(height: height, color: Colors.grey[200]);
   }
 
   @override
   Widget build(BuildContext context) {
-    const bg = Colors.white;
     const textPrimary = Color(0xFF1A1A1A);
     const textSecondary = Color(0xFF6B7280);
     const border = Color(0xFFE5E7EB);
@@ -99,501 +139,444 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
     return MainScaffold(
       child: RefreshIndicator(
         onRefresh: fetchOffers,
-        child: SingleChildScrollView(
+        child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              22,
-              horizontalPadding,
-              24,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            22,
+            horizontalPadding,
+            24,
+          ),
+          children: [
+            // Title with Back Arrow
+            Row(
               children: [
-                Text(
-                  'Available Offers',
-                  style: TextStyle(
-                    color: textPrimary,
-                    fontSize: titleFontSize,
-                    fontFamily: 'Roboto',
-                    fontWeight: FontWeight.w700,
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: textPrimary, size: 28),
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.of(context).pop(),
+                  padding: EdgeInsets.only(right: 6),
+                  splashRadius: 23,
+                ),
+                SizedBox(width: 2), // optional spacing
+                Expanded(
+                  child: Text(
+                    'Available Offers',
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontSize: titleFontSize,
+                      fontFamily: 'Roboto',
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
+              ],
+            ),
+            const SizedBox(height: 8),
 
-                // Location indicator
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Wrap(
-                      direction: Axis.horizontal,
-                      alignment: WrapAlignment.spaceBetween,
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Showing offers near Paris, France',
-                            style: TextStyle(
-                              color: textSecondary,
-                              fontSize: isSmallScreen ? 12 : 14,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w400,
+            // Location indicator
+            // Uncomment and implement once you fetch the client location
+            // Row(
+            //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            //   children: [
+            //     Expanded(
+            //       child: Text(
+            //         locationString ?? 'Select your location',
+            //         overflow: TextOverflow.ellipsis,
+            //         maxLines: 1,
+            //         style: ...
+            //       ),
+            //     ),
+            //     TextButton(
+            //       onPressed: () { /* location picker */ },
+            //       child: Text('Change location'),
+            //     ),
+            //   ],
+            // ),
+            // const SizedBox(height: 16),
+            // Search and filter row
+            Builder(
+              builder: (context) {
+                return Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: searchHeight,
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search restaurants or dishes.',
+                            prefixIcon: Icon(
+                              Icons.search,
+                              size: 18,
+                              color: Color(0xFF9CA3AF),
                             ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {},
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 0),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: Text(
-                            'Change location',
-                            style: TextStyle(
-                              color: accent,
-                              fontSize: isSmallScreen ? 12 : 14,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Search and filter row
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            height: searchHeight,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
+                            border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: border, width: 2),
+                              borderSide: BorderSide(color: border, width: 2),
                             ),
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 10),
-                                const Icon(
-                                  Icons.search,
-                                  size: 18,
-                                  color: Color(0xFF9CA3AF),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Search restaurants or dishes.',
-                                    style: TextStyle(
-                                      color: const Color(0xFF757575),
-                                      fontSize: isSmallScreen ? 11 : 12,
-                                      fontFamily: 'Inter',
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                              ],
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 0,
                             ),
+                            isDense: true,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        InkWell(
-                          onTap: () {},
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      width: 37,
+                      height: searchHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: accent, width: 2),
+                      ),
+                      child: Icon(Icons.tune, size: 18, color: accent),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Count/offers status
+            if (isLoading)
+              Text(
+                'Loading offers...',
+                style: TextStyle(
+                  color: textSecondary,
+                  fontSize: isSmallScreen ? 13 : 14.8,
+                  fontFamily: 'Roboto',
+                  fontWeight: FontWeight.w400,
+                ),
+              )
+            else if (error != null)
+              Text(
+                error!,
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: isSmallScreen ? 13 : 14.8,
+                  fontFamily: 'Roboto',
+                  fontWeight: FontWeight.w400,
+                ),
+              )
+            else
+              Text(
+                '${filteredOffers.length} offer${filteredOffers.length == 1 ? '' : 's'} available',
+                style: TextStyle(
+                  color: textSecondary,
+                  fontSize: isSmallScreen ? 13 : 14.8,
+                  fontFamily: 'Roboto',
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+
+            const SizedBox(height: 16),
+
+            // Empty state or loading or offers list
+            if (isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20.0),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if ((filteredOffers.isEmpty && error == null))
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 18,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 12,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                  border: Border.all(color: Color(0xFFF3F4F6)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'No offers yet',
+                      style: TextStyle(
+                        color: textPrimary,
+                        fontSize: isSmallScreen ? 16 : 18,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Offers will appear here once restaurants publish new offers.',
+                      style: TextStyle(
+                        color: textSecondary,
+                        fontSize: isSmallScreen ? 12 : 14,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w400,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton(
+                      onPressed: fetchOffers,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: border),
+                        shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            width: 37,
-                            height: searchHeight.toInt().toDouble(),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: accent, width: 2),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.tune, size: 18, color: accent),
-                            ),
-                          ),
                         ),
-                      ],
+                      ),
+                      child: const Text(
+                        'Refresh',
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...filteredOffers.map((offer) {
+                final restProfile = offer['restaurant']?['restaurantProfile'];
+                final imgUrl = offer['photoUrl'] ?? "";
+                final desc = offer['description'] ?? "";
+                final isAnonymous = offer['visibility'] == 'ANONYMOUS';
+                final restName = isAnonymous
+                    ? 'Anonymous'
+                    : (offer['restaurant']?['restaurantProfile']?['restaurantName'] ??
+                          'Restaurant');
+                final rating = (restProfile?['avgRating'] ?? 4.5).toDouble();
+                final discounted =
+                    (offer['discountedPrice'] as num?)?.toDouble() ?? 0.0;
+                final original =
+                    (offer['originalPrice'] as num?)?.toDouble() ?? 0.0;
+                final qty = offer['quantity'] ?? 1;
+                final discountPct = (original > 0)
+                    ? ((original - discounted) / original * 100).round()
+                    : 0;
+                final pickupTime = offer['pickupTime'] ?? '';
+                final distance = "0.5 km";
+
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => OfferDetails(offer: offer),
+                      ),
                     );
                   },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Count/offers status
-                if (isLoading)
-                  Text(
-                    'Loading offers...',
-                    style: TextStyle(
-                      color: textSecondary,
-                      fontSize: isSmallScreen ? 13 : 14.8,
-                      fontFamily: 'Roboto',
-                      fontWeight: FontWeight.w400,
-                    ),
-                  )
-                else if (error != null)
-                  Text(
-                    error!,
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontSize: isSmallScreen ? 13 : 14.8,
-                      fontFamily: 'Roboto',
-                      fontWeight: FontWeight.w400,
-                    ),
-                  )
-                else
-                  Text(
-                    '${offers.length} offer${offers.length == 1 ? '' : 's'} available',
-                    style: TextStyle(
-                      color: textSecondary,
-                      fontSize: isSmallScreen ? 13 : 14.8,
-                      fontFamily: 'Roboto',
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                const SizedBox(height: 16),
-
-                // Offers list or empty state
-                if (isLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20.0),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else if ((offers.isEmpty && error == null))
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 18,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x14000000),
-                          blurRadius: 12,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                      border: Border.all(color: Color(0xFFF3F4F6)),
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 18),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'No offers yet',
-                          style: TextStyle(
-                            color: textPrimary,
-                            fontSize: isSmallScreen ? 16 : 18,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Offers will appear here once restaurants publish new offers.',
-                          style: TextStyle(
-                            color: textSecondary,
-                            fontSize: isSmallScreen ? 12 : 14,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w400,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        OutlinedButton(
-                          onPressed: fetchOffers,
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: border),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(20),
+                              ),
+                              child: buildOfferImage(imgUrl),
                             ),
-                          ),
-                          child: const Text(
-                            'Refresh',
-                            style: TextStyle(
-                              color: accent,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'Inter',
+                            if (discountPct > 0)
+                              Positioned(
+                                top: 12,
+                                left: 12,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '-$discountPct%',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black12,
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  '$qty left',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-                  )
-                else if (offers.isNotEmpty)
-                  // Display offers
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: offers.length,
-                    itemBuilder: (context, i) {
-                      final offer = offers[i];
-                      final restProfile =
-                          offer['restaurant']?['restaurantProfile'];
-                      final imgUrl = offer['photoUrl'] ?? "";
-                      final desc = offer['description'] ?? "";
-                      final isAnonymous = offer['visibility'] == 'ANONYMOUS';
-                      final restName = isAnonymous
-                          ? 'Anonymous'
-                          : (offer['restaurant']?['restaurantProfile']?['restaurantName'] ??
-                                'Restaurant');
-                      final rating = (restProfile?['avgRating'] ?? 4.5)
-                          .toDouble();
-                      final discounted =
-                          (offer['discountedPrice'] as num?)?.toDouble() ?? 0.0;
-                      final original =
-                          (offer['originalPrice'] as num?)?.toDouble() ?? 0.0;
-                      final qty = offer['quantity'] ?? 1;
-                      final discountPct = (original > 0)
-                          ? ((original - discounted) / original * 100).round()
-                          : 0;
-                      final pickupTime = offer['pickupTime'] ?? '';
-                      // Sample stub for distance; replace with your value/calculation
-                      final distance = "0.5 km";
-
-                      return GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => OfferDetails(offer: offer),
-                            ),
-                          );
-                        },
-                        child: Card(
-                          margin: const EdgeInsets.only(bottom: 18),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(15, 13, 15, 13),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Image with discount and left badge
-                              Stack(
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  ClipRRect(
-                                    borderRadius: const BorderRadius.vertical(
-                                      top: Radius.circular(20),
+                                  Expanded(
+                                    child: Text(
+                                      restName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    child: buildOfferImage(imgUrl),
                                   ),
-                                  if (discountPct > 0)
-                                    Positioned(
-                                      top: 12,
-                                      left: 12,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.redAccent,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '-$discountPct%',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
+                                  Icon(
+                                    Icons.star,
+                                    color: Colors.amber,
+                                    size: 20,
+                                  ),
+                                  Text(
+                                    rating.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                desc,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF646464),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.place_outlined,
+                                    color: Colors.grey,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    distance,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Icon(
+                                    Icons.access_time,
+                                    color: Colors.grey,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    pickupTime,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Text(
+                                    '€${discounted.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF3D9176),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '€${original.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      decoration: TextDecoration.lineThrough,
+                                      color: Colors.grey,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  TextButton.icon(
+                                    onPressed: () {}, // TODO: Save food action
+                                    icon: const Icon(
+                                      Icons.favorite_border,
+                                      color: Color(0xFF3D9176),
+                                      size: 21,
+                                    ),
+                                    label: const Text(
+                                      'Save food',
+                                      style: TextStyle(
+                                        color: Color(0xFF3D9176),
                                       ),
                                     ),
-                                  Positioned(
-                                    top: 12,
-                                    right: 12,
-                                    child: Container(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: const Color(0xFF3D9176),
+                                      minimumSize: const Size(10, 36),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black12,
-                                            blurRadius: 4,
-                                          ),
-                                        ],
-                                      ),
-                                      child: Text(
-                                        '$qty left',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
-                                          fontSize: 15,
-                                        ),
+                                        horizontal: 7,
+                                        vertical: 0,
                                       ),
                                     ),
                                   ),
                                 ],
                               ),
-                              // Title, rating, description, tags, price row
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  15,
-                                  13,
-                                  15,
-                                  13,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Title + rating row
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            restName,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 18,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        Icon(
-                                          Icons.star,
-                                          color: Colors.amber,
-                                          size: 20,
-                                        ),
-                                        Text(
-                                          rating.toStringAsFixed(1),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    // Description
-                                    Text(
-                                      desc,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        color: Color(0xFF646464),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Pickup, km row
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.place_outlined,
-                                          color: Colors.grey,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          distance,
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Icon(
-                                          Icons.access_time,
-                                          color: Colors.grey,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          pickupTime,
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    // Price row
-                                    Row(
-                                      children: [
-                                        Text(
-                                          '€${discounted.toStringAsFixed(2)}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF3D9176),
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 20,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '€${original.toStringAsFixed(2)}',
-                                          style: const TextStyle(
-                                            decoration:
-                                                TextDecoration.lineThrough,
-                                            color: Colors.grey,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                        const Spacer(),
-                                        TextButton.icon(
-                                          onPressed:
-                                              () {}, // TODO: Save food action
-                                          icon: const Icon(
-                                            Icons.favorite_border,
-                                            color: Color(0xFF3D9176),
-                                            size: 21,
-                                          ),
-                                          label: const Text(
-                                            'Save food',
-                                            style: TextStyle(
-                                              color: Color(0xFF3D9176),
-                                            ),
-                                          ),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: const Color(
-                                              0xFF3D9176,
-                                            ),
-                                            minimumSize: const Size(10, 36),
-                                            tapTargetSize: MaterialTapTargetSize
-                                                .shrinkWrap,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 7,
-                                              vertical: 0,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ],
                           ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
+                );
+              }).toList(),
+            const SizedBox(height: 24),
+          ],
         ),
       ),
     );

@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -20,6 +20,15 @@ async function bootstrap() {
     }),
   );
 
+  app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept',
+    );
+    next();
+  });
+
   // Serve local uploads folder at /uploads
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads',
@@ -27,7 +36,7 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? 3000);
   app.enableCors({
-    origin: '*', // Allow all origins for dev. For production, specify your allowed origins!
+    origin: true, // Allow all origins for dev. For production, specify your allowed origins!
     credentials: true,
   });
 

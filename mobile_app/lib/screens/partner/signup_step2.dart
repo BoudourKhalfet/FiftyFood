@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:typed_data';
+
 import '../../api/api_service.dart';
 
 class PartnerSignupStep2 extends StatefulWidget {
@@ -88,19 +88,7 @@ class _PartnerSignupStep2State extends State<PartnerSignupStep2> {
         withData: true,
       );
       if (result != null && result.files.single.bytes != null) {
-        final prefs = await SharedPreferences.getInstance();
-        final jwt = prefs.getString('jwt');
         final fileName = result.files.single.name;
-        final bytes = result.files.single.bytes!;
-
-        final res = await ApiService.uploadFile(
-          'restaurant/onboarding/upload/$type',
-          'file',
-          '', // not needed for bytes
-          bytes: bytes,
-          fileName: fileName,
-          headers: {'Authorization': 'Bearer $jwt'},
-        );
 
         setState(() {
           if (type == 'logo') {
@@ -234,7 +222,6 @@ class _PartnerSignupStep2State extends State<PartnerSignupStep2> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,

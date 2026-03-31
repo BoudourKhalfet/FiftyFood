@@ -7,6 +7,7 @@ class ClientProfile {
   final List<String> dietaryRestrictions;
   final DateTime? joinedAt;
   final Map<String, dynamic>? notificationPreferences;
+  final bool? locationConsentGiven;
 
   ClientProfile({
     required this.email,
@@ -17,6 +18,7 @@ class ClientProfile {
     required this.dietaryRestrictions,
     this.joinedAt,
     this.notificationPreferences,
+    required this.locationConsentGiven,
   });
 
   factory ClientProfile.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class ClientProfile {
           ? DateTime.parse(json['joinedAt'])
           : null,
       notificationPreferences: json['notificationPreferences'] ?? {},
+      locationConsentGiven: json['locationConsentGiven'] as bool?,
     );
   }
 }

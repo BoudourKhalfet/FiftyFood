@@ -4,8 +4,6 @@ import 'signup_step3.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 
 class DelivererSignupStep2 extends StatefulWidget {
   const DelivererSignupStep2({Key? key}) : super(key: key);
@@ -144,15 +142,6 @@ class _DelivererSignupStep2State extends State<DelivererSignupStep2> {
         final prefs = await SharedPreferences.getInstance();
         final jwt = prefs.getString('jwt');
         if (jwt == null) throw "Not logged in.";
-
-        // Build your payload
-        final body = {
-          "fullName": _fullNameController.text.trim(),
-          "phone": _phoneController.text.trim(),
-          "zone": _selectedZone,
-          "vehicleType": _selectedVehicle,
-          if (photoUrl != null) "photoUrl": photoUrl,
-        };
 
         // PATCH call to backend to save info:
         await ApiService.patch(

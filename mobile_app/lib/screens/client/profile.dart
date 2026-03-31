@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import './my_orders.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/client_profile_service.dart';
 import '../../models/client_profile.dart';
@@ -103,7 +104,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       final fetchedProfile = await ProfileService.getProfile(stored);
       final fetchedOrders = await ProfileService.getOrders(stored);
 
-      await prefs.setString('clientName', fetchedProfile.fullName ?? '');
+      await prefs.setString('clientName', fetchedProfile.fullName);
 
       setState(() {
         profile = fetchedProfile; // ClientProfile!
@@ -143,6 +144,21 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         child: SingleChildScrollView(
           child: Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 8, top: 15, bottom: 2),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.arrow_back,
+                        color: Color.fromARGB(255, 0, 0, 0),
+                      ), // or Colors.black
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      tooltip: 'Back',
+                    ),
+                  ],
+                ),
+              ),
               _profileHeader(context),
               _tabBar(),
               _activeTab == 0
@@ -266,216 +282,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 
   Widget _ordersTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-          child: Text(
-            "Order History",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1A1A1A),
-            ),
-          ),
-        ),
-        if (orders.isEmpty)
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-            child: Text("No orders yet.", style: TextStyle(color: Colors.grey)),
-          ),
-        ...orders.map((order) => _orderCard(order)).toList(),
-      ],
-    );
-  }
-
-  Widget _orderCard(ClientOrder order) {
-    final isDelivered = order.delivered;
-    final isDelivery = order.deliveryMethod == 'Delivery';
-
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (order.image.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
-              child: Image.asset(
-                order.image,
-                height: 120,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (c, e, t) =>
-                    Container(height: 120, color: Colors.grey[200]),
-              ),
-            ),
-          Padding(
-            padding: EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _statusChip(order.status),
-                    SizedBox(width: 6),
-                    _statusChip(order.deliveryMethod),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text(
-                  order.mealName,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  order.restaurant,
-                  style: TextStyle(fontSize: 14, color: Color(0xFF16807A)),
-                ),
-                SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(Icons.access_time, size: 16, color: Color(0xFF6B7280)),
-                    SizedBox(width: 4),
-                    Text(
-                      order.time,
-                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
-                    ),
-                    SizedBox(width: 16),
-                    Icon(
-                      Icons.calendar_today,
-                      size: 16,
-                      color: Color(0xFF6B7280),
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      order.date,
-                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "€${order.price.toStringAsFixed(2)}",
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF16807A),
-                      ),
-                    ),
-                    if (!isDelivered && order.qr)
-                      OutlinedButton(
-                        onPressed: () {
-                          // Show QR
-                        },
-                        child: Text("View QR Code"),
-                      ),
-                  ],
-                ),
-                if (isDelivered)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () {},
-                          icon: Icon(Icons.star_border, size: 18),
-                          label: Text("Rate Restaurant"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Color(0xFF16807A),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () {},
-                          icon: Icon(Icons.report, size: 18),
-                          label: Text("Report Restaurant"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        if (isDelivery) ...[
-                          ElevatedButton.icon(
-                            onPressed: () {},
-                            icon: Icon(Icons.star_border, size: 18),
-                            label: Text("Rate Deliverer"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xFF16807A),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: () {},
-                            icon: Icon(Icons.report, size: 18),
-                            label: Text("Report Deliverer"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statusChip(String status) {
-    Color bg, text;
-    switch (status) {
-      case "Ready":
-        bg = Color(0xFFE8F5E9);
-        text = Color(0xFF10B981);
-        break;
-      case "Delivered":
-        bg = Color(0xFFE5E7EB);
-        text = Color(0xFF6B7280);
-        break;
-      case "Pickup":
-        bg = Color(0xFFE1F6F6);
-        text = Color(0xFF16807A);
-        break;
-      case "Delivery":
-        bg = Color(0xFFE1F6F6);
-        text = Color(0xFF16807A);
-        break;
-      default:
-        bg = Color(0xFFFDECEA);
-        text = Color(0xFFF44336);
-    }
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      margin: EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        status,
-        style: TextStyle(
-          fontSize: 12,
-          color: text,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: MyOrdersPage(),
     );
   }
 
@@ -757,7 +566,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       final updated = await ProfileService.getProfile(jwt!);
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('clientName', updated.fullName ?? '');
+      await prefs.setString('clientName', updated.fullName);
       setState(() {
         profile = updated;
         savingProfile = false;

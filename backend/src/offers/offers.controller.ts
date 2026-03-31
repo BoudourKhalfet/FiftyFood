@@ -8,6 +8,8 @@ import {
   Post,
   Req,
   ForbiddenException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Role } from '@prisma/client';
@@ -16,6 +18,9 @@ import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { VerifyPhotoDto } from './dto/verify-photo.dto';
 import { Public } from '../auth/decorators/public.decorator';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 
 type ReqWithUser = Request & { user: { sub: string; role: Role } };
 
@@ -95,5 +100,46 @@ export class OffersController {
   async getAvailableOffers() {
     // No auth required (public route)
     return this.offers.getAvailableOffers();
+  }
+
+  @Post('upload-photo')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/offer-images',
+        filename: (req, file, cb) => {
+          // Generate a unique name for each file
+          const uniqueName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${extname(file.originalname)}`;
+          cb(null, uniqueName);
+        },
+      }),
+      limits: { fileSize: 6 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        console.log(
+          'UPLOAD DEBUG mimetype:',
+          file.mimetype,
+          'filename:',
+          file.originalname,
+        );
+        if (
+          file.mimetype.startsWith('image/') ||
+          file.originalname.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)
+        ) {
+          cb(null, true);
+        } else {
+          cb(new Error('Only images are allowed!'), false);
+        }
+      },
+    }),
+  )
+  uploadOfferImage(@UploadedFile() file: Express.Multer.File) {
+    try {
+      if (!file) throw new ForbiddenException('No file uploaded');
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+      return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
+    } catch (error) {
+      console.error('Upload error:', error);
+      throw error;
+    }
   }
 }

@@ -1,0 +1,141 @@
+import 'package:flutter/material.dart';
+
+import 'available_deliveries.dart';
+import 'active_deliveries.dart';
+import 'active_order_detail.dart';
+
+class MainScreen extends StatefulWidget {
+  const MainScreen({Key? key}) : super(key: key);
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  int _selectedTab = 0;
+  String? selectedActiveOrderId;
+
+  void _showActiveOrderDetail(Map<String, dynamic> order) {
+    setState(() {
+      selectedActiveOrderId = order['id'];
+    });
+  }
+
+  void _popActiveOrderDetail() {
+    setState(() {
+      selectedActiveOrderId = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget middleContent;
+    if (_selectedTab == 1 && selectedActiveOrderId != null) {
+      middleContent = ActiveOrderDetail(
+        onBack: _popActiveOrderDetail,
+        orderId: selectedActiveOrderId!,
+      );
+    } else {
+      switch (_selectedTab) {
+        case 0:
+          middleContent = AvailableDeliveries();
+          break;
+        case 1:
+          middleContent = ActiveDeliveries(onOrderTap: _showActiveOrderDetail);
+          break;
+        default:
+          middleContent = Center(child: Text('Coming soon!'));
+      }
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6F5),
+      body: Column(
+        children: [
+          // --- HEADER: logo + stats ---
+          Container(
+            color: Colors.white,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 22, top: 8, bottom: 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Image.asset("assets/images/logo.png", height: 48),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: 0,
+                    right: 0,
+                    top: 2,
+                    bottom: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      _buildStatItem('0.0 DT', "Earnings"),
+                      _buildStatItem('0', "Deliveries"),
+                      _buildStatItem('0.0', "Rating"),
+                      _buildStatItem('0h', "Active"),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // --- MAIN CONTENT ---
+          Expanded(child: middleContent),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedTab,
+        onTap: (index) {
+          setState(() {
+            _selectedTab = index;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            label: 'Available',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.local_shipping_outlined),
+            label: 'Active',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            label: 'Profile',
+          ),
+        ],
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Color(0xFF16AA6B),
+        unselectedItemColor: Color(0xFFB6B6B6),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String value, String label) {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LivreurUploadType } from './livreur-upload.constants';
 import { LivreurProfile } from '@prisma/client';
@@ -53,5 +57,24 @@ export class LivreurService {
       create: { userId, [field]: url },
       update: { [field]: url },
     });
+  }
+
+  async setLocationConsent(userId: string, consented: boolean) {
+    // Only LIVREUR should call this
+    return this.prisma.livreurProfile.update({
+      where: { userId },
+      data: {
+        locationConsentGiven: consented,
+        locationConsentGivenAt: new Date(),
+      },
+    });
+  }
+
+  async getLivreurProfile(userId: string): Promise<LivreurProfile> {
+    const profile = await this.prisma.livreurProfile.findUnique({
+      where: { userId },
+    });
+    if (!profile) throw new NotFoundException('Livreur profile not found');
+    return profile;
   }
 }

@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:mobile_app/api/client_profile_service.dart';
 import '../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../screens/client/LocationConsentPage.dart' as client_consent;
+import '../screens/deliverer/LocationConsentPage.dart' as deliverer_consent;
 
 class SignInPage extends StatefulWidget {
-  final String role; // e.g. 'Client', 'Deliverer', 'Partner'
+  final String role;
   const SignInPage({Key? key, this.role = 'Client'}) : super(key: key);
 
   @override
@@ -72,7 +74,7 @@ class _SignInPageState extends State<SignInPage> {
       final onboardingToken = response['onboardingToken'];
       final accessToken = response['accessToken'];
       final user = response['user'];
-      final role = widget.role.toLowerCase();
+
       final prefs = await SharedPreferences.getInstance();
 
       if (user != null && user['emailVerified'] == false) {
@@ -84,67 +86,99 @@ class _SignInPageState extends State<SignInPage> {
         return;
       }
 
-      if (accessToken != null) {
-        await prefs.setString('jwt', accessToken);
-        if (user != null && user['role'] == 'CLIENT') {
+      final realToken = accessToken ?? onboardingToken;
+      if (realToken != null && user != null) {
+        await prefs.setString('jwt', realToken);
+
+        // ==== CLIENT logic ====
+        if (user['role'] == 'CLIENT') {
           try {
-            final profile = await ProfileService.getProfile(accessToken);
-            print("Fetched profile: ${profile.fullName}");
-            if (profile.fullName != null &&
-                profile.fullName.trim().isNotEmpty) {
+            final profile = await ProfileService.getProfile(realToken);
+            // You may want to store their name locally, for UX:
+            if (profile.fullName != "" && profile.fullName.trim().isNotEmpty) {
               await prefs.setString('clientName', profile.fullName.trim());
-              print(
-                "Saved clientName to prefs: ${prefs.getString('clientName')}",
-              );
-            } else {
-              print("Fetched profile has null/empty fullName!");
             }
           } catch (e) {
-            print('Failed to fetch client profile after login: $e');
+            // No action needed here for now.
           }
-        }
-        if (response['message'] != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response['message'].toString())),
-          );
-        }
-
-        // Dashboard navigation for active roles
-        if (user != null && user['role'] == 'CLIENT') {
+          if (response['message'] != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(response['message'].toString())),
+            );
+          }
           if (user['status'] == 'APPROVED') {
-            Navigator.of(context).pushReplacementNamed('/offers');
+            try {
+              final profile = await ProfileService.getProfile(realToken);
+              if (profile.locationConsentGiven != true) {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => client_consent.LocationConsentPage(),
+                  ),
+                );
+              } else {
+                Navigator.of(context).pushReplacementNamed('/offers');
+              }
+            } catch (e) {
+              if (e.toString().contains('PROFILE_INCOMPLETE')) {
+                Navigator.of(context).pushReplacementNamed('/client/signup2');
+              } else {
+                setState(() {
+                  _error = "Network error. Please try again later.";
+                });
+              }
+            }
           } else {
+            // Client is not yet approved, must finish onboarding
             Navigator.of(context).pushReplacementNamed('/client/signup2');
           }
-        } else if (user != null &&
-            user['role']?.toLowerCase() == 'restaurant') {
-          Navigator.of(context).pushReplacementNamed('/partenaire/dashboard');
-        } else if (user != null && user['role']?.toLowerCase() == 'livreur') {
-          Navigator.of(context).pushReplacementNamed('/deliverer/dashboard');
         }
-      } else if (onboardingToken != null) {
-        await prefs.setString('jwt', onboardingToken);
-
-        if (response['message'] != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response['message'].toString())),
-          );
-        }
-
-        if (user != null &&
-            (user['role']?.toLowerCase() == 'restaurant' ||
-                user['role']?.toLowerCase() == 'livreur')) {
-          if (user['status'] == 'PENDING') {
+        // ==== DELIVERER logic ====
+        else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
+          print('hehehehe');
+          if (user['status'] == 'APPROVED') {
+            try {
+              final profile = await ApiService.getDelivererProfile(realToken);
+              if (profile.locationConsentGiven != true) {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => deliverer_consent.LocationConsentPage(),
+                  ),
+                );
+              } else {
+                Navigator.of(
+                  context,
+                ).pushReplacementNamed('/deliverer/dashboard');
+              }
+            } catch (e) {
+              if (e.toString().contains('PROFILE_INCOMPLETE')) {
+                Navigator.of(
+                  context,
+                ).pushReplacementNamed('/deliverer/signup2');
+              } else {
+                setState(() {
+                  _error = "Network error. Please try again later.";
+                });
+              }
+            }
+          } else if (user['status'] == 'PENDING') {
             Navigator.of(context).pushReplacementNamed('/pending_approval');
           } else if (user['status'] == 'REJECTED') {
             Navigator.of(context).pushReplacementNamed('/rejected');
-          } else if (user['status'] == 'APPROVED') {
-            Navigator.of(context).pushReplacementNamed('/partenaire/dashboard');
           } else {
-            setState(() {
-              _error =
-                  'Unexpected account status: ${user['status']}. Please contact support.';
-            });
+            // fallback: treat as incomplete
+            Navigator.of(context).pushReplacementNamed('/deliverer/signup2');
+          }
+        } else if (user['role'].toString().toUpperCase() == 'RESTAURANT') {
+          if (user['status'] == 'APPROVED') {
+            // If your API returns restaurantProfile or similar, check onboarding completeness here if needed.
+            Navigator.of(context).pushReplacementNamed('/partner/dashboard');
+          } else if (user['status'] == 'PENDING') {
+            Navigator.of(context).pushReplacementNamed('/pending_approval');
+          } else if (user['status'] == 'REJECTED') {
+            Navigator.of(context).pushReplacementNamed('/rejected');
+          } else {
+            // fallback: treat as incomplete
+            Navigator.of(context).pushReplacementNamed('/partner/signup2');
           }
         } else {
           setState(() {
@@ -157,7 +191,8 @@ class _SignInPageState extends State<SignInPage> {
           _error = 'Login failed: No token returned.';
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      print('ERROR in _handleLogin: $e\n$st');
       setState(() {
         _error = "Network error. Please try again later.";
       });
@@ -175,7 +210,7 @@ class _SignInPageState extends State<SignInPage> {
       final response = await ApiService.post('auth/resend-verification-email', {
         'email': _emailController.text.trim(),
       });
-      if (response != null && response['status'] == 'ok') {
+      if (response == "" && response['status'] == 'ok') {
         setState(() {
           _resendInfo =
               "Verification email resent! Please check your inbox (and spam).";
@@ -213,7 +248,7 @@ class _SignInPageState extends State<SignInPage> {
         else if (role == 'deliverer')
           Navigator.of(context).pushNamed('/signup1');
         else if (role == 'restaurant')
-          Navigator.of(context).pushNamed('/partenaire/signup1');
+          Navigator.of(context).pushNamed('/partner/signup1');
       };
   }
 
@@ -264,7 +299,6 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F6),
       body: SafeArea(

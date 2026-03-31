@@ -38,7 +38,6 @@ import { NotFoundException } from '@nestjs/common';
 type ReqWithUser = Request & { user: { sub: string; role: Role } };
 
 @Controller('restaurant/onboarding')
-@UseGuards(OnboardingAuthGuard)
 export class RestaurantsController {
   constructor(private readonly restaurants: RestaurantsService) {}
 
@@ -48,24 +47,28 @@ export class RestaurantsController {
     }
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Patch('identity')
   updateIdentity(@Req() req: ReqWithUser, @Body() dto: RestaurantIdentityDto) {
     this.ensureRestaurant(req);
     return this.restaurants.updateIdentity(req.user.sub, dto);
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Patch('legal')
   updateLegal(@Req() req: ReqWithUser, @Body() dto: RestaurantLegalDto) {
     this.ensureRestaurant(req);
     return this.restaurants.updateLegal(req.user.sub, dto);
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Patch('payout')
   updatePayout(@Req() req: ReqWithUser, @Body() dto: RestaurantPayoutDto) {
     this.ensureRestaurant(req);
     return this.restaurants.updatePayout(req.user.sub, dto);
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Post('upload/:type')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -151,6 +154,7 @@ export class RestaurantsController {
     );
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Post('accept-terms')
   async acceptTerms(
     @Req() req: ReqWithUser,
@@ -165,6 +169,7 @@ export class RestaurantsController {
     );
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Post('submit')
   submit(@Req() req: ReqWithUser) {
     this.ensureRestaurant(req);
@@ -177,21 +182,16 @@ export class RestaurantsController {
 export class PublicRestaurantsController {
   constructor(private readonly restaurants: RestaurantsService) {}
 
-  // GET /api/restaurants/:id
   @Get(':id')
   async getRestaurantById(@Param('id') id: string) {
-    // Replace with your restaurant fetching logic!
-    // (For real project, select only public fields)
     const profile = await this.restaurants.findRestaurantById(id);
 
     if (!profile) {
       throw new NotFoundException('Restaurant not found');
     }
 
-    // Fetch reviews!
     const reviews = await this.restaurants.findReviewsForRestaurant(id);
 
-    // Adapt the returned structure for your frontend:
     return {
       id: profile.id,
       restaurantName: profile.restaurantName,
@@ -199,7 +199,7 @@ export class PublicRestaurantsController {
       address: profile.address,
       phone: profile.phone,
       coverUrl: profile.coverImageUrl,
-      reviews, // Already mapped to the correct type
+      reviews,
       reviewsCount: reviews.length,
     };
   }

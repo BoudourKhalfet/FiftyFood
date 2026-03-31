@@ -46,7 +46,7 @@ class PendingApprovalPage extends StatelessWidget {
 
               // Description
               const Text(
-                'Your restaurant registration is under review. An administrator will validate your documents shortly.',
+                'Your registration is under review. An administrator will validate your documents shortly.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,

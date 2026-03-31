@@ -5,8 +5,8 @@ import '../../widgets/main_scaffold.dart';
 import 'restaurant_details.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'OrderTrackingPage.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   // Remove data prefix if needed
@@ -71,7 +71,6 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
     final imgUrl = offer['photoUrl'];
     final restProfile = offer['restaurant']?['restaurantProfile'];
-    final name = restProfile?['restaurantName'] ?? '';
     final desc = offer['description'] ?? '';
     final address =
         (restProfile?['address'] ?? offer['address'] ?? 'Address unavailable')
@@ -235,8 +234,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                               color: Color(0xFF3D9176),
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
-                              fontStyle: FontStyle
-                                  .italic, // make it stand out as anonymous
+                              fontStyle: FontStyle.italic,
                             ),
                           )
                         else
@@ -248,7 +246,6 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                     offer['restaurant']?['id'];
                                 if (restaurantUserId == null ||
                                     restaurantUserId.isEmpty) {
-                                  print('No valid restaurant user ID found!');
                                   return;
                                 }
                                 Navigator.of(context).push(
@@ -800,9 +797,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 17.5,
-                                    color: Color(
-                                      0xFF3D9176,
-                                    ), // matches your screenshot!
+                                    color: Color(0xFF3D9176),
                                   ),
                                 ),
                               ],
@@ -1138,8 +1133,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                 ),
                               ),
                               onPressed: () async {
-                                Navigator.of(context).pop();
-                                String orderCode = await _submitReservation(
+                                final order = await _submitReservation(
                                   collectionMethod: collectionMethod,
                                   deliveryAddress: deliveryAddress,
                                   phoneNumber: phoneNumber,
@@ -1151,13 +1145,26 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   paymentMethod: selectedPayment,
                                   offer: offer,
                                 );
+
+                                if (!mounted) return;
+
+                                Navigator.of(
+                                  context,
+                                ).pop(); // close dialog AFTER API
+
                                 if (collectionMethod == "pickup") {
                                   showPickupQRDialog(
-                                    qrCode: orderCode,
-                                    pickupTime: pickup,
-                                    restaurantName:
-                                        offer['restaurant']?['restaurantProfile']?['restaurantName'] ??
-                                        "",
+                                    qrCode: order['reference'],
+                                    pickupTime: order['pickupTime'],
+                                    restaurantName: order['restaurantName'],
+                                  );
+                                } else {
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(
+                                      builder: (_) => OrderTrackingScreen(
+                                        orderId: order['id'].toString(),
+                                      ),
+                                    ),
                                   );
                                 }
                               },
@@ -1270,7 +1277,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     );
   }
 
-  Future<String> _submitReservation({
+  Future<dynamic> _submitReservation({
     required String collectionMethod,
     String? deliveryAddress,
     String? phoneNumber,
@@ -1287,26 +1294,26 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       Map<String, dynamic>? paymentDetails;
       if (paymentMethod == "card") {
         paymentDetails = {
-          // You'd set these after integrating with a card gateway
+          //TO DO after integrating with a card gateway
           "provider": "stripe",
-          //"transactionId": "ch_123",
           "status": "pending",
         };
       } else if (paymentMethod == "d17") {
         paymentDetails = {
-          // You'd set these after integrating with D17
+          //TO DO after integrating with D17
           "provider": "d17",
-          //"transactionId": ...
+
           "status": "pending",
         };
       }
 
       // If you have a logged-in client user, add clientId or handle on backend.
       final prefs = await SharedPreferences.getInstance();
-      final clientId = prefs.getString('clientId');
+
       final data = {
         // "clientId": clientId, // Only include if required and non-null string!
         "restaurantId": offer['restaurant']['id'],
+        "offerId": offer['id'].toString(),
         "items": {"offerId": offer['id'], "quantity": quantity},
 
         "total": (discounted * quantity).toDouble(), // ensure double type!
@@ -1331,18 +1338,16 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
         final order = decoded['order'];
-        final qrCode = order['reference'] ?? '';
-        showPickupQRDialog(
-          qrCode: qrCode,
-          pickupTime: order['pickupTime'] ?? '',
-          restaurantName: order['restaurantName'] ?? '',
-        );
+
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Reservation successful!")));
-        return qrCode;
+
+        return order;
       } else {
-        throw Exception('Reservation failed: ${response.body}');
+        throw Exception(
+          "Failed to create order: ${response.statusCode} ${response.body}",
+        );
       }
       // If needed, pop or redirect:
       // Navigator.of(context).popUntil((route) => route.isFirst);
@@ -1351,61 +1356,11 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Reservation failed: $e")));
-      return Future.error(e);
+      throw e;
     }
   }
 
   // Helpers to render summary/info
-
-  Widget paymentOption({
-    required bool selected,
-    required VoidCallback onTap,
-    required IconData icon,
-    required String label,
-    Color? color,
-  }) {
-    color ??= Color(0xFF3D9176);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: EdgeInsets.only(bottom: 11),
-        padding: EdgeInsets.symmetric(vertical: 14, horizontal: 13),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(
-            color: selected ? color : Color(0xFFE5E7EB),
-            width: selected ? 2 : 1.2,
-          ),
-          boxShadow: [
-            if (selected)
-              BoxShadow(
-                color: color.withOpacity(0.13),
-                blurRadius: 3,
-                spreadRadius: 0,
-              ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: selected ? color : Colors.grey[500], size: 26),
-            SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-              ),
-            ),
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? color : Colors.grey[400],
-              size: 22,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _summaryRow(String left, String right, [bool strong = false]) =>
       Padding(

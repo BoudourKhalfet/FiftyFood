@@ -10,6 +10,7 @@ import {
   UseGuards,
   UseInterceptors,
   Param,
+  Get,
 } from '@nestjs/common';
 import {
   LIVREUR_UPLOAD_TYPES,
@@ -24,11 +25,11 @@ import { OnboardingAuthGuard } from '../auth/guards/onboarding-auth.guard';
 import { LivreurProfileDto } from './dto/livreur-profile.dto';
 import { ensureDir } from '../restaurants/uploads/ensure-dir';
 import type { Request } from 'express';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 
 type ReqWithUser = Request & { user: { sub: string; role: Role } };
 
 @Controller('livreur/onboarding')
-@UseGuards(OnboardingAuthGuard)
 export class LivreurOnboardingController {
   constructor(private readonly livreur: LivreurService) {}
 
@@ -37,6 +38,7 @@ export class LivreurOnboardingController {
       throw new ForbiddenException('Only LIVREUR allowed');
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Patch('profile')
   updateProfile(
     @Req() req: ReqWithUser,
@@ -46,6 +48,7 @@ export class LivreurOnboardingController {
     return this.livreur.updateProfile(req.user.sub, dto);
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Post('accept-terms')
   acceptTerms(
     @Req() req: ReqWithUser,
@@ -55,12 +58,14 @@ export class LivreurOnboardingController {
     return this.livreur.acceptTerms(req.user.sub, body.name);
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Post('submit')
   submit(@Req() req: ReqWithUser): Promise<LivreurProfile> {
     this.ensureLivreur(req);
     return this.livreur.submit(req.user.sub);
   }
 
+  @UseGuards(OnboardingAuthGuard)
   @Post('upload/:type')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -103,5 +108,22 @@ export class LivreurOnboardingController {
     if (!file) throw new BadRequestException('Missing file');
     const url = `/uploads/livreurs/${req.user.sub}/${file.filename}`;
     return this.livreur.saveUploadUrl(req.user.sub, type, url);
+  }
+
+  @Post('location-consent')
+  @UseGuards(JwtAuthGuard)
+  setLivreurLocationConsent(
+    @Req() req: ReqWithUser,
+    @Body() dto: { consented: boolean },
+  ): Promise<LivreurProfile> {
+    this.ensureLivreur(req);
+    return this.livreur.setLocationConsent(req.user.sub, dto.consented);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  getMyProfile(@Req() req: ReqWithUser) {
+    this.ensureLivreur(req);
+    return this.livreur.getLivreurProfile(req.user.sub);
   }
 }

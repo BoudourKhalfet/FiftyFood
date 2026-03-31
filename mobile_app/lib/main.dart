@@ -20,9 +20,10 @@ import 'screens/signin_page.dart';
 import 'screens/client/signin.dart' as clientSignin;
 import 'screens/partner/signin.dart' as partnerSignin;
 import 'screens/verify_email_reminder.dart';
-import 'constants/api.dart';
 import 'screens/forgot_password_page.dart';
 import 'screens/reset_password_page.dart';
+
+import 'screens/deliverer/main_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -79,19 +80,19 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (_) => const client.SignupStep2(),
             );
-          case '/partenaire/signup1':
+          case '/partner/signup1':
             return MaterialPageRoute(
               builder: (_) => const partner1.PartnerSignupStep1(),
             );
-          case '/partenaire/signup2':
+          case '/partner/signup2':
             return MaterialPageRoute(
               builder: (_) => const partner.PartnerSignupStep2(),
             );
-          case '/partenaire/signup3':
+          case '/partner/signup3':
             return MaterialPageRoute(
               builder: (_) => const partner3.PartnerSignupStep3(),
             );
-          case '/partenaire/signup4':
+          case '/partner/signup4':
             return MaterialPageRoute(
               builder: (_) => const partner4.PartnerSignupStep4(),
             );
@@ -99,7 +100,7 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (_) => const Submitted.PartnerSubmissionPage(),
             );
-          case '/partenaire/dashboard':
+          case '/partner/dashboard':
             return MaterialPageRoute(
               builder: (_) => const partnerDashboard.PartnerDashboardPage(),
             );
@@ -136,9 +137,9 @@ class MyApp extends StatelessWidget {
               builder: (_) => const ClientProfileScreen(),
               settings: settings,
             );
-          // add any extra routes as needed...
+          case '/deliverer/dashboard':
+            return MaterialPageRoute(builder: (_) => MainScreen());
           default:
-            // Optionally show a not found/404 page
             return MaterialPageRoute(
               builder: (_) =>
                   Scaffold(body: Center(child: Text('Page not found'))),

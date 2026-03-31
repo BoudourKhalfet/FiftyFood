@@ -6,6 +6,7 @@ import Restaurants from "./pages/Restaurants";
 import Clients from "./pages/Clients";
 import Deliverers from "./pages/Deliverers";
 import AdminLogin from "./pages/AdminLogin";
+import Orders from "./pages/Orders";
 
 // Helper to check if admin is logged in (token exists in localStorage)
 function isAdminAuthenticated() {
@@ -41,6 +42,7 @@ export default function App() {
                 {page === "restaurants" && <Restaurants />}
                 {page === "clients" && <Clients />}
                 {page === "deliverers" && <Deliverers />}
+                {page === "orders" && <Orders />}
               </div>
             </div>
           </RequireAdminAuth>

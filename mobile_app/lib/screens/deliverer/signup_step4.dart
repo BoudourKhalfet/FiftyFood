@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'available_deliveries.dart';
 import '../../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'locationConsentPage.dart';
 
 class DelivererSignupStep4 extends StatefulWidget {
   const DelivererSignupStep4({Key? key}) : super(key: key);
@@ -113,7 +113,18 @@ class _DelivererSignupStep4State extends State<DelivererSignupStep4> {
         Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
         return;
       }
-      Navigator.of(context).pushReplacementNamed('/submitted');
+      final profile = await ApiService.get(
+        'livreur/onboarding/me',
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      if (profile['locationConsentGiven'] != true) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => LocationConsentPage()),
+        );
+      } else {
+        Navigator.of(context).pushReplacementNamed('/submitted');
+      }
     } catch (e) {
       setState(() {
         _error = "Payout info failed: $e";

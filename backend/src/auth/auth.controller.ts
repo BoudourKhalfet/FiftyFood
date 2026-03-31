@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   Query,
   Req,
@@ -90,5 +91,18 @@ export class AuthController {
   async resendVerificationEmail(@Body('email') email: string) {
     await this.auth.resendVerificationEmail(email);
     return { status: 'ok' };
+  }
+
+  @Patch('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Req() req: RequestWithUser,
+    @Body() body: { oldPassword: string; newPassword: string },
+  ) {
+    return this.auth.changePassword(
+      req.user.sub,
+      body.oldPassword,
+      body.newPassword,
+    );
   }
 }

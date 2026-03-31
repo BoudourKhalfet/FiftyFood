@@ -37,3 +37,15 @@ export async function requireChangesRestaurant(id: string) {
     body: JSON.stringify({ reason }),
   });
 }
+
+export async function fetchAllOrders() {
+  const res = await fetch("http://localhost:3000/orders", {
+    headers: {
+      Authorization: "Bearer " + localStorage.getItem("access_token"),
+      // add others like Content-Type if needed
+    },
+  });
+  const data = await res.json();
+  console.log("Fetched orders:", data); // <--- add this!
+  return data;
+}

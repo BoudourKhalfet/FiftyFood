@@ -66,6 +66,8 @@ model User {
   clientOrders   Order[]      @relation("ClientOrders")
   // Relations for Order (restaurant)
   restaurantOrders Order[]    @relation("RestaurantOrders")
+  // Relations for Order (livreur)
+  livreurOrders Order[]    @relation("LivreurOrders")
   // Relations for Offers (restaurant)
   restaurantOffers Offer[]    @relation("RestaurantOffers")
   
@@ -108,6 +110,9 @@ model ClientProfile {
 
   submittedAt         DateTime?
   joinedAt   DateTime?
+
+  locationConsentGiven     Boolean   @default(false)
+  locationConsentGivenAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -239,18 +244,26 @@ model LivreurProfile {
 
   submittedAt         DateTime?
 
+  locationConsentGiven     Boolean   @default(false)
+  locationConsentGivenAt   DateTime?
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
 
 model Order {
   id           String      @id @default(uuid())
+  orderCode    String
   reference    String      @unique
+  offerId      String     
+  offer        Offer       @relation(fields: [offerId], references: [id]) 
   clientId     String
   client       User        @relation("ClientOrders", fields: [clientId], references: [id])
   restaurantId String
   restaurant   User        @relation("RestaurantOrders", fields: [restaurantId], references: [id])
-  items        Json        // or a separate OrderItem model for high flexibility
+  livreurId String?
+  livreur   User? @relation("LivreurOrders", fields: [livreurId], references: [id])
+  items        Json       
   total        Float
   status       OrderStatus @default(PENDING)
   createdAt    DateTime    @default(now())
@@ -258,13 +271,13 @@ model Order {
   collectionMethod  CollectionMethod?
   deliveryAddress   String? // only if delivery selected
   deliveryPhone     String? // client’s phone for delivery
-  deliveryFee       Float?  
+  deliveryFee       Float? 
+  clientLocation      String?  
+  delivererLocation String?
   paymentMethod     String?
   paymentDetails    Json? 
 
   reviews Review[]
-
-  // Add more as needed (livreurId, deliveryAddress, etc.)
 }
 
 enum CollectionMethod {
@@ -278,10 +291,10 @@ enum PaymentMethod {
   CASH
 }
 
-// Example enum for order status
 enum OrderStatus {
   PENDING
   CONFIRMED
+  ASSIGNED
   READY
   PICKED_UP
   DELIVERED
@@ -289,8 +302,8 @@ enum OrderStatus {
 }
 
 enum OfferVisibility {
-  IDENTIFIED   // Restaurant name visible
-  ANONYMOUS    // Restaurant name hidden
+  IDENTIFIED   
+  ANONYMOUS  
 }
 
 enum OfferStatus {
@@ -315,6 +328,8 @@ model Offer {
   visibility          OfferVisibility   @default(IDENTIFIED)
   deliveryAvailable   Boolean           @default(false)
   status              OfferStatus       @default(ACTIVE)
+
+  orders            Order[] 
   
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../screens/client/profile.dart';
 
 class MainScaffold extends StatefulWidget {
   final Widget child;
@@ -75,8 +76,11 @@ class _MainScaffoldState extends State<MainScaffold> {
               ListTile(
                 leading: Icon(Icons.person),
                 title: Text('Profile'),
-                onTap: () =>
-                    Navigator.of(context).pushReplacementNamed('/profile'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ClientProfileScreen(),
+                  ),
+                ),
               ),
               ListTile(
                 leading: Icon(Icons.logout),

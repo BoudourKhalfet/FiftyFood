@@ -3,6 +3,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { CuisinePreference, DietaryRestriction } from '@prisma/client';
@@ -233,12 +234,69 @@ export class UsersService {
     return { message: 'Password changed.' };
   }
 
-  // 6️⃣ Get all orders for the current client (current + history)
+  // Get all orders for the current client (current + history)
+
   async getMyOrders(userId: string) {
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { clientId: userId },
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy: { createdAt: 'desc' },
+      include: {
+        restaurant: {
+          select: {
+            restaurantProfile: { select: { restaurantName: true } },
+          },
+        },
+      },
     });
+
+    // Match fields to UI designs!
+    return Promise.all(
+      orders.map(async (order) => {
+        let mainItem: any;
+        try {
+          const parsed =
+            typeof order.items === 'string'
+              ? JSON.parse(order.items)
+              : order.items;
+          mainItem = Array.isArray(parsed) ? parsed[0] : parsed.main || parsed;
+        } catch {
+          mainItem = {};
+        }
+
+        let offer = null;
+        if (mainItem?.offerId) {
+          offer = await this.prisma.offer.findUnique({
+            where: { id: mainItem.offerId },
+            select: {
+              description: true,
+              pickupTime: true,
+              discountedPrice: true,
+              photoUrl: true,
+              visibility: true, // <-- Ensure this is fetched!
+            },
+          });
+        }
+
+        return {
+          id: order.id,
+          status: order.status,
+          collectionMethod: order.collectionMethod,
+          mealName: offer?.description ?? mainItem?.name ?? '',
+          restaurantName:
+            offer?.visibility === 'ANONYMOUS'
+              ? 'Anonymous'
+              : (order.restaurant?.restaurantProfile?.restaurantName ?? ''),
+
+          timeSlot: offer?.pickupTime ?? mainItem?.pickupTime ?? '',
+          date: order.createdAt.toISOString().substring(0, 10),
+          price: offer?.discountedPrice ?? order.total ?? 0,
+          reference: order.reference,
+          imageUrl: offer?.photoUrl ?? '',
+          delivered: order.status === 'DELIVERED',
+          qr: order.status === 'READY',
+        };
+      }),
+    );
   }
 
   async deleteAccount(userId: string): Promise<{ message: string }> {
@@ -252,5 +310,19 @@ export class UsersService {
     // For a hard delete:
     // await this.prisma.user.delete({ where: { id: userId } });
     // return { message: 'Account deleted.' };
+  }
+
+  async setClientLocationConsent(userId: string, consented: boolean) {
+    const profile = await this.prisma.clientProfile.findUnique({
+      where: { userId },
+    });
+    if (!profile) throw new NotFoundException('Client profile not found');
+    return this.prisma.clientProfile.update({
+      where: { userId },
+      data: {
+        locationConsentGiven: consented,
+        locationConsentGivenAt: new Date(),
+      },
+    });
   }
 }

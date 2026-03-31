@@ -11,7 +11,6 @@ class PartnerSignupStep3 extends StatefulWidget {
 }
 
 class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
-  final _formKey = GlobalKey<FormState>();
   final _legalNameController = TextEditingController();
   final _regNumberController = TextEditingController();
   final _termsNameController = TextEditingController();
@@ -191,34 +190,8 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
       _loading = true;
       _error = null;
     });
-    final prefs = await SharedPreferences.getInstance();
-    final jwt = prefs.getString('jwt');
+
     try {
-      final ownershipTypeBackend = _ownership
-          .toUpperCase(); // "OWNER" or "MANAGER"
-      final patchResponse = await ApiService.patch(
-        'restaurant/onboarding/legal',
-        {
-          'legalEntityName': _legalNameController.text.trim(),
-          'registrationNumberRNE': _regNumberController.text.trim(),
-          'ownershipType': ownershipTypeBackend,
-        },
-        headers: {'Authorization': 'Bearer $jwt'},
-      );
-
-      final termsResp = await ApiService.post(
-        'restaurant/onboarding/accept-terms',
-        {
-          'name': _termsNameController.text.trim(),
-          'agreements': [
-            {'type': 'hygiene', 'accepted': _acceptedHygiene},
-            {'type': 'no-preparation', 'accepted': _acceptedNoPreparation},
-            {'type': 'liability', 'accepted': _acceptedLiability},
-          ],
-        },
-        headers: {'Authorization': 'Bearer $jwt'},
-      );
-
       Navigator.of(context).pushNamed('/partenaire/signup4');
     } catch (e) {
       setState(() => _error = 'Error: $e');
@@ -229,8 +202,6 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -327,14 +298,17 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
                             ),
                           ),
                           validator: (value) {
-                            if (value == null || value.trim().isEmpty)
+                            if (value == null || value.trim().isEmpty) {
                               return "This field is required";
-                            if (value.trim().length < 3)
+                            }
+                            if (value.trim().length < 3) {
                               return "Name is too short (min 3 chars)";
+                            }
                             if (!RegExp(
                               r"^[\w\s\-,.&']+$",
-                            ).hasMatch(value.trim()))
+                            ).hasMatch(value.trim())) {
                               return "Use only letters, numbers, and basic punctuation";
+                            }
                             return null;
                           },
                         ),

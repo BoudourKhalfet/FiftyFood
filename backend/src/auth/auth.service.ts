@@ -18,6 +18,9 @@ function sha256(input: string) {
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
+const PASSWORD_REGEX =
+  /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -93,7 +96,7 @@ export class AuthService {
 
     const baseUrl = process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
-    // eslint-disable-next-line no-console
+
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
 
     // (Optional) Send actual email at registration
@@ -182,7 +185,6 @@ export class AuthService {
       (user.role === Role.RESTAURANT || user.role === Role.LIVREUR) &&
       (user.status === AccountStatus.PENDING || !user.emailVerifiedAt)
     ) {
-      // Issue an ONBOARDING JWT, limited to onboarding endpoints
       const onboardingToken = await this.jwt.signAsync({
         sub: user.id,
         role: user.role,
@@ -238,7 +240,7 @@ export class AuthService {
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = sha256(rawToken);
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expires = new Date(Date.now() + 60 * 60 * 1000);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -363,5 +365,30 @@ export class AuthService {
         <p>If you did not request this, you can ignore this email.</p>
       `,
     );
+  }
+
+  async changePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!ok) throw new BadRequestException('Current password is incorrect');
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      throw new BadRequestException(
+        'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+    return { message: 'Password changed successfully' };
   }
 }

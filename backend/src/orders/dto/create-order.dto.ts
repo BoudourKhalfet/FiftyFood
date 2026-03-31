@@ -15,6 +15,9 @@ export class CreateOrderDto {
   @IsString()
   restaurantId!: string;
 
+  @IsString()
+  offerId!: string;
+
   @IsObject()
   items!: any;
 

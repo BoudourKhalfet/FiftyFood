@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../constants/api.dart';
 import 'package:http_parser/http_parser.dart';
+import '../models/deliverer_profile.dart';
 
 class ApiService {
   static Future<Map<String, dynamic>> post(
@@ -11,15 +12,20 @@ class ApiService {
     Map<String, String>? headers,
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
+    print(
+      'POST $url\n  Headers: ${{'Content-Type': 'application/json', ...?headers}}\n  Body: $data',
+    );
     final res = await http.post(
       url,
       headers: {'Content-Type': 'application/json', ...?headers},
       body: jsonEncode(data),
     );
-    // FIX: Accept any 2xx as success
+    print('POST RESPONSE: ${res.statusCode} ${res.body}');
+
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     } else {
+      print('POST ERROR: ${res.statusCode} ${res.body}');
       throw Exception("HTTP ${res.statusCode}: ${res.body}");
     }
   }
@@ -31,7 +37,18 @@ class ApiService {
     final url = Uri.parse('$apiBaseUrl$endpoint');
     final res = await http.get(url, headers: headers);
     print('RAW RESPONSE: ${res.statusCode} ${res.body}');
-    return jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body);
+    } else {
+      // Capture code/message for custom handling above
+      try {
+        final err = jsonDecode(res.body) as Map<String, dynamic>;
+        throw Exception('[${err['code']}] ${err['message']}');
+      } catch (e) {
+        print('GET ERROR: ${res.statusCode} ${res.body}');
+        throw Exception('HTTP ${res.statusCode}: ${res.body}');
+      }
+    }
   }
 
   static Future<List<dynamic>> getList(
@@ -40,7 +57,14 @@ class ApiService {
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
     final res = await http.get(url, headers: headers);
-    return jsonDecode(res.body) as List<dynamic>;
+
+    print('RAW RESPONSE LIST: ${res.statusCode} ${res.body}');
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as List<dynamic>;
+    } else {
+      throw Exception('HTTP ${res.statusCode}: ${res.body}');
+    }
   }
 
   static Future<Map<String, dynamic>> patch(
@@ -49,16 +73,27 @@ class ApiService {
     Map<String, String>? headers,
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
+
     final res = await http.patch(
       url,
       headers: {'Content-Type': 'application/json', ...?headers},
       body: jsonEncode(data),
     );
+
     print('RAW RESPONSE PATCH: ${res.statusCode} ${res.body}');
     print('PATCH to $url');
     print('Request headers: ${headers.toString()}');
     print('Request body: $data');
-    return jsonDecode(res.body) as Map<String, dynamic>;
+
+    final decoded = res.body.isNotEmpty
+        ? jsonDecode(res.body) as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception(decoded['message'] ?? 'HTTP ${res.statusCode}');
+    }
+
+    return decoded;
   }
 
   static Future<Map<String, dynamic>> uploadFile(
@@ -114,5 +149,13 @@ class ApiService {
     print('RAW RESPONSE DELETE: ${res.statusCode} ${res.body}');
     if (res.body.isEmpty) return {};
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  static Future<DelivererProfile> getDelivererProfile(String token) async {
+    final res = await ApiService.get(
+      'livreur/onboarding/me',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return DelivererProfile.fromJson(res as Map<String, dynamic>);
   }
 }

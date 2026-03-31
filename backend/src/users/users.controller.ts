@@ -90,4 +90,13 @@ export class UsersController {
   deleteMyAccount(@Req() req: RequestWithUser) {
     return this.users.deleteAccount(req.user.sub);
   }
+
+  @Patch('me/location-consent')
+  @Roles(Role.CLIENT)
+  setClientLocationConsent(
+    @Req() req: RequestWithUser,
+    @Body() dto: { consented: boolean },
+  ) {
+    return this.users.setClientLocationConsent(req.user.sub, dto.consented);
+  }
 }
