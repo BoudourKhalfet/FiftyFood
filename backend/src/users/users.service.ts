@@ -125,11 +125,13 @@ export class UsersService {
             submittedAt: true,
             joinedAt: true,
             notificationPreferences: true,
+            locationConsentGiven: true,
+            locationConsentGivenAt: true,
           },
         },
         accountHistory: {
           orderBy: { createdAt: 'desc' },
-          take: 50, // or however many you want to show
+          take: 50,
         },
       },
     });

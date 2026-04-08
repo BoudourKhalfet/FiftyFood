@@ -63,7 +63,7 @@ class _PartnerSignupStep2State extends State<PartnerSignupStep2> {
           },
           headers: {'Authorization': 'Bearer $jwt'},
         );
-        Navigator.of(context).pushNamed('/partenaire/signup3');
+        Navigator.of(context).pushNamed('/partner/signup3');
       } catch (e) {
         ScaffoldMessenger.of(
           context,

@@ -50,42 +50,50 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F5),
-      body: Column(
-        children: [
-          // --- HEADER: logo + stats ---
-          Container(
-            color: Colors.white,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 22, top: 8, bottom: 0),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Image.asset("assets/images/logo.png", height: 48),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // --- HEADER: logo + stats ---
+            Container(
+              color: Colors.white,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: 24,
+                      top: 10,
+                      bottom: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        Image.asset("assets/images/logo.png", height: 56),
+                        SizedBox(width: 12),
+                      ],
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(
-                    left: 0,
-                    right: 0,
-                    top: 2,
-                    bottom: 10,
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: 0,
+                      right: 0,
+                      top: 2,
+                      bottom: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        _buildStatItem('0.0 DT', "Earnings"),
+                        _buildStatItem('0', "Deliveries"),
+                        _buildStatItem('0.0', "Rating"),
+                        _buildStatItem('0h', "Active"),
+                      ],
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      _buildStatItem('0.0 DT', "Earnings"),
-                      _buildStatItem('0', "Deliveries"),
-                      _buildStatItem('0.0', "Rating"),
-                      _buildStatItem('0h', "Active"),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          // --- MAIN CONTENT ---
-          Expanded(child: middleContent),
-        ],
+            // --- MAIN CONTENT ---
+            Expanded(child: middleContent),
+          ],
+        ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedTab,

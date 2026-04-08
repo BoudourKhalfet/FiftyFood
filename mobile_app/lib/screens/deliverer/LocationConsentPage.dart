@@ -20,7 +20,9 @@ class _LocationConsentPageState extends State<LocationConsentPage> {
     final token = await getJwt();
     try {
       final res = await http.post(
-        Uri.parse('http://localhost:3000/livreur/onboarding/location-consent'),
+        Uri.parse(
+          'http://192.168.100.6:3000/livreur/onboarding/location-consent',
+        ),
         headers: {
           if (token != null) "Authorization": "Bearer $token",
           "Content-Type": "application/json",

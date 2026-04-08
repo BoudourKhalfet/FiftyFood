@@ -553,17 +553,24 @@ class _ProfileCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(icon, color: iconColor, size: 28),
+                Icon(icon, color: iconColor, size: 22),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (trailing != null) ...[const Spacer(), trailing!],
+                if (trailing != null) ...[
+                  SizedBox(width: 6),
+                  Flexible(child: trailing!),
+                ],
               ],
             ),
             const SizedBox(height: 20),

@@ -323,6 +323,7 @@ model Offer {
   discountedPrice     Float
   quantity            Int
   pickupTime          String
+  pickupDateTime      DateTime
   photoUrl            String
   
   visibility          OfferVisibility   @default(IDENTIFIED)

@@ -29,7 +29,7 @@ class _ActiveDeliveriesState extends State<ActiveDeliveries> {
       error = null;
     });
 
-    final url = Uri.parse('http://localhost:3000/orders/deliverer/active');
+    final url = Uri.parse('http://192.168.100.6:3000/orders/deliverer/active');
     final jwt = await getJwt();
 
     try {

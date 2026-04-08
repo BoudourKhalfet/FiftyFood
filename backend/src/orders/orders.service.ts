@@ -76,6 +76,31 @@ export class OrdersService {
         orderCode: generatedOrderCode,
       },
     });
+    let quantityOrdered = 1;
+    try {
+      const mainItem = getMainItem(order.items);
+      if (mainItem?.quantity) quantityOrdered = mainItem.quantity;
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('Failed to parse order.items or get quantity.', err);
+      }
+    }
+
+    await this.prisma.offer.update({
+      where: { id: offerId },
+      data: { quantity: { decrement: quantityOrdered } },
+    });
+
+    // Optional: auto-pause when 0 (for safety, since getAvailableOffers hides qty==0)
+    const updatedOffer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+    });
+    if (updatedOffer && updatedOffer.quantity <= 0) {
+      await this.prisma.offer.update({
+        where: { id: offerId },
+        data: { status: 'SOLD_OUT' },
+      });
+    }
 
     const restaurant = await this.prisma.restaurantProfile.findUnique({
       where: { userId: order.restaurantId },

@@ -246,11 +246,10 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _tabBtn("My Orders", 0),
-          _tabBtn("Preferences", 1),
-          _tabBtn("Settings", 2),
+          Expanded(child: _tabBtn("My Orders", 0)),
+          Expanded(child: _tabBtn("Preferences", 1)),
+          Expanded(child: _tabBtn("Settings", 2)),
         ],
       ),
     );
@@ -258,8 +257,17 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Widget _tabBtn(String label, int index) {
     final active = _activeTab == index;
+    // Responsive sizes:
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isSmall = screenWidth < 375; // tweak threshold as you like!
+
+    final double fontSize = isSmall ? 10 : 12;
+    final double iconSize = isSmall ? 13 : 15;
+    final double verticalPad = isSmall ? 5 : 8;
+    final double horizPad = isSmall ? 4 : 8;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3.5),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
           backgroundColor: active ? Color(0xFFE8F5F0) : Colors.white,
@@ -268,14 +276,18 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: TextStyle(fontWeight: FontWeight.w600),
+          textStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: fontSize),
+          padding: EdgeInsets.symmetric(
+            vertical: verticalPad,
+            horizontal: horizPad,
+          ),
         ),
         icon: index == 0
-            ? Icon(Icons.list_alt, size: 18)
+            ? Icon(Icons.list_alt, size: iconSize)
             : index == 1
-            ? Icon(Icons.restaurant_menu, size: 18)
-            : Icon(Icons.settings, size: 18),
-        label: Text(label),
+            ? Icon(Icons.restaurant_menu, size: iconSize)
+            : Icon(Icons.settings, size: iconSize),
+        label: Text(label, style: TextStyle(fontSize: fontSize)),
         onPressed: () => setState(() => _activeTab = index),
       ),
     );

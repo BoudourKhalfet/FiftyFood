@@ -105,10 +105,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                   padding: const EdgeInsets.only(left: 24, top: 10, bottom: 10),
                   child: Row(
                     children: [
-                      Image.asset(
-                        "assets/images/logo.png",
-                        height: 56, // Match SliverAppBar logo height
-                      ),
+                      Image.asset("assets/images/logo.png", height: 56),
                       SizedBox(width: 12),
                     ],
                   ),

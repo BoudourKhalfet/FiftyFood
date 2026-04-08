@@ -62,7 +62,7 @@ class OrderTrackingScreen extends StatelessWidget {
     print('fetchTracking called for $orderId');
     final token = await getJwt();
     final response = await http.get(
-      Uri.parse('http://localhost:3000/orders/$orderId/tracking'),
+      Uri.parse('http://192.168.100.6:3000/orders/$orderId/tracking'),
       headers: {if (token != null) "Authorization": "Bearer $token"},
     );
     print('HTTP response: ${response.statusCode} ${response.body}');

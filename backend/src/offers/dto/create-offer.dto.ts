@@ -1,3 +1,4 @@
+import { OfferVisibility } from '@prisma/client';
 import {
   IsString,
   IsNumber,
@@ -5,6 +6,7 @@ import {
   IsBoolean,
   IsOptional,
   Min,
+  IsISO8601,
 } from 'class-validator';
 
 export class CreateOfferDto {
@@ -29,9 +31,12 @@ export class CreateOfferDto {
   @IsString()
   pickupTime!: string;
 
-  @IsEnum(['IDENTIFIED', 'ANONYMOUS'])
+  @IsISO8601()
+  pickupDateTime?: string;
+
+  @IsEnum(OfferVisibility)
   @IsOptional()
-  visibility?: 'IDENTIFIED' | 'ANONYMOUS';
+  visibility?: OfferVisibility;
 
   @IsBoolean()
   @IsOptional()

@@ -47,11 +47,13 @@ Widget buildPickupTimeDropdown({
   }
 
   return DropdownButtonFormField<String>(
+    isExpanded: true,
     value: value.isEmpty ? null : value,
     decoration: InputDecoration(
+      isDense: true,
       hintText: 'Select time',
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
     ),
     items: options.map((v) {
@@ -100,6 +102,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String? _uploadedOfferImageUrl;
   bool _uploadingOfferImage = false;
   String? _offerImageUploadError;
+  DateTime? _pickupDate;
 
   Future<void> _pickAndUploadOfferImage(
     void Function(void Function()) modalSetState,
@@ -143,7 +146,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
 
-      final uri = Uri.parse('http://localhost:3000/offers/upload-photo');
+      final uri = Uri.parse('http://192.168.100.6:3000/offers/upload-photo');
       final request = http.MultipartRequest('POST', uri);
       request.headers['Authorization'] = 'Bearer $jwt';
       request.files.add(
@@ -683,7 +686,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     required Color iconBg,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -702,7 +705,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-            child: Icon(icon, color: iconColor, size: 24),
+            child: Icon(icon, color: iconColor, size: 21),
           ),
 
           const SizedBox(width: 14),
@@ -717,7 +720,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 22,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF1A1A1A),
                   ),
@@ -727,10 +730,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF6B7280),
-                  ),
+                  style: const TextStyle(fontSize: 9, color: Color(0xFF6B7280)),
                 ),
               ],
             ),
@@ -826,7 +826,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
             ),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: 480,
+                maxWidth: 375,
                 maxHeight: MediaQuery.of(context).size.height * 0.94,
               ),
               child: SingleChildScrollView(
@@ -1066,6 +1066,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     Row(
                       children: [
                         Expanded(
+                          flex: 1,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1081,6 +1082,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                 keyboardType: TextInputType.number,
                                 onChanged: (v) => _quantity = v,
                                 decoration: InputDecoration(
+                                  isDense: true,
                                   hintText: '5',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -1098,19 +1100,14 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(width: 6),
                         Expanded(
+                          flex: 2,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Pickup Time',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
+                              Text('Pickup Time'),
+                              SizedBox(height: 6),
                               buildPickupTimeDropdown(
                                 value: _pickupTime,
                                 onChanged: (slot) =>
@@ -1235,6 +1232,29 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                         return;
                                       }
 
+                                      final now = DateTime.now();
+                                      final pickupHour = int.parse(
+                                        _pickupTime.split(":")[0],
+                                      );
+                                      final pickupMinute = int.parse(
+                                        _pickupTime
+                                            .split(":")[1]
+                                            .split('-')[0]
+                                            .trim(),
+                                      );
+                                      DateTime candidate = DateTime(
+                                        now.year,
+                                        now.month,
+                                        now.day,
+                                        pickupHour,
+                                        pickupMinute,
+                                      );
+                                      if (candidate.isBefore(now)) {
+                                        candidate = candidate.add(
+                                          Duration(days: 1),
+                                        );
+                                      }
+
                                       final response = await ApiService.post(
                                         'offers',
                                         {
@@ -1248,6 +1268,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                           ),
                                           'quantity': int.parse(_quantity),
                                           'pickupTime': _pickupTime,
+                                          'pickupDateTime': candidate
+                                              .toIso8601String(),
                                           'visibility': _visibility,
 
                                           'photoUrl': _uploadedOfferImageUrl,

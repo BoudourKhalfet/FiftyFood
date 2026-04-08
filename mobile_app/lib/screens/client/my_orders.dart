@@ -46,7 +46,7 @@ void _openComplaintModal(BuildContext ctx, String who) {
 }
 
 Future<List<Map<String, dynamic>>> fetchMyOrders() async {
-  final uri = Uri.parse('http://localhost:3000/users/me/orders');
+  final uri = Uri.parse('http://192.168.100.6:3000/users/me/orders');
 
   final token = await getJwt();
 

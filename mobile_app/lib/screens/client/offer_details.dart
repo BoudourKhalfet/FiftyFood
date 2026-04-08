@@ -337,83 +337,87 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                       ],
                     ),
                     const SizedBox(height: 16),
+
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Color(0xFFEAF9F4),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                color: Color(0xFF3D9176),
-                                size: 19,
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'Pickup Time',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Color(0xFFEAF9F4),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.schedule,
+                                  size: 19,
                                   color: Color(0xFF3D9176),
-                                  fontSize: 13,
                                 ),
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                pickup,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.black,
+                                SizedBox(height: 3),
+                                Text(
+                                  'Pickup Time',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: Color(0xFF3D9176),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  '13:00 - 14:00',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Color(0xFFF5EDF7),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.place_outlined,
-                                color: Color(0xFF9A65A6),
-                                size: 19,
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'Distance',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Color(0xFFF5EDF7),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.place_outlined,
+                                  size: 19,
                                   color: Color(0xFF9A65A6),
-                                  fontSize: 13,
                                 ),
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                '0.5 km',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.black,
+                                SizedBox(height: 3),
+                                Text(
+                                  'Distance',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: Color(0xFF9A65A6),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  '0.5 km',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -1150,23 +1154,23 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                                 Navigator.of(
                                   context,
-                                ).pop(); // close dialog AFTER API
+                                ).pop(); // close payment dialog/modal
 
                                 if (collectionMethod == "pickup") {
+                                  // Show the QR dialog, and after it's closed, go back to OfferDetails
                                   showPickupQRDialog(
                                     qrCode: order['reference'],
                                     pickupTime: order['pickupTime'],
                                     restaurantName: order['restaurantName'],
                                   );
-                                } else {
-                                  Navigator.of(context).pushReplacement(
-                                    MaterialPageRoute(
-                                      builder: (_) => OrderTrackingScreen(
-                                        orderId: order['id'].toString(),
-                                      ),
-                                    ),
-                                  );
                                 }
+
+                                // In both cases, go back to offer details
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(
+                                    builder: (_) => OfferDetails(offer: offer),
+                                  ),
+                                );
                               },
 
                               child: Text('Pay €${total.toStringAsFixed(2)}'),
@@ -1328,7 +1332,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       final token = prefs.getString('jwt');
 
       final response = await http.post(
-        Uri.parse('http://localhost:3000/orders'),
+        Uri.parse('http://192.168.100.6:3000/orders'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

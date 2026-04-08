@@ -30,7 +30,7 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
   }
 
   Future<Map<String, dynamic>> fetchOrderTracking(String orderId) async {
-    final url = Uri.parse('http://localhost:3000/orders/$orderId/tracking');
+    final url = Uri.parse('http://192.168.100.6:3000/orders/$orderId/tracking');
     final jwt = await getJwt();
     final response = await http.get(
       url,
@@ -188,7 +188,9 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
   Future<bool> updateLocationConsentOnBackend() async {
     final jwt = await getJwt();
     final response = await http.post(
-      Uri.parse('http://localhost:3000/livreur/onboarding/location-consent'),
+      Uri.parse(
+        'http://192.168.100.6:3000/livreur/onboarding/location-consent',
+      ),
       headers: {
         'Content-Type': 'application/json',
         if (jwt != null) 'Authorization': 'Bearer $jwt',

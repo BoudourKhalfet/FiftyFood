@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
@@ -301,6 +302,10 @@ export class OffersService {
       );
     }
 
+    if (!dto.pickupDateTime) {
+      throw new BadRequestException('pickupDateTime is required');
+    }
+
     return this.prisma.offer.create({
       data: {
         restaurantId: userId,
@@ -310,6 +315,7 @@ export class OffersService {
         discountedPrice: dto.discountedPrice,
         quantity: dto.quantity,
         pickupTime: dto.pickupTime,
+        pickupDateTime: new Date(dto.pickupDateTime),
         visibility:
           (dto.visibility as OfferVisibility) || OfferVisibility.IDENTIFIED,
         deliveryAvailable: dto.deliveryAvailable ?? false,
@@ -376,11 +382,12 @@ export class OffersService {
 
   // List all active, visible offers for clients
   async getAvailableOffers() {
+    const now = new Date();
     return this.prisma.offer.findMany({
       where: {
         status: 'ACTIVE',
         quantity: { gt: 0 },
-        // Optionally add pickup time/date >= now, etc.
+        pickupDateTime: { gte: now },
       },
       orderBy: { createdAt: 'desc' },
       include: {
