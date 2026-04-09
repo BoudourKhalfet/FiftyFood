@@ -1,4 +1,4 @@
-import { OfferVisibility } from '@prisma/client';
+import { OfferVisibility, Category } from '@prisma/client';
 import {
   IsString,
   IsNumber,
@@ -7,6 +7,9 @@ import {
   IsOptional,
   Min,
   IsISO8601,
+  IsArray,
+  ArrayNotEmpty,
+  ArrayUnique,
 } from 'class-validator';
 
 export class CreateOfferDto {
@@ -33,6 +36,12 @@ export class CreateOfferDto {
 
   @IsISO8601()
   pickupDateTime?: string;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsEnum(Category, { each: true })
+  categories!: Category[];
 
   @IsEnum(OfferVisibility)
   @IsOptional()

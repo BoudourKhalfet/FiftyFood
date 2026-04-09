@@ -22,7 +22,7 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
   }
 
   Future<Map<String, dynamic>> fetchRestaurantData(String id) async {
-    final url = Uri.parse('http://192.168.100.6:3000/api/restaurants/$id');
+    final url = Uri.parse('http://localhost:3000/api/restaurants/$id');
     final response = await http.get(url); // Add headers if needed (auth etc)
     if (response.statusCode == 200) {
       return jsonDecode(response.body);

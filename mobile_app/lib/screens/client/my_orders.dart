@@ -46,7 +46,7 @@ void _openComplaintModal(BuildContext ctx, String who) {
 }
 
 Future<List<Map<String, dynamic>>> fetchMyOrders() async {
-  final uri = Uri.parse('http://192.168.100.6:3000/users/me/orders');
+  final uri = Uri.parse('http://localhost:3000/users/me/orders');
 
   final token = await getJwt();
 
@@ -152,7 +152,7 @@ class MyOrdersPage extends StatelessWidget {
                   : (double.tryParse(o['price']?.toString() ?? '') ?? 0),
               reference: o['reference'] ?? '',
 
-              canViewQR: status == 'READY',
+              canViewQR: status == 'CONFIRMED' && collectionMethod == 'PICKUP',
               canRateRestaurant: canRateRestaurant,
               canReportRestaurant: canReportRestaurant,
               canRateDeliverer: canRateDeliverer,

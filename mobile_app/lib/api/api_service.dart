@@ -131,8 +131,27 @@ class ApiService {
               : null,
         ),
       );
-    } else if (filePath.isNotEmpty) {
-      request.files.add(await http.MultipartFile.fromPath(fieldName, filePath));
+    } else if (filePath.isNotEmpty && fileName != null) {
+      String? contentType;
+      if (fileName.toLowerCase().endsWith('.jpg') ||
+          fileName.toLowerCase().endsWith('.jpeg')) {
+        contentType = "image/jpeg";
+      } else if (fileName.toLowerCase().endsWith('.png')) {
+        contentType = "image/png";
+      } else if (fileName.toLowerCase().endsWith('.pdf')) {
+        contentType = "application/pdf";
+      }
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          fieldName,
+          filePath,
+          filename: fileName,
+          contentType: contentType != null
+              ? MediaType.parse(contentType)
+              : null,
+        ),
+      );
     }
 
     final streamed = await request.send();

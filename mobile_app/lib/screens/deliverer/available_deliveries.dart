@@ -27,9 +27,7 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
       error = null;
     });
 
-    final url = Uri.parse(
-      'http://192.168.100.6:3000/orders/deliverer/available',
-    );
+    final url = Uri.parse('http://localhost:3000/orders/deliverer/available');
     final jwt = await getJwt();
 
     try {
@@ -61,7 +59,7 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
   }
 
   Future<bool> acceptDelivery(String orderId) async {
-    final url = Uri.parse('http://192.168.100.6:3000/orders/$orderId/accept');
+    final url = Uri.parse('http://localhost:3000/orders/$orderId/accept');
     final jwt = await getJwt();
     final response = await http.post(
       url,
@@ -345,7 +343,12 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
                 SliverFillRemaining(child: Center(child: Text(error!)))
               else if (_deliveryOrders.isEmpty)
                 const SliverFillRemaining(
-                  child: Center(child: Text('No available deliveries.')),
+                  child: Center(
+                    child: Text(
+                      'No available deliveries.',
+                      style: TextStyle(fontSize: 17, color: Color(0xFF3E554B)),
+                    ),
+                  ),
                 )
               else
                 SliverPadding(

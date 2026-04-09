@@ -30,7 +30,7 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
   }
 
   Future<Map<String, dynamic>> fetchOrderTracking(String orderId) async {
-    final url = Uri.parse('http://192.168.100.6:3000/orders/$orderId/tracking');
+    final url = Uri.parse('http://localhost:3000/orders/$orderId/tracking');
     final jwt = await getJwt();
     final response = await http.get(
       url,
@@ -188,9 +188,7 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
   Future<bool> updateLocationConsentOnBackend() async {
     final jwt = await getJwt();
     final response = await http.post(
-      Uri.parse(
-        'http://192.168.100.6:3000/livreur/onboarding/location-consent',
-      ),
+      Uri.parse('http://localhost:3000/livreur/onboarding/location-consent'),
       headers: {
         'Content-Type': 'application/json',
         if (jwt != null) 'Authorization': 'Bearer $jwt',
@@ -295,326 +293,335 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
             elevation: 0,
             foregroundColor: Colors.black,
           ),
-          body: SingleChildScrollView(
+          body: ListView(
             padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // === Progress bar ===
-                OrderProgressBar(status: order['status'] ?? 'ASSIGNED'),
-                const SizedBox(height: 18),
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // === Progress bar ===
+                  OrderProgressBar(status: order['status'] ?? 'ASSIGNED'),
+                  const SizedBox(height: 18),
 
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      "Order #$orderCode",
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFA726),
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      child: Text(
-                        stageLabel,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        "Order #$orderCode",
                         style: const TextStyle(
-                          color: Colors.white,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          fontSize: 14,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 7),
-                    if (canShowQr)
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          showPickupQrDialog(
-                            context,
-                            order['pickupQrData'] ??
-                                order['reference'] ??
-                                order['id'] ??
-                                '',
-                            order['pickupQrDisplay'] ??
-                                order['orderCode'] ??
-                                '',
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.qr_code,
-                          size: 18,
-                          color: Color(0xFF16AA6B),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 7,
                         ),
-                        label: const Text(
-                          "View QR Code",
-                          style: TextStyle(color: Color(0xFF16AA6B)),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFA726),
+                          borderRadius: BorderRadius.circular(7),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF16AA6B)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(7),
+                        child: Text(
+                          stageLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
                           ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 7,
-                          ),
-                          foregroundColor: const Color(0xFF16AA6B),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // === Restaurant Card ===
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAF9),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF09A98D)),
-                  ),
-                  padding: const EdgeInsets.all(13),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.location_on,
-                            color: Color(0xFF16AA6B),
-                          ),
-                          const SizedBox(width: 7),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  restaurantName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                Text(
-                                  restaurantAddress,
-                                  style: const TextStyle(
-                                    color: Color(0xFF374151),
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.access_time,
-                                      color: Color(0xFFAAAAAA),
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      "Pickup by $pickupTime",
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                      if (canShowQr)
+                        Flexible(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              showPickupQrDialog(
+                                context,
+                                order['pickupQrData'] ??
+                                    order['reference'] ??
+                                    order['id'] ??
+                                    '',
+                                order['pickupQrDisplay'] ??
+                                    order['orderCode'] ??
+                                    '',
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.qr_code,
+                              size: 18,
+                              color: Color(0xFF16AA6B),
+                            ),
+                            label: const Text(
+                              "View QR Code",
+                              style: TextStyle(color: Color(0xFF16AA6B)),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF16AA6B)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 7,
+                              ),
+                              foregroundColor: const Color(0xFF16AA6B),
                             ),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              bool consentGiven =
-                                  order['locationConsentGiven'] == true;
-                              if (!consentGiven) {
-                                bool accepted = await showLocationConsentDialog(
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // === Restaurant Card ===
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAF9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF09A98D)),
+                    ),
+                    padding: const EdgeInsets.all(13),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.location_on,
+                              color: Color(0xFF16AA6B),
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    restaurantName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    restaurantAddress,
+                                    style: const TextStyle(
+                                      color: Color(0xFF374151),
+                                    ),
+                                  ),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(
+                                        Icons.access_time,
+                                        color: Color(0xFFAAAAAA),
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        "Pickup by $pickupTime",
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                bool consentGiven =
+                                    order['locationConsentGiven'] == true;
+                                if (!consentGiven) {
+                                  bool accepted =
+                                      await showLocationConsentDialog(context);
+                                  if (!accepted) return;
+                                  setState(() {
+                                    order['locationConsentGiven'] = true;
+                                  });
+                                }
+                                openMapsToAddress(
                                   context,
+                                  order['restaurantAddress'] ?? '',
                                 );
-                                if (!accepted) return;
-                                setState(() {
-                                  order['locationConsentGiven'] = true;
-                                });
-                              }
-                              openMapsToAddress(
-                                context,
-                                order['restaurantAddress'] ?? '',
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.navigation,
-                              color: Color(0xFF16AA6B),
-                            ),
-                            label: const Text(
-                              "Navigate",
-                              style: TextStyle(color: Color(0xFF16AA6B)),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF16AA6B)),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 2,
+                              },
+                              icon: const Icon(
+                                Icons.navigation,
+                                color: Color(0xFF16AA6B),
                               ),
-                              minimumSize: const Size(0, 32),
-                              foregroundColor: const Color(0xFF16AA6B),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                              label: const Text(
+                                "Navigate",
+                                style: TextStyle(color: Color(0xFF16AA6B)),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.phone,
-                            color: Color(0xFF16AA6B),
-                            size: 16,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            restaurantPhone,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF16AA6B),
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // === Customer Card ===
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FAF8),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF09A98D)),
-                  ),
-                  padding: const EdgeInsets.all(13),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.person, color: Color(0xFFFF865E)),
-                          const SizedBox(width: 7),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  customerName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                  color: Color(0xFF16AA6B),
                                 ),
-                                Text(
-                                  customerAddress,
-                                  style: const TextStyle(
-                                    color: Color(0xFF374151),
-                                  ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 2,
                                 ),
-                              ],
+                                minimumSize: const Size(0, 32),
+                                foregroundColor: const Color(0xFF16AA6B),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                              ),
                             ),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              bool consentGiven =
-                                  order['locationConsentGiven'] == true;
-                              if (!consentGiven) {
-                                final accepted =
-                                    await showLocationConsentDialog(context);
-                                if (!accepted) return;
-                                setState(() {
-                                  order['locationConsentGiven'] = true;
-                                });
-                              }
-                              openMapsToAddress(
-                                context,
-                                order['deliveryAddress'] ?? '',
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.navigation,
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.phone,
                               color: Color(0xFF16AA6B),
+                              size: 16,
                             ),
-                            label: const Text(
-                              "Navigate",
-                              style: TextStyle(color: Color(0xFF16AA6B)),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF16AA6B)),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 2,
-                              ),
-                              minimumSize: const Size(0, 32),
-                              foregroundColor: const Color(0xFF16AA6B),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(7),
+                            const SizedBox(width: 2),
+                            Text(
+                              restaurantPhone,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF16AA6B),
+                                decoration: TextDecoration.underline,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.phone,
-                            color: Color(0xFF16AA6B),
-                            size: 16,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            customerPhone,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF16AA6B),
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
 
-                // === Mark as Delivered ===
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {}, // TODO: handle delivered
-                    icon: const Icon(Icons.check, color: Colors.white),
-                    label: const Text("Mark as Delivered"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF197144),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(7),
+                  // === Customer Card ===
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FAF8),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF09A98D)),
+                    ),
+                    padding: const EdgeInsets.all(13),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.person, color: Color(0xFFFF865E)),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    customerName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    customerAddress,
+                                    style: const TextStyle(
+                                      color: Color(0xFF374151),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                bool consentGiven =
+                                    order['locationConsentGiven'] == true;
+                                if (!consentGiven) {
+                                  final accepted =
+                                      await showLocationConsentDialog(context);
+                                  if (!accepted) return;
+                                  setState(() {
+                                    order['locationConsentGiven'] = true;
+                                  });
+                                }
+                                openMapsToAddress(
+                                  context,
+                                  order['deliveryAddress'] ?? '',
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.navigation,
+                                color: Color(0xFF16AA6B),
+                              ),
+                              label: const Text(
+                                "Navigate",
+                                style: TextStyle(color: Color(0xFF16AA6B)),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                  color: Color(0xFF16AA6B),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 2,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                foregroundColor: const Color(0xFF16AA6B),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.phone,
+                              color: Color(0xFF16AA6B),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              customerPhone,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF16AA6B),
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // === Mark as Delivered ===
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {}, // TODO: handle delivered
+                      icon: const Icon(Icons.check, color: Colors.white),
+                      label: const Text("Mark as Delivered"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF197144),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         );
       },

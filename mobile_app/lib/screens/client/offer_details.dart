@@ -912,6 +912,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     required String address,
   }) {
     String selectedPayment = 'card';
+    String selectedCollectionMethod = collectionMethod;
 
     Widget paymentOption({
       required bool selected,
@@ -1138,7 +1139,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                               ),
                               onPressed: () async {
                                 final order = await _submitReservation(
-                                  collectionMethod: collectionMethod,
+                                  collectionMethod: selectedCollectionMethod,
                                   deliveryAddress: deliveryAddress,
                                   phoneNumber: phoneNumber,
                                   discounted: discounted,
@@ -1332,7 +1333,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       final token = prefs.getString('jwt');
 
       final response = await http.post(
-        Uri.parse('http://192.168.100.6:3000/orders'),
+        Uri.parse('http://localhost:3000/orders'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

@@ -288,8 +288,9 @@ export class OrdersService {
     // 2. (Later: filter by  location, etc.)
     return this.prisma.order.findMany({
       where: {
-        status: 'PENDING',
+        status: 'CONFIRMED',
         livreurId: null,
+        collectionMethod: 'DELIVERY',
       },
       include: {
         restaurant: { include: { restaurantProfile: true } },

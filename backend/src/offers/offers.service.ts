@@ -316,6 +316,7 @@ export class OffersService {
         quantity: dto.quantity,
         pickupTime: dto.pickupTime,
         pickupDateTime: new Date(dto.pickupDateTime),
+        categories: dto.categories,
         visibility:
           (dto.visibility as OfferVisibility) || OfferVisibility.IDENTIFIED,
         deliveryAvailable: dto.deliveryAvailable ?? false,
@@ -326,7 +327,7 @@ export class OffersService {
   // List all offers for a restaurant.
   async getMyOffers(userId: string) {
     return this.prisma.offer.findMany({
-      where: { restaurantId: userId },
+      where: { restaurantId: userId, NOT: { status: 'DELETED' } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -340,7 +341,10 @@ export class OffersService {
     if (offer.restaurantId !== userId)
       throw new ForbiddenException('Not your offer');
 
-    return this.prisma.offer.delete({ where: { id: offerId } });
+    return this.prisma.offer.update({
+      where: { id: offerId },
+      data: { status: 'DELETED' },
+    });
   }
 
   // Toggle offer visibility between IDENTIFIED and ANONYMOUS.

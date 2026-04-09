@@ -10,6 +10,7 @@ import 'offers_tab.dart';
 import 'orders_tab.dart';
 import 'stats_tab.dart';
 import 'profile_tab.dart';
+import 'package:multi_select_flutter/multi_select_flutter.dart';
 
 Widget buildPickupTimeDropdown({
   required String value,
@@ -103,6 +104,52 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   bool _uploadingOfferImage = false;
   String? _offerImageUploadError;
   DateTime? _pickupDate;
+  List<String> _selectedCategories = [];
+  final List<String> _categories = [
+    'BAKERY',
+    'CAFE',
+    'GRILL',
+    'FAST_FOOD',
+    'VEGETARIAN',
+    'HALAL',
+    'SEAFOOD',
+    'SUSHI',
+    'PIZZA',
+    'BURGER',
+    'BBQ',
+    'HEALTHY',
+    'DESSERT',
+    'STREET_FOOD',
+    'SANDWICHES',
+    'SALAD',
+    'PASTA',
+    'BREAKFAST',
+    'FINE_DINING',
+    'BRUNCH',
+  ];
+
+  final Map<String, String> _categoryLabels = {
+    'BAKERY': 'Bakery',
+    'CAFE': 'Cafe',
+    'GRILL': 'Grill',
+    'FAST_FOOD': 'Fast Food',
+    'VEGETARIAN': 'Vegetarian',
+    'HALAL': 'Halal',
+    'SEAFOOD': 'Seafood',
+    'SUSHI': 'Sushi',
+    'PIZZA': 'Pizza',
+    'BURGER': 'Burger',
+    'BBQ': 'BBQ',
+    'HEALTHY': 'Healthy',
+    'DESSERT': 'Dessert',
+    'STREET_FOOD': 'Street Food',
+    'SANDWICHES': 'Sandwiches',
+    'SALAD': 'Salad',
+    'PASTA': 'Pasta',
+    'BREAKFAST': 'Breakfast',
+    'FINE_DINING': 'Fine Dining',
+    'BRUNCH': 'Brunch',
+  };
 
   Future<void> _pickAndUploadOfferImage(
     void Function(void Function()) modalSetState,
@@ -146,7 +193,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
 
-      final uri = Uri.parse('http://192.168.100.6:3000/offers/upload-photo');
+      final uri = Uri.parse('http://localhost:3000/offers/upload-photo');
       final request = http.MultipartRequest('POST', uri);
       request.headers['Authorization'] = 'Bearer $jwt';
       request.files.add(
@@ -988,6 +1035,51 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     ),
                     const SizedBox(height: 12),
 
+                    // CATEGORY SECTION
+                    const Text(
+                      'Categories',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+
+                    MultiSelectDialogField(
+                      items: _categories
+                          .map(
+                            (cat) => MultiSelectItem(
+                              cat,
+                              _categoryLabels[cat] ?? cat,
+                            ),
+                          )
+                          .toList(),
+                      title: const Text("Categories"),
+                      selectedColor: Color(0xFF1F9D7A),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Color(0xFF9CA3AF), width: 1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      buttonIcon: const Icon(
+                        Icons.category,
+                        color: Color(0xFF1F9D7A),
+                      ),
+                      buttonText: const Text(
+                        "Select categories",
+                        style: TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 13,
+                        ),
+                      ),
+                      onConfirm: (results) {
+                        modalSetState(() {
+                          _selectedCategories = results.cast<String>();
+                        });
+                      },
+                      initialValue: _selectedCategories,
+                    ),
+                    const SizedBox(height: 12),
                     // Prices Row
                     Row(
                       children: [
@@ -1214,7 +1306,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                         _originalPrice.isEmpty ||
                                         _discountedPrice.isEmpty ||
                                         _quantity.isEmpty ||
-                                        _pickupTime.isEmpty) {
+                                        _pickupTime.isEmpty ||
+                                        _selectedCategories.isEmpty) {
                                       modalSetState(() {
                                         modalError = "All fields are required!";
                                       });
@@ -1270,6 +1363,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                           'pickupTime': _pickupTime,
                                           'pickupDateTime': candidate
                                               .toIso8601String(),
+                                          'categories': _selectedCategories,
                                           'visibility': _visibility,
 
                                           'photoUrl': _uploadedOfferImageUrl,

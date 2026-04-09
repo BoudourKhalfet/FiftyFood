@@ -14,7 +14,7 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
   final _legalNameController = TextEditingController();
   final _regNumberController = TextEditingController();
   final _termsNameController = TextEditingController();
-  String _ownership = 'Owner';
+  String _ownership = 'OWNER';
   bool _loading = false;
   String? _error;
 
@@ -160,7 +160,7 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
     if (_regNumberController.text.trim().isEmpty) {
       return "Registration number (RNE) is required.";
     }
-    if (!(_ownership == "Owner" || _ownership == "Manager")) {
+    if (!(_ownership == "OWNER" || _ownership == "MANAGER")) {
       return "Select an ownership type.";
     }
     if (_businessRegFileName == null) {
@@ -192,9 +192,23 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
     });
 
     try {
-      Navigator.of(context).pushNamed('/partenaire/signup4');
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      await ApiService.patch(
+        'restaurant/onboarding/legal',
+        {
+          "legalEntityName": _legalNameController.text.trim(),
+          "registrationNumberRNE": _regNumberController.text.trim(),
+          "ownershipType": _ownership, // 'OWNER' or 'MANAGER'
+        },
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      Navigator.of(context).pushNamed('/partner/signup4');
     } catch (e) {
-      setState(() => _error = 'Error: $e');
+      setState(() {
+        _error = 'Failed to save legal info: $e';
+      });
     } finally {
       setState(() => _loading = false);
     }
@@ -343,24 +357,24 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
                       child: ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: Radio<String>(
-                          value: 'Owner',
+                          value: 'OWNER',
                           groupValue: _ownership,
                           onChanged: (v) =>
-                              setState(() => _ownership = v ?? 'Owner'),
+                              setState(() => _ownership = v ?? 'OWNER'),
                         ),
-                        title: const Text('Owner'),
+                        title: const Text('OWNER'),
                       ),
                     ),
                     Expanded(
                       child: ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: Radio<String>(
-                          value: 'Manager',
+                          value: 'MANAGER',
                           groupValue: _ownership,
                           onChanged: (v) =>
-                              setState(() => _ownership = v ?? 'Manager'),
+                              setState(() => _ownership = v ?? 'MANAGER'),
                         ),
-                        title: const Text('Manager'),
+                        title: const Text('MANAGER'),
                       ),
                     ),
                   ],

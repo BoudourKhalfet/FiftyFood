@@ -311,6 +311,7 @@ enum OfferStatus {
   PAUSED
   SOLD_OUT
   EXPIRED
+  DELETED
 }
 
 model Offer {
@@ -325,6 +326,7 @@ model Offer {
   pickupTime          String
   pickupDateTime      DateTime
   photoUrl            String
+  categories            Category[]
   
   visibility          OfferVisibility   @default(IDENTIFIED)
   deliveryAvailable   Boolean           @default(false)
@@ -338,6 +340,29 @@ model Offer {
   @@index([restaurantId])
   @@index([status])
   @@index([createdAt])
+}
+
+enum Category {
+  BAKERY
+  CAFE
+  GRILL
+  FAST_FOOD
+  VEGETARIAN
+  HALAL
+  SEAFOOD
+  SUSHI
+  PIZZA
+  BURGER
+  BBQ
+  HEALTHY
+  DESSERT
+  STREET_FOOD
+  SANDWICHES
+  SALAD
+  PASTA
+  BREAKFAST
+  FINE_DINING
+  BRUNCH
 }
 
 model Review {
