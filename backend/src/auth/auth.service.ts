@@ -94,19 +94,24 @@ export class AuthService {
       },
     });
 
-    const baseUrl = process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    const baseUrl = process.env.PUBLIC_BACKEND_URL || 'http://192.168.43.154:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
 
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
 
     // (Optional) Send actual email at registration
-    await this.mailService.sendMail(
-      user.email,
-      'Verify your email for FiftyFood',
-      `<h2>Welcome to FiftyFood!</h2>
-       <p>Please <a href="${verifyUrl}">click here to verify your email</a>.</p>
-       <p>If you did not request this, you can ignore this email.</p>`,
-    );
+    try {
+      await this.mailService.sendMail(
+        user.email,
+        'Verify your email for FiftyFood',
+        `<h2>Welcome to FiftyFood!</h2>
+         <p>Please <a href="${verifyUrl}">click here to verify your email</a>.</p>
+         <p>If you did not request this, you can ignore this email.</p>`,
+      );
+    } catch (error) {
+      console.error('Failed to send verification email:', error);
+      // Don't throw - registration succeeds even if email fails
+    }
 
     // Onboarding token for roles that cannot login until admin approval
     const shouldReturnOnboardingToken =
@@ -253,11 +258,16 @@ export class AuthService {
     const resetUrl =
       (process.env.PASSWORD_RESET_URL ||
         'http://localhost:52530/#/reset-password') + `?token=${rawToken}`;
-    await this.mailService.sendMail(
-      user.email,
-      'Reset your FiftyFood password',
-      `<p>Hello,<br>To reset your password, <a href="${resetUrl}">click here</a>. This link is valid for 1 hour.<br>If you didn't request a reset, ignore this email.</p>`,
-    );
+    try {
+      await this.mailService.sendMail(
+        user.email,
+        'Reset your FiftyFood password',
+        `<p>Hello,<br>To reset your password, <a href="${resetUrl}">click here</a>. This link is valid for 1 hour.<br>If you didn't request a reset, ignore this email.</p>`,
+      );
+    } catch (error) {
+      console.error('Failed to send password reset email:', error);
+      // Don't throw - allow password reset request to succeed even if email fails
+    }
   }
 
   async resetPassword(token: string, newPassword: string) {
@@ -355,16 +365,22 @@ export class AuthService {
     if (!user) return;
     if (user.emailVerifiedAt) throw new ForbiddenException('Already verified');
     const token = await this.generateEmailVerificationToken(user);
-    const verifyUrl = `${process.env.PUBLIC_BACKEND_URL}/auth/verify-email?token=${token}`;
-    await this.mailService.sendMail(
-      user.email,
-      'Verify your email for FiftyFood',
-      `
-        <h2>Welcome to FiftyFood!</h2>
-        <p>Please <a href="${verifyUrl}">click here to verify your email</a>.</p>
-        <p>If you did not request this, you can ignore this email.</p>
-      `,
-    );
+    const baseUrl = process.env.PUBLIC_BACKEND_URL || 'http://192.168.43.154:3000';
+    const verifyUrl = `${baseUrl}/auth/verify-email?token=${token}`;
+    try {
+      await this.mailService.sendMail(
+        user.email,
+        'Verify your email for FiftyFood',
+        `
+          <h2>Welcome to FiftyFood!</h2>
+          <p>Please <a href="${verifyUrl}">click here to verify your email</a>.</p>
+          <p>If you did not request this, you can ignore this email.</p>
+        `,
+      );
+    } catch (error) {
+      console.error('Failed to send verification email:', error);
+      // Don't throw - allow resend to succeed even if email fails
+    }
   }
 
   async changePassword(

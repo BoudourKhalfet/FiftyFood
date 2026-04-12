@@ -1,4 +1,4 @@
-import { OfferVisibility, Category } from '@prisma/client';
+import { OfferVisibility } from '@prisma/client';
 import {
   IsString,
   IsNumber,
@@ -40,8 +40,8 @@ export class CreateOfferDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()
-  @IsEnum(Category, { each: true })
-  categories!: Category[];
+  @IsString({ each: true })
+  categories!: string[];
 
   @IsEnum(OfferVisibility)
   @IsOptional()

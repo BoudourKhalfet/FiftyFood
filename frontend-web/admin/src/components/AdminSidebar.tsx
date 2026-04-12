@@ -24,7 +24,7 @@ const menu: Array<{
   disabled?: boolean;
   badge?: string | number;
 }> = [
-  { label: "Overview", key: "overview", icon: <FaChartBar /> },
+  { label: "Dashboard", key: "dashboard", icon: <FaChartBar /> },
   { label: "Restaurants", key: "restaurants", icon: <FaUtensils /> },
   { label: "Clients", key: "clients", icon: <FaUsers /> },
   { label: "Deliverers", key: "deliverers", icon: <FaTruck /> },

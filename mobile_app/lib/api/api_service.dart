@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../constants/api.dart';
@@ -15,18 +16,30 @@ class ApiService {
     print(
       'POST $url\n  Headers: ${{'Content-Type': 'application/json', ...?headers}}\n  Body: $data',
     );
-    final res = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json', ...?headers},
-      body: jsonEncode(data),
-    );
-    print('POST RESPONSE: ${res.statusCode} ${res.body}');
+    try {
+      final res = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json', ...?headers},
+        body: jsonEncode(data),
+      ).timeout(Duration(seconds: 30), onTimeout: () {
+        throw TimeoutException('Request timeout after 30 seconds');
+      });
+      print('POST RESPONSE: ${res.statusCode} ${res.body}');
 
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      return jsonDecode(res.body) as Map<String, dynamic>;
-    } else {
-      print('POST ERROR: ${res.statusCode} ${res.body}');
-      throw Exception("HTTP ${res.statusCode}: ${res.body}");
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      } else {
+        print('POST ERROR: ${res.statusCode} ${res.body}');
+        // Return error response as-is to allow proper error handling
+        try {
+          return jsonDecode(res.body) as Map<String, dynamic>;
+        } catch (e) {
+          throw Exception("HTTP ${res.statusCode}: ${res.body}");
+        }
+      }
+    } catch (e) {
+      print('POST Exception: $e');
+      rethrow;
     }
   }
 

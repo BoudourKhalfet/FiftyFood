@@ -326,7 +326,7 @@ model Offer {
   pickupTime          String
   pickupDateTime      DateTime
   photoUrl            String
-  categories            Category[]
+  categories          String[]          @default([])
   
   visibility          OfferVisibility   @default(IDENTIFIED)
   deliveryAvailable   Boolean           @default(false)

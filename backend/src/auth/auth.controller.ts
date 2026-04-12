@@ -60,29 +60,35 @@ export class AuthController {
   async verifyEmail(@Query('token') token: string, @Res() res: Response) {
     try {
       await this.auth.verifyEmail(token);
+      
       return res.send(`
-      <html>
-        <head><title>Email Verified</title></head>
-        <body>
-          <h2>Your email has been verified!</h2>
-          <p>You can now return to the app and <b>log in to finish your registration</b>.</p>
-        </body>
-      </html>
-    `);
+        <html>
+          <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f9fafb;">
+            <div style="text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+              <h1 style="color: #059669; margin-bottom: 1rem;">Email Vérifié !</h1>
+              <p style="color: #4b5563;">Votre compte a été activé avec succès.</p>
+              <p style="color: #6b7280; font-size: 0.875rem; margin-top: 1rem;">Vous pouvez maintenant retourner sur l'application.</p>
+            </div>
+          </body>
+        </html>
+      `);
     } catch (e: unknown) {
       const reason =
         e instanceof Error && typeof e.message === 'string'
           ? e.message
-          : 'Verification failed.';
+          : 'La vérification a échoué.';
+      
       return res.status(400).send(`
-      <html>
-        <head><title>Verification Failed</title></head>
-        <body>
-          <h2>Verification failed</h2>
-          <p>${reason}</p>
-        </body>
-      </html>
-    `);
+        <html>
+          <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fef2f2;">
+            <div style="text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+              <h1 style="color: #dc2626; margin-bottom: 1rem;">Erreur</h1>
+              <p style="color: #4b5563;">${reason}</p>
+              <p style="color: #6b7280; font-size: 0.875rem; margin-top: 1rem;">Le lien est peut-être expiré ou invalide.</p>
+            </div>
+          </body>
+        </html>
+      `);
     }
   }
 

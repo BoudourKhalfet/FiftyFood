@@ -10,12 +10,21 @@ import {
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AdminService } from './admin.service';
+import { DashboardService } from './dashboard.service';
 import { DecisionDto } from './dto/decision.dto';
 
 @Controller('admin')
 @Roles(Role.ADMIN)
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly dashboard: DashboardService,
+  ) {}
+
+  @Get('dashboard')
+  getDashboardStats() {
+    return this.dashboard.getDashboardStats();
+  }
 
   @Get('users')
   listAll(@Query('role') role?: 'RESTAURANT' | 'LIVREUR') {

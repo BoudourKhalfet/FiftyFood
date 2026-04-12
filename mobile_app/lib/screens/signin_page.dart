@@ -90,6 +90,17 @@ class _SignInPageState extends State<SignInPage> {
       if (realToken != null && user != null) {
         await prefs.setString('jwt', realToken);
 
+        // Check if user role matches the signin page role
+        final userRole = user['role']?.toString().toUpperCase() ?? '';
+        final expectedRole = widget.role == 'Client' ? 'CLIENT' : widget.role.toUpperCase();
+        
+        if (userRole != expectedRole) {
+          setState(() {
+            _error = "This email is registered as a ${user['role']}, not a ${widget.role}. Please sign in from the correct portal or register a new account.";
+          });
+          return;
+        }
+
         // ==== CLIENT logic ====
         if (user['role'] == 'CLIENT') {
           try {
@@ -193,8 +204,9 @@ class _SignInPageState extends State<SignInPage> {
       }
     } catch (e, st) {
       print('ERROR in _handleLogin: $e\n$st');
+      print('Error type: ${e.runtimeType}');
       setState(() {
-        _error = "Network error. Please try again later.";
+        _error = "Network error: $e. Please try again later.";
       });
     } finally {
       setState(() => _loading = false);

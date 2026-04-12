@@ -27,7 +27,7 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
       error = null;
     });
 
-    final url = Uri.parse('http://localhost:3000/orders/deliverer/available');
+    final url = Uri.parse('http://192.168.166.154:3000/orders/deliverer/available');
     final jwt = await getJwt();
 
     try {
@@ -59,7 +59,7 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
   }
 
   Future<bool> acceptDelivery(String orderId) async {
-    final url = Uri.parse('http://localhost:3000/orders/$orderId/accept');
+    final url = Uri.parse('http://192.168.166.154:3000/orders/$orderId/accept');
     final jwt = await getJwt();
     final response = await http.post(
       url,

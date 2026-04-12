@@ -5,11 +5,12 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
+    port: 5173,
+    strictPort: false, // Allow trying another port if 5173 is in use
     // This tells Vite to send /auth/* and /admin/* API requests to your backend (usually NestJS at port 3000)
     proxy: {
-      "/auth": "http://localhost:3000", // <-- For API: /auth/login etc.
-      "^/admin/(users|restaurants|clients|deliverers|orders|reports|insights)":
-        "http://localhost:3000",
+      "^/auth": "http://localhost:3000",
+      "^/admin": "http://localhost:3000",
     },
     // Vite v4+ SPA fallback is ON by default; no need for extra config usually
   },
