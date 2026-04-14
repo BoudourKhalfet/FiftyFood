@@ -21,61 +21,78 @@ export class UsersService {
 
   // Complete profile (step 2 for client onboarding)
   async completeProfile(userId: string, dto: CompleteProfileDto) {
+    console.log('[UsersService] Starting completeProfile for User ID:', userId);
+    console.log('[UsersService] Received DTO:', dto);
+
     const hasNoRestrictions = dto.dietaryRestrictions.includes(
       DietaryRestriction.NO_RESTRICTIONS,
     );
     if (hasNoRestrictions && dto.dietaryRestrictions.length > 1) {
+      console.warn('[UsersService] Validation failed: NO_RESTRICTIONS mixed with other restrictions');
       throw new BadRequestException(
         'If NO_RESTRICTIONS is selected, it must be the only dietary restriction.',
       );
     }
 
-    // Update client profile and set submittedAt
-    const profile = await this.prisma.clientProfile.update({
-      where: { userId },
-      data: {
-        fullName: dto.fullName,
-        phone: dto.phone,
-        defaultAddress: dto.defaultAddress,
-        cuisinePreferences: dto.cuisinePreferences,
-        dietaryRestrictions: dto.dietaryRestrictions,
-        submittedAt: new Date(),
-        // Do NOT set joinedAt here
-      },
-      select: {
-        fullName: true,
-        phone: true,
-        defaultAddress: true,
-        cuisinePreferences: true,
-        dietaryRestrictions: true,
-        submittedAt: true,
-        joinedAt: true,
-      },
-    });
-
-    // Check if email is verified, and if so, set joinedAt if profile is completed
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
-        emailVerifiedAt: true,
-      },
-    });
-
-    // Set joinedAt ONLY if email is verified and profile is completed
-    if (user?.emailVerifiedAt && profile?.submittedAt && !profile?.joinedAt) {
-      await this.prisma.clientProfile.update({
+    try {
+      // Update client profile and set submittedAt
+      console.log('[UsersService] Updating clientProfile in DB...');
+      const profile = await this.prisma.clientProfile.update({
         where: { userId },
-        data: { joinedAt: new Date() },
+        data: {
+          fullName: dto.fullName,
+          phone: dto.phone,
+          defaultAddress: dto.defaultAddress,
+          cuisinePreferences: dto.cuisinePreferences,
+          dietaryRestrictions: dto.dietaryRestrictions,
+          submittedAt: new Date(),
+          // Do NOT set joinedAt here
+        },
+        select: {
+          fullName: true,
+          phone: true,
+          defaultAddress: true,
+          cuisinePreferences: true,
+          dietaryRestrictions: true,
+          submittedAt: true,
+          joinedAt: true,
+        },
       });
-      // Optionally, reload profile to get updated joinedAt
-      profile.joinedAt = new Date();
-    }
+      console.log('[UsersService] clientProfile updated successfully:', profile);
 
-    return { ...user, clientProfile: profile };
+      // Check if email is verified, and if so, set joinedAt if profile is completed
+      console.log('[UsersService] Finding user...');
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          status: true,
+          emailVerifiedAt: true,
+        },
+      });
+      console.log('[UsersService] User found:', user);
+
+      // Set joinedAt ONLY if email is verified and profile is completed
+      if (user?.emailVerifiedAt && profile?.submittedAt && !profile?.joinedAt) {
+        console.log('[UsersService] Email verified and profile submitted. Setting joinedAt...');
+        await this.prisma.clientProfile.update({
+          where: { userId },
+          data: { joinedAt: new Date() },
+        });
+        // Optionally, reload profile to get updated joinedAt
+        profile.joinedAt = new Date();
+        console.log('[UsersService] joinedAt set successfully.');
+      }
+
+      const response = { ...user, clientProfile: profile };
+      console.log('[UsersService] Returning response:', response);
+      return response;
+    } catch (error) {
+      console.error('[UsersService] Error during completeProfile:', error);
+      throw error;
+    }
   }
 
   async submitClientProfile(userId: string) {

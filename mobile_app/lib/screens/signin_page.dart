@@ -5,6 +5,7 @@ import '../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/client/LocationConsentPage.dart' as client_consent;
 import '../screens/deliverer/LocationConsentPage.dart' as deliverer_consent;
+import '../l10n/app_localizations.dart';
 
 class SignInPage extends StatefulWidget {
   final String role;
@@ -42,8 +43,7 @@ class _SignInPageState extends State<SignInPage> {
 
       if (response['code'] == 'EMAIL_NOT_VERIFIED') {
         setState(() {
-          _error =
-              "You must verify your email before you can continue. Please check your inbox (and spam) and verify your email.";
+          _error = AppLocalizations.of(context)!.errorEmailNotVerified;
           _isEmailNotVerified = true;
         });
         return;
@@ -51,14 +51,13 @@ class _SignInPageState extends State<SignInPage> {
 
       if (response['error'] == 'Unauthorized') {
         setState(() {
-          _error = "Invalid email or password. Please try again.";
+          _error = AppLocalizations.of(context)!.errorInvalidCredentials;
         });
         return;
       }
       if (response['error'] == 'Forbidden') {
         setState(() {
-          _error =
-              "This account is not allowed to login yet. Please contact support.";
+          _error = AppLocalizations.of(context)!.errorForbidden;
         });
         return;
       }
@@ -79,8 +78,7 @@ class _SignInPageState extends State<SignInPage> {
 
       if (user != null && user['emailVerified'] == false) {
         setState(() {
-          _error =
-              "You must verify your email before you can continue. Please check your inbox (and spam) and verify your email.";
+          _error = AppLocalizations.of(context)!.errorEmailNotVerified;
           _isEmailNotVerified = true;
         });
         return;
@@ -96,7 +94,7 @@ class _SignInPageState extends State<SignInPage> {
         
         if (userRole != expectedRole) {
           setState(() {
-            _error = "This email is registered as a ${user['role']}, not a ${widget.role}. Please sign in from the correct portal or register a new account.";
+            _error = AppLocalizations.of(context)!.errorRoleMismatch(user['role'].toString(), widget.role);
           });
           return;
         }
@@ -134,7 +132,7 @@ class _SignInPageState extends State<SignInPage> {
                 Navigator.of(context).pushReplacementNamed('/client/signup2');
               } else {
                 setState(() {
-                  _error = "Network error. Please try again later.";
+                  _error = AppLocalizations.of(context)!.errorNetwork;
                 });
               }
             }
@@ -167,7 +165,7 @@ class _SignInPageState extends State<SignInPage> {
                 ).pushReplacementNamed('/deliverer/signup2');
               } else {
                 setState(() {
-                  _error = "Network error. Please try again later.";
+                  _error = AppLocalizations.of(context)!.errorNetwork;
                 });
               }
             }
@@ -193,20 +191,19 @@ class _SignInPageState extends State<SignInPage> {
           }
         } else {
           setState(() {
-            _error =
-                'Account needs onboarding. Please complete your registration profile.';
+            _error = AppLocalizations.of(context)!.errorOnboardingNeeded;
           });
         }
       } else {
         setState(() {
-          _error = 'Login failed: No token returned.';
+          _error = AppLocalizations.of(context)!.errorLoginNoToken;
         });
       }
     } catch (e, st) {
       print('ERROR in _handleLogin: $e\n$st');
       print('Error type: ${e.runtimeType}');
       setState(() {
-        _error = "Network error: $e. Please try again later.";
+        _error = "${AppLocalizations.of(context)!.errorNetwork}: $e";
       });
     } finally {
       setState(() => _loading = false);
@@ -218,23 +215,23 @@ class _SignInPageState extends State<SignInPage> {
       _sendingResend = true;
       _resendInfo = null;
     });
+
     try {
       final response = await ApiService.post('auth/resend-verification-email', {
         'email': _emailController.text.trim(),
       });
-      if (response == "" && response['status'] == 'ok') {
+      if (response == "" || response['status'] == 'ok') {
         setState(() {
-          _resendInfo =
-              "Verification email resent! Please check your inbox (and spam).";
+          _resendInfo = AppLocalizations.of(context)!.infoVerificationResent;
         });
       } else {
         setState(() {
-          _resendInfo = "Couldn't resend verification email.";
+          _resendInfo = AppLocalizations.of(context)!.errorResendFailed;
         });
       }
     } catch (e) {
       setState(() {
-        _resendInfo = "Error resending email: $e";
+        _resendInfo = AppLocalizations.of(context)!.errorResendException(e.toString());
       });
     } finally {
       setState(() => _sendingResend = false);
@@ -275,7 +272,7 @@ class _SignInPageState extends State<SignInPage> {
       child: TextFormField(
         controller: controller,
         obscureText: obscure ? _obscure : false,
-        validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+        validator: (v) => (v == null || v.isEmpty) ? AppLocalizations.of(context)!.errorRequired : null,
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
@@ -329,10 +326,10 @@ class _SignInPageState extends State<SignInPage> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Center(
+              Center(
                 child: Text(
-                  'Welcome back',
-                  style: TextStyle(
+                  AppLocalizations.of(context)!.signInWelcome,
+                  style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF1A1A1A),
@@ -340,10 +337,10 @@ class _SignInPageState extends State<SignInPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Center(
+              Center(
                 child: Text(
-                  'Sign in to continue saving delicious meals',
-                  style: TextStyle(color: Color(0xFF1A1A1A), fontSize: 14),
+                  AppLocalizations.of(context)!.signInSubtitle,
+                  style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 14),
                 ),
               ),
               const SizedBox(height: 18),
@@ -362,7 +359,7 @@ class _SignInPageState extends State<SignInPage> {
                       child: Column(
                         children: [
                           _buildField(
-                            label: 'Email',
+                            label: AppLocalizations.of(context)!.labelEmail,
                             icon: Icons.email_outlined,
                             controller: _emailController,
                           ),
@@ -371,7 +368,7 @@ class _SignInPageState extends State<SignInPage> {
                             alignment: Alignment.centerRight,
                             children: [
                               _buildField(
-                                label: 'Password',
+                                label: AppLocalizations.of(context)!.labelPassword,
                                 icon: Icons.lock_outline,
                                 controller: _passwordController,
                                 obscure: true,

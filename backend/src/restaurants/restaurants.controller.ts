@@ -175,6 +175,13 @@ export class RestaurantsController {
     this.ensureRestaurant(req);
     return this.restaurants.submit(req.user.sub);
   }
+
+  @UseGuards(OnboardingAuthGuard)
+  @Get('stats')
+  async getStats(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.restaurants.getRestaurantStats(req.user.sub);
+  }
 }
 
 @Public()

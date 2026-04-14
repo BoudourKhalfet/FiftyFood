@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../api/api_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import '../../l10n/app_localizations.dart';
 import 'offers_tab.dart';
 import 'orders_tab.dart';
 import 'stats_tab.dart';
@@ -214,6 +215,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           _uploadedOfferImageUrl = data['url'];
           _offerImageUploadError = null;
         });
+
+        // Auto-generate description using Gemini
+        await _generateDescriptionForImage(
+            data['url'], modalSetState);
       } else {
         modalSetState(() {
           _offerImageUploadError = 'Failed to upload img: $respStr';
@@ -231,9 +236,54 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     }
   }
 
+  Future<void> _generateDescriptionForImage(
+    String imageUrl,
+    void Function(void Function()) modalSetState,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      
+      // Get current language code
+      final locale = Localizations.localeOf(context);
+      final languageCode = locale.languageCode;
+
+      final response = await http.post(
+        Uri.parse('http://localhost:3000/offers/generate-description'),
+        headers: {
+          'Authorization': 'Bearer $jwt',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'imageUrl': imageUrl,
+          'language': languageCode,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        final description = data['description'] as String?;
+
+        if (description != null && description.isNotEmpty) {
+          modalSetState(() {
+            _descriptionController.text = description;
+            _offerDescription = description;
+          });
+        }
+      } else {
+        print('Failed to generate description: ${response.statusCode}');
+        print('Response: ${response.body}');
+      }
+    } catch (e) {
+      print('Error generating description: $e');
+      // Don't show error to user - description generation is optional
+    }
+  }
+
   int _activeTab = 0; // 0: offers, 1: orders, 2: stats, 3: profile
 
   // New Offer Form
+  late TextEditingController _descriptionController;
   String _offerDescription = '';
   String _originalPrice = '';
   String _discountedPrice = '';
@@ -250,6 +300,13 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String _qrInput = '';
   Map<String, dynamic>? _qrResult;
 
+  // Restaurant Dashboard Stats
+  double _totalSales = 0.0;
+  int _mealsSaved = 0;
+  double _avgRating = 0.0;
+  int _activeOffers = 0;
+  bool _loadingStats = true;
+
   Map<String, dynamic> _restaurantInfo = {
     'name': 'Restaurant Name',
     'email': '',
@@ -259,11 +316,26 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   final List<Map<String, dynamic>> _orders = [];
   final GlobalKey<PartnerOffersTabState> _offersTabKey =
       GlobalKey<PartnerOffersTabState>();
+  
+  // Timer for real-time stats refresh
+  Timer? _statsRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchRestaurantProfile();
+    _fetchRestaurantStats();
+    
+    // Refresh stats every 30 seconds for real-time updates
+    _statsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _fetchRestaurantStats();
+    });
+  }
+
+  @override
+  void dispose() {
+    _statsRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetchRestaurantProfile() async {
@@ -291,6 +363,36 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       }
     } catch (e) {
       debugPrint('Error fetching restaurant profile: $e');
+    }
+  }
+
+  Future<void> _fetchRestaurantStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+      
+      final response = await ApiService.get(
+        'restaurant/onboarding/stats',
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+      
+      if (mounted) {
+        setState(() {
+          _totalSales = (response['totalSales'] ?? 0).toDouble();
+          _mealsSaved = response['mealsSaved'] ?? 0;
+          _avgRating = (response['avgRating'] ?? 0).toDouble();
+          _activeOffers = response['activeOffers'] ?? 0;
+          _loadingStats = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching restaurant stats: $e');
+      if (mounted) {
+        setState(() {
+          _loadingStats = false;
+        });
+      }
     }
   }
 
@@ -846,6 +948,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   }
 
   void _showCreateOfferDialog() {
+    _descriptionController = TextEditingController();
+    
     setState(() {
       _offerDescription = '';
       _originalPrice = '';
@@ -853,6 +957,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       _quantity = '';
       _pickupTime = '';
       _visibility = 'IDENTIFIED';
+      _uploadedOfferImageUrl = null;
     });
 
     showDialog(
@@ -883,10 +988,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Title
-                    const Center(
+                    Center(
                       child: Text(
-                        'Create New Offer',
-                        style: TextStyle(
+                        AppLocalizations.of(context)!.btnCreateOffer,
+                        style: const TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w800,
                         ),
@@ -966,14 +1071,50 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         ),
                       )
                     else
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          _uploadedOfferImageUrl!,
-                          height: 200,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
+                      Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              _uploadedOfferImageUrl!,
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: GestureDetector(
+                              onTap: () {
+                                modalSetState(() {
+                                  _uploadedOfferImageUrl = null;
+                                  _descriptionController.clear();
+                                  _offerDescription = '';
+                                  _offerImageUploadError = null;
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.3),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.all(6),
+                                child: const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     if (_offerImageUploadError != null &&
                         _uploadedOfferImageUrl == null)
@@ -1007,19 +1148,19 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     const SizedBox(height: 18),
 
                     // Description
-                    const Text(
-                      'Description',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.labelDescription,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
                     ),
                     const SizedBox(height: 6),
                     TextField(
+                      controller: _descriptionController,
                       onChanged: (v) => _offerDescription = v,
                       decoration: InputDecoration(
-                        hintText:
-                            "e.g. Surprise pasta bag, Chef's selection...",
+                        hintText: AppLocalizations.of(context)!.hintDescription,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -1036,9 +1177,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     const SizedBox(height: 12),
 
                     // CATEGORY SECTION
-                    const Text(
-                      'Categories',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.labelCategories,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -1054,7 +1195,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             ),
                           )
                           .toList(),
-                      title: const Text("Categories"),
+                      title: Text(AppLocalizations.of(context)!.labelCategories),
                       selectedColor: Color(0xFF1F9D7A),
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -1065,8 +1206,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         Icons.category,
                         color: Color(0xFF1F9D7A),
                       ),
-                      buttonText: const Text(
-                        "Select categories",
+                      buttonText: Text(
+                        AppLocalizations.of(context)!.btnSelectCategories,
                         style: TextStyle(
                           color: Color(0xFF9CA3AF),
                           fontSize: 13,
@@ -1087,9 +1228,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Original Price (€)',
-                                style: TextStyle(
+                              Text(
+                                AppLocalizations.of(context)!.labelOriginalPrice,
+                                style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
                                 ),
@@ -1121,8 +1262,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Discounted Price (€)',
+                              Text(
+                                AppLocalizations.of(context)!.labelDiscountedPrice,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
@@ -1162,8 +1303,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Quantity',
+                              Text(
+                                AppLocalizations.of(context)!.labelQuantity,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
@@ -1397,6 +1538,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                             backgroundColor: Color(0xFF1F9D7A),
                                           ),
                                         );
+                                        Navigator.pop(context);
+                                        _descriptionController.dispose();
                                       }
                                     } catch (e) {
                                       modalSetState(() {
@@ -1450,28 +1593,28 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           children: [
             _buildStatCard(
               title: "Total Sales",
-              value: "0.0",
+              value: _loadingStats ? "-" : _totalSales.toStringAsFixed(2),
               icon: Icons.euro,
               iconColor: const Color(0xFF1F9D7A),
               iconBg: const Color(0xFFE8F5F1),
             ),
             _buildStatCard(
               title: "Meals Saved",
-              value: "0",
+              value: _loadingStats ? "-" : _mealsSaved.toString(),
               icon: Icons.eco,
               iconColor: const Color(0xFF2ECC71),
               iconBg: const Color(0xFFE9F8EF),
             ),
             _buildStatCard(
               title: "Avg Rating",
-              value: "0.0",
+              value: _loadingStats ? "-" : _avgRating.toStringAsFixed(1),
               icon: Icons.star_border,
               iconColor: const Color(0xFFFFA000),
               iconBg: const Color(0xFFFFF4E5),
             ),
             _buildStatCard(
               title: "Active Offers",
-              value: "0",
+              value: _loadingStats ? "-" : _activeOffers.toString(),
               icon: Icons.trending_up,
               iconColor: const Color(0xFFFF7043),
               iconBg: const Color(0xFFFFEDE8),

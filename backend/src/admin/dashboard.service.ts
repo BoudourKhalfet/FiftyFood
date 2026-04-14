@@ -9,11 +9,11 @@ export class DashboardService {
     // Total users by role (only active/approved)
     const usersByRole = await this.prisma.user.groupBy({
       where: {
-        status: 'ACTIVE',
+        status: 'APPROVED',
       },
       by: ['role'],
       _count: {
-        id: true,
+        _all: true,
       },
     });
 
@@ -127,7 +127,7 @@ export class DashboardService {
       userStats: {
         byRole: usersByRole,
         byStatus: accountsByStatus,
-        total: usersByRole.reduce((sum, r) => sum + r._count.id, 0),
+        total: usersByRole.reduce((sum, r) => sum + (r._count?._all ?? 0), 0),
       },
       orderStats: {
         total: orderStats._count.id,

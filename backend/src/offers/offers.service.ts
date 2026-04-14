@@ -23,6 +23,48 @@ Check for: mold, discoloration, slimy textures, dried-out edges, wilting, unusua
 Rate: fresh (just prepared) | acceptable (minor age signs, safe) | questionable (borderline) | spoiled (unsafe).
 Be VERY STRICT. Consumer safety is top priority.`;
 
+const DESCRIPTION_PROMPT_EN = `You are a professional food photographer and marketing copywriter for restaurants. 
+Analyze this food photo and generate a SHORT, COMMERCIAL, ENTICING product description suitable for a food surplus/discount app (like FiftyFood).
+
+Requirements:
+- Maximum 150 characters
+- Highlight food quality, freshness, and appeal
+- Include main ingredients or food type
+- Make it IRRESISTIBLE to hungry customers
+- Professional tone, not casual
+- No marketing hype, be authentic
+- Example: "Fresh homemade lasagna with layers of creamy ricotta and rich Bolognese sauce. Perfect for dinner!"
+
+Return ONLY the description text, nothing else.`;
+
+const DESCRIPTION_PROMPT_FR = `Vous êtes un photographe culinaire professionnel et rédacteur marketing pour les restaurants.
+Analysez cette photo de nourriture et générez une description produit COURTE, COMMERCIALE et ALLÉCHANTE adaptée à une application de nourriture excédentaire/discount (comme FiftyFood).
+
+Exigences:
+- Maximum 150 caractères
+- Mettez en évidence la qualité, la fraîcheur et l'attrait des aliments
+- Inclure le type d'ingrédients principaux ou de nourriture
+- Rendez-le IRRÉSISTIBLE pour les clients affamés
+- Ton professionnel, pas décontracté
+- Pas de battage publicitaire, soyez authentique
+- Exemple : "Lasagnes maison fraîches avec des couches de ricotta crémeuse et une riche sauce Bolognese. Parfait pour le dîner!"
+
+Retournez UNIQUEMENT le texte de la description, rien d'autre.`;
+
+const DESCRIPTION_PROMPT_AR = `أنت مصور طعام احترافي وكاتب تسويق لمطاعم.
+حلل هذه الصورة الغذائية وقم بإنشاء وصف منتج قصير وتجاري وجذاب مناسب لتطبيق الطعام الفائض/الخصم (مثل FiftyFood).
+
+المتطلبات:
+- بحد أقصى 150 حرف
+- ركز على جودة الطعام والنضارة والجاذبية
+- قم بتضمين نوع المكونات الرئيسية أو الطعام
+- اجعله لا يقاوم للعملاء الجائعين
+- نبرة احترافية وليست عادية
+- لا للمبالغة في الإعلان، كن أصليًا
+- مثال: "لازانيا منزلية طازجة مع طبقات من الريكوتا الكريمية وصلصة بولونيز الغنية. مثالي للعشاء!"
+
+أرجع النص الوصف فقط، لا شيء آخر.`;
+
 // --- Add interfaces here ---
 interface AuthenticityResult {
   is_authentic: boolean;
@@ -37,6 +79,9 @@ interface FreshnessResult {
   spoilage_signs?: string[];
   confidence?: number;
   reasons?: string[];
+}
+interface DescriptionResult {
+  description: string;
 }
 
 @Injectable()
@@ -288,6 +333,95 @@ export class OffersService {
         freshness_rating: 'unknown',
         confidence: 0,
       };
+    }
+  }
+
+  // Generate a commercial description for a food photo using Gemini
+  private getDescriptionPrompt(language: string = 'en'): string {
+    switch (language) {
+      case 'fr':
+        return DESCRIPTION_PROMPT_FR;
+      case 'ar':
+        return DESCRIPTION_PROMPT_AR;
+      default:
+        return DESCRIPTION_PROMPT_EN;
+    }
+  }
+
+  async generateDescription(imageUrl: string, language: string = 'en') {
+    if (!OPENROUTER_API_KEY) {
+      throw new Error('OPENROUTER_API_KEY not configured');
+    }
+
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image from URL: ${imageUrl}`);
+      }
+
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const imageBase64 = `data:image/jpeg;base64,${base64}`;
+
+      const prompt = this.getDescriptionPrompt(language);
+      const imageContent = [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageBase64 } },
+      ];
+
+      const apiResponse = await fetch(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [{ role: 'user', content: imageContent }],
+            max_tokens: 200,
+            temperature: 0.7,
+          }),
+        },
+      );
+
+      if (!apiResponse.ok) {
+        const status = apiResponse.status;
+        const errorText = await apiResponse.text();
+        console.error(
+          `Gemini API error (${status}):`,
+          errorText.substring(0, 200),
+        );
+
+        if (status === 429 || status === 402) {
+          throw new Error(
+            status === 429 ? 'Rate limit exceeded' : 'API credits exhausted',
+          );
+        }
+        throw new Error('Failed to generate description');
+      }
+
+      const data = (await apiResponse.json()) as {
+        choices: { message: { content: string } }[];
+      };
+      const description = data.choices?.[0]?.message?.content?.trim();
+
+      if (!description) {
+        throw new Error('No description generated');
+      }
+
+      return {
+        description,
+        generated_at: new Date().toISOString(),
+        model: 'google/gemini-2.5-flash',
+      };
+    } catch (e: unknown) {
+      const err = e as Error & { status?: number };
+      console.error('Description generation error:', err);
+      throw new BadRequestException(
+        err.message || 'Failed to generate description. Please try again.',
+      );
     }
   }
 

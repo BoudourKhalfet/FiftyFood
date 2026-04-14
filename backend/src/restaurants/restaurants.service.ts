@@ -278,4 +278,43 @@ export class RestaurantsService {
       date: r.createdAt,
     }));
   }
+
+  async getRestaurantStats(userId: string) {
+    // Get restaurant profile for avgRating
+    const profile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId },
+      select: { id: true, avgRating: true },
+    });
+
+    if (!profile) {
+      throw new BadRequestException('Restaurant profile not found');
+    }
+
+    // Get total sales from delivered orders
+    const orderData = await this.prisma.order.aggregate({
+      where: {
+        restaurantId: userId,
+        status: 'DELIVERED',
+      },
+      _sum: { total: true },
+    });
+
+    // Get meals saved (sum of quantities from all offers)
+    const offerData = await this.prisma.offer.aggregate({
+      where: { restaurantId: userId },
+      _sum: { quantity: true },
+    });
+
+    // Get count of active offers
+    const activeOffersCount = await this.prisma.offer.count({
+      where: { restaurantId: userId, status: 'ACTIVE' },
+    });
+
+    return {
+      totalSales: orderData._sum?.total || 0,
+      mealsSaved: offerData._sum?.quantity || 0,
+      avgRating: profile.avgRating || 0,
+      activeOffers: activeOffersCount,
+    };
+  }
 }

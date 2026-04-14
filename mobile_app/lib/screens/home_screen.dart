@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import '../main.dart';
 import 'client/signup_step1.dart';
 import 'deliverer/signup_step1.dart';
 import 'partner/become_partner.dart';
@@ -58,7 +60,31 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ],
                 ),
-                const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
+                Row(
+                  children: [
+                    PopupMenuButton<Locale>(
+                      icon: const Icon(Icons.language, color: Color(0xFF1F9D7A)),
+                      onSelected: (Locale locale) {
+                        MyApp.of(context)?.setLocale(locale);
+                      },
+                      itemBuilder: (BuildContext context) => <PopupMenuEntry<Locale>>[
+                        PopupMenuItem<Locale>(
+                          value: const Locale('en'),
+                          child: Text(AppLocalizations.of(context)!.languageEnglish),
+                        ),
+                        PopupMenuItem<Locale>(
+                          value: const Locale('fr'),
+                          child: Text(AppLocalizations.of(context)!.languageFrench),
+                        ),
+                        PopupMenuItem<Locale>(
+                          value: const Locale('ar'),
+                          child: Text(AppLocalizations.of(context)!.languageArabic),
+                        ),
+                      ],
+                    ),
+                    const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
+                  ],
+                ),
               ],
             ),
           ),
@@ -77,12 +103,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.eco, size: 14, color: Color(0xFF1F9D7A)),
-                            SizedBox(width: 6),
+                          children: [
+                            const Icon(Icons.eco, size: 14, color: Color(0xFF1F9D7A)),
+                            const SizedBox(width: 6),
                             Text(
-                              'Fighting food waste together',
-                              style: TextStyle(
+                              AppLocalizations.of(context)!.welcome,
+                              style: const TextStyle(
                                 color: Color(0xFF1F9D7A),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -214,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                   padding: const EdgeInsets.symmetric(vertical: 14),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                child: const Text('Get Started', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                                child: Text(AppLocalizations.of(context)!.btnGetStarted, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -229,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                   padding: const EdgeInsets.symmetric(vertical: 14),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                child: const Text('Sign In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                                child: Text(AppLocalizations.of(context)!.btnSignIn, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                               ),
                             ),
                           ],
@@ -279,11 +305,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       );
                     },
                     icon: const Icon(Icons.person_outline),
-                    label: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      child: Text('Join as Client', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                    label: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Text(AppLocalizations.of(context)!.btnJoinAsClient, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                     ),
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1F9D7A), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1F9D7A),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 0),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -296,11 +327,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       );
                     },
                     icon: const Icon(Icons.storefront),
-                    label: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      child: Text('Join as Partner', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                    label: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Text(AppLocalizations.of(context)!.btnJoinAsPartner, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                     ),
-                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF1F9D7A), width: 2), foregroundColor: const Color(0xFF1F9D7A), padding: const EdgeInsets.symmetric(vertical: 0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
+                      foregroundColor: const Color(0xFF1F9D7A),
+                      padding: const EdgeInsets.symmetric(vertical: 0),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    ),
                   ),
                 ),
               ],
@@ -308,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-                  child: OutlinedButton.icon(
+              child: OutlinedButton.icon(
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -316,11 +352,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   );
                 },
                 icon: const Icon(Icons.delivery_dining),
-                label: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text('Join as Deliverer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                label: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Text(AppLocalizations.of(context)!.btnJoinAsDeliverer, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                 ),
-                style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF1F9D7A), width: 2), foregroundColor: const Color(0xFF1F9D7A), padding: const EdgeInsets.symmetric(vertical: 0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
+                  foregroundColor: const Color(0xFF1F9D7A),
+                  padding: const EdgeInsets.symmetric(vertical: 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
               ),
             ),
           ],
@@ -329,9 +370,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Wrap(
           spacing: 16,
           runSpacing: 8,
-          children: const [
-            Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.verified, size: 16, color: Color(0xFF1F9D7A)), SizedBox(width: 6), Text('Verified Restaurants', style: TextStyle(color: Color(0xFF5F6F6B), fontSize: 12))]),
-            Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.lightbulb, size: 16, color: Color(0xFFFF9500)), SizedBox(width: 6), Text('AI-Powered Matching', style: TextStyle(color: Color(0xFF5F6F6B), fontSize: 12))]),
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.verified, size: 16, color: Color(0xFF1F9D7A)),
+                const SizedBox(width: 6),
+                Text(AppLocalizations.of(context)!.labelVerifiedRestaurants, style: const TextStyle(color: Color(0xFF5F6F6B), fontSize: 12)),
+              ],
+            ),
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lightbulb, size: 16, color: Color(0xFFFF9500)),
+                SizedBox(width: 6),
+                Text('AI-Powered Matching', style: TextStyle(color: Color(0xFF5F6F6B), fontSize: 12)),
+              ],
+            ),
           ],
         ),
       ],

@@ -5,8 +5,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
-    strictPort: false, // Allow trying another port if 5173 is in use
+    port: 5174,
+    strictPort: true, // Use strictPort if 5174 is specifically desired
     // This tells Vite to send /auth/* and /admin/* API requests to your backend (usually NestJS at port 3000)
     proxy: {
       "^/auth": "http://localhost:3000",

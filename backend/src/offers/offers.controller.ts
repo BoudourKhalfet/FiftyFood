@@ -17,6 +17,7 @@ import { Role } from '@prisma/client';
 import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { VerifyPhotoDto } from './dto/verify-photo.dto';
+import { GenerateDescriptionDto } from './dto/generate-description.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -36,13 +37,26 @@ export class OffersController {
 
   /**
    * POST /offers/verify-photo
-   * Send a base64 food photo for AI verification.
+   * [DISABLED FOR NOW] Send a base64 food photo for AI verification.
+   * This endpoint is kept for future use but not currently called.
    */
-  @Post('verify-photo')
-  async verifyPhoto(@Req() req: ReqWithUser, @Body() dto: VerifyPhotoDto) {
+  // @Post('verify-photo')
+  // async verifyPhoto(@Req() req: ReqWithUser, @Body() dto: VerifyPhotoDto) {
+  //   this.ensureRestaurant(req);
+  //   return this.offers.verifyPhoto(dto.image);
+  // }
+
+  /**
+   * POST /offers/generate-description
+   * Generate a commercial description for a food photo using Gemini.
+   */
+  @Post('generate-description')
+  async generateDescription(
+    @Req() req: ReqWithUser,
+    @Body() dto: GenerateDescriptionDto,
+  ) {
     this.ensureRestaurant(req);
-    // No EXIF/photo date logic, call the correct method
-    return this.offers.verifyPhoto(dto.image);
+    return this.offers.generateDescription(dto.imageUrl, dto.language || 'en');
   }
 
   /**

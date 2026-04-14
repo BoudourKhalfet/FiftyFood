@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../../api/api_service.dart';
+import '../../l10n/app_localizations.dart';
 
 class SignupStep1 extends StatefulWidget {
   const SignupStep1({Key? key}) : super(key: key);
@@ -62,14 +63,14 @@ class _SignupStep1State extends State<SignupStep1> {
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: const Text('Almost there!'),
-              content: const Text(
-                'Registration successful.\n\nPlease check your email inbox (and spam) and verify your email to continue.',
+              title: Text(AppLocalizations.of(context)!.dialogAlmostThere),
+              content: Text(
+                AppLocalizations.of(context)!.infoRegistrationSuccess,
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Okay'),
+                  child: Text(AppLocalizations.of(context)!.btnOkay),
                 ),
               ],
             ),
@@ -91,7 +92,7 @@ class _SignupStep1State extends State<SignupStep1> {
         }
       } catch (e) {
         setState(() {
-          _error = "Registration failed (exception): $e";
+          _error = AppLocalizations.of(context)!.errorRegistrationFailed(e.toString());
         });
       } finally {
         setState(() {
@@ -100,7 +101,7 @@ class _SignupStep1State extends State<SignupStep1> {
       }
     } else if (!_agreed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must agree to terms of service.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.errorAgreeTerms)),
       );
     }
   }
@@ -136,12 +137,12 @@ class _SignupStep1State extends State<SignupStep1> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Create your account',
+                Text(
+                  AppLocalizations.of(context)!.signupTitle,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 26,
                     fontFamily: 'Roboto',
                     fontWeight: FontWeight.bold,
@@ -150,13 +151,13 @@ class _SignupStep1State extends State<SignupStep1> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Start saving food and money in minutes',
+                  AppLocalizations.of(context)!.signupSubtitle,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     fontFamily: 'Roboto',
                     fontWeight: FontWeight.w400,
-                    color: const Color(0xFF6B7280),
+                    color: Color(0xFF6B7280),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -197,28 +198,28 @@ class _SignupStep1State extends State<SignupStep1> {
                       // only email and password on step1
                       _buildTextField(
                         controller: _emailController,
-                        label: 'Email',
+                        label: AppLocalizations.of(context)!.labelEmail,
                         icon: Icons.email,
                         keyboardType: TextInputType.emailAddress,
                         validator: (v) {
-                          if (v == null || v.isEmpty) return 'Required';
+                          if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
                           if (!RegExp(
                             r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
                           ).hasMatch(v))
-                            return 'Invalid email format';
+                            return AppLocalizations.of(context)!.errorInvalidEmail;
                           return null;
                         },
                       ),
                       const SizedBox(height: 12),
                       _buildTextField(
                         controller: _passwordController,
-                        label: 'Password',
+                        label: AppLocalizations.of(context)!.labelPassword,
                         icon: Icons.lock,
                         obscureText: true,
                         validator: (v) {
-                          if (v == null || v.isEmpty) return 'Required';
+                          if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
                           if (v.length < 8) {
-                            return 'Must be at least 8 characters';
+                            return AppLocalizations.of(context)!.errorPasswordLength;
                           }
                           return null;
                         },
@@ -226,19 +227,19 @@ class _SignupStep1State extends State<SignupStep1> {
                       const SizedBox(height: 12),
                       _buildTextField(
                         controller: _confirmController,
-                        label: 'Confirm password',
+                        label: AppLocalizations.of(context)!.labelConfirmPassword,
                         icon: Icons.lock_outline,
                         obscureText: true,
                         validator: (v) {
-                          if (v == null || v.isEmpty) return 'Required';
+                          if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
                           if (v != _passwordController.text)
-                            return 'Passwords do not match';
+                            return AppLocalizations.of(context)!.errorPasswordsNotMatch;
                           return null;
                         },
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Must be at least 8 characters',
+                        AppLocalizations.of(context)!.errorPasswordLength,
                         style: theme.textTheme.bodySmall,
                       ),
                       const SizedBox(height: 16),
@@ -252,10 +253,10 @@ class _SignupStep1State extends State<SignupStep1> {
                               });
                             },
                           ),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'I agree to the Terms of Service and Privacy Policy',
-                              style: TextStyle(fontSize: 12),
+                              AppLocalizations.of(context)!.labelAgreedTerms,
+                              style: const TextStyle(fontSize: 12),
                             ),
                           ),
                         ],
@@ -266,26 +267,26 @@ class _SignupStep1State extends State<SignupStep1> {
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Text(
                             _error!,
-                            style: TextStyle(color: Colors.red),
+                            style: const TextStyle(color: Colors.red),
                           ),
                         ),
-                      if (_loading) Center(child: CircularProgressIndicator()),
+                      if (_loading) const Center(child: CircularProgressIndicator()),
                       ElevatedButton(
                         onPressed: _onContinue,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2D8066),
                           foregroundColor: Colors.white,
                         ),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16.0),
-                          child: Text('Continue '),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          child: Text(AppLocalizations.of(context)!.btnContinue),
                         ),
                       ),
                       const SizedBox(height: 24),
-                      const Text(
-                        'OR CONTINUE WITH',
+                      Text(
+                        AppLocalizations.of(context)!.labelOrContinueWith,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: Color(0xFF9CA3AF),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -301,9 +302,9 @@ class _SignupStep1State extends State<SignupStep1> {
                                 Icons.g_mobiledata,
                                 color: Color(0xFF1F2937),
                               ),
-                              label: const Text(
-                                'Google',
-                                style: TextStyle(color: Color(0xFF1F2937)),
+                              label: Text(
+                                AppLocalizations.of(context)!.btnGoogle,
+                                style: const TextStyle(color: Color(0xFF1F2937)),
                               ),
                               style: OutlinedButton.styleFrom(
                                 side: const BorderSide(
@@ -327,9 +328,9 @@ class _SignupStep1State extends State<SignupStep1> {
                                 Icons.facebook,
                                 color: Color(0xFF1F9D7A),
                               ),
-                              label: const Text(
-                                'Facebook',
-                                style: TextStyle(color: Color(0xFF1F9D7A)),
+                              label: Text(
+                                AppLocalizations.of(context)!.btnFacebook,
+                                style: const TextStyle(color: Color(0xFF1F9D7A)),
                               ),
                               style: OutlinedButton.styleFrom(
                                 side: const BorderSide(
@@ -352,15 +353,15 @@ class _SignupStep1State extends State<SignupStep1> {
                         child: Text.rich(
                           TextSpan(
                             children: [
-                              const TextSpan(
-                                text: 'Already have an account? ',
-                                style: TextStyle(
+                              TextSpan(
+                                text: AppLocalizations.of(context)!.labelAlreadyAccount,
+                                style: const TextStyle(
                                   color: Color(0xFF6B7280),
                                   fontSize: 13,
                                 ),
                               ),
                               TextSpan(
-                                text: 'Sign in',
+                                text: AppLocalizations.of(context)!.btnSignInSmall,
                                 style: const TextStyle(
                                   color: Color(0xFF1F9D7A),
                                   fontWeight: FontWeight.w600,

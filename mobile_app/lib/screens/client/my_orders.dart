@@ -195,3 +195,25 @@ class MyOrdersPage extends StatelessWidget {
     );
   }
 }
+
+class MyOrdersScreen extends StatelessWidget {
+  const MyOrdersScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('My Orders'),
+        backgroundColor: Colors.white,
+        elevation: 1,
+        foregroundColor: Colors.black87,
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: MyOrdersPage(),
+        ),
+      ),
+    );
+  }
+}
