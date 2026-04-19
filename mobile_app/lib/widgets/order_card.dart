@@ -9,7 +9,8 @@ String shortenText(String s, {int limit = 10}) {
 
 void showPickupQRCodeModal(
   BuildContext context, {
-  required String reference,
+  required String qrData,
+  required String displayCode,
   required String pickupSlot,
   required String restaurantName,
 }) {
@@ -62,13 +63,13 @@ void showPickupQRCodeModal(
                   child: Column(
                     children: [
                       QrImageView(
-                        data: reference,
+                        data: qrData,
                         size: 105,
                         backgroundColor: Colors.white,
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        reference,
+                        displayCode,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: Colors.black87,
@@ -82,55 +83,10 @@ void showPickupQRCodeModal(
                 ),
                 const SizedBox(height: 20),
 
-                // Pickup and restaurant info
-                Row(
-                  children: [
-                    Text(
-                      'Pickup:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                        fontSize: 15,
-                      ),
-                    ),
-                    Spacer(),
-                    Text(
-                      pickupSlot,
-                      style: TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w400,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
+                // Keep value text pinned to the right edge for consistent alignment.
+                _modalInfoRow('Pickup:', pickupSlot),
                 SizedBox(height: 7),
-                Row(
-                  children: [
-                    Text(
-                      'Restaurant:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                        fontSize: 15,
-                      ),
-                    ),
-                    Spacer(),
-                    Flexible(
-                      child: Text(
-                        restaurantName,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w400,
-                          color: Colors.black87,
-                          fontSize: 15,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
+                _modalInfoRow('Restaurant:', restaurantName),
                 const SizedBox(height: 16),
                 Divider(height: 19, thickness: 1),
                 const SizedBox(height: 2),
@@ -175,6 +131,38 @@ void showPickupQRCodeModal(
         ],
       ),
     ),
+  );
+}
+
+Widget _modalInfoRow(String label, String value) {
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: 95,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      Expanded(
+        child: Text(
+          value,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            fontWeight: FontWeight.w400,
+            color: Colors.black87,
+            fontSize: 15,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ],
   );
 }
 
@@ -227,6 +215,8 @@ class OrderCard extends StatelessWidget {
   final bool canRateDeliverer;
   final bool canReportDeliverer;
   final String reference;
+  final String? pickupQrToken;
+  final String? pickupQrDisplay;
   final Widget? bottomButton;
 
   const OrderCard({
@@ -251,6 +241,8 @@ class OrderCard extends StatelessWidget {
     this.canRateDeliverer = false,
     this.canReportDeliverer = false,
     required this.reference,
+    this.pickupQrToken,
+    this.pickupQrDisplay,
     this.bottomButton,
   });
 
@@ -390,7 +382,16 @@ class OrderCard extends StatelessWidget {
                         ),
                         onPressed: () => showPickupQRCodeModal(
                           context,
-                          reference: reference,
+                          qrData:
+                              (pickupQrToken != null &&
+                                  pickupQrToken!.trim().isNotEmpty)
+                              ? pickupQrToken!
+                              : reference,
+                          displayCode:
+                              (pickupQrDisplay != null &&
+                                  pickupQrDisplay!.trim().isNotEmpty)
+                              ? pickupQrDisplay!
+                              : reference,
                           pickupSlot: timeSlot,
                           restaurantName: restaurantName,
                         ),

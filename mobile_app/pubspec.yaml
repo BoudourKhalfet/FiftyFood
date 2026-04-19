@@ -39,6 +39,7 @@ dependencies:
   exif: ^3.3.0
   image_picker_for_web: ^3.1.1
   qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.3
   url_launcher: ^6.1.10
   location: ^5.0.3
   multi_select_flutter: ^4.1.3

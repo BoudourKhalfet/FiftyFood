@@ -179,6 +179,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'This account is not allowed to login yet. Please contact support.';
 
   @override
+  String get errorAccountDoesNotExist => 'This account does not exist.';
+
+  @override
+  String get errorAccountSuspended => 'Your account is suspended.';
+
+  @override
   String get errorNetwork => 'Network error. Please try again later.';
 
   @override

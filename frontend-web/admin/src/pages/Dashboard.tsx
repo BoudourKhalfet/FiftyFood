@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   Cell,
@@ -11,7 +9,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 
@@ -97,7 +94,9 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-2xl font-bold text-gray-600">Loading dashboard...</div>
+        <div className="text-2xl font-bold text-gray-600">
+          Loading dashboard...
+        </div>
       </div>
     );
   }
@@ -152,17 +151,27 @@ export default function Dashboard() {
       {/* Key Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Users</h3>
-          <p className="text-3xl font-bold text-blue-600">{stats.userStats.total}</p>
+          <h3 className="text-gray-500 text-sm font-semibold mb-2">
+            Total Users
+          </h3>
+          <p className="text-3xl font-bold text-blue-600">
+            {stats.userStats.total}
+          </p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Orders</h3>
-          <p className="text-3xl font-bold text-green-600">{stats.orderStats.total}</p>
+          <h3 className="text-gray-500 text-sm font-semibold mb-2">
+            Total Orders
+          </h3>
+          <p className="text-3xl font-bold text-green-600">
+            {stats.orderStats.total}
+          </p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Revenue</h3>
+          <h3 className="text-gray-500 text-sm font-semibold mb-2">
+            Total Revenue
+          </h3>
           <p className="text-3xl font-bold text-purple-600">
             ${(stats.orderStats.totalRevenue / 1000).toFixed(1)}K
           </p>
@@ -182,7 +191,8 @@ export default function Dashboard() {
       {stats.dashboard.flaggedCount > 0 && (
         <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-6 rounded">
           <h2 className="text-xl font-bold text-red-700 mb-4">
-            ⚠️ {stats.dashboard.flaggedCount} Restaurant(s) with High Report Rate
+            ⚠️ {stats.dashboard.flaggedCount} Restaurant(s) with High Report
+            Rate
           </h2>
           <div className="space-y-3">
             {stats.flaggedRestaurants.map((rest) => (
@@ -210,7 +220,9 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Users by Role */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Users by Role</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-4">
+            Users by Role
+          </h2>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -226,7 +238,10 @@ export default function Dashboard() {
                 dataKey="value"
               >
                 {roleData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
                 ))}
               </Pie>
               <Tooltip />
@@ -236,7 +251,9 @@ export default function Dashboard() {
 
         {/* Orders by Status */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Orders by Status</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-4">
+            Orders by Status
+          </h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={orderData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -250,7 +267,9 @@ export default function Dashboard() {
 
         {/* Average Ratings */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Average Ratings</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-4">
+            Average Ratings
+          </h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={ratingData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -271,14 +290,21 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={flaggedRestaurantData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
+                <XAxis
+                  dataKey="name"
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
                 <YAxis />
                 <Tooltip
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       return (
                         <div className="bg-white p-2 border border-gray-300 rounded shadow">
-                          <p className="font-semibold">{payload[0].payload.fullName}</p>
+                          <p className="font-semibold">
+                            {payload[0].payload.fullName}
+                          </p>
                           <p className="text-red-600 font-bold">
                             {payload[0].value}% Report Rate
                           </p>
@@ -297,7 +323,9 @@ export default function Dashboard() {
 
       {/* Restaurants Overview Table */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Restaurants Overview</h2>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">
+          Restaurants Overview
+        </h2>
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-gray-100">
@@ -325,15 +353,17 @@ export default function Dashboard() {
             <tbody>
               {stats.restaurants.slice(0, 20).map((rest) => (
                 <tr key={rest.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-800">{rest.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-800">
+                    {rest.name}
+                  </td>
                   <td className="px-4 py-3 text-sm">
                     <span
                       className={`px-2 py-1 rounded text-xs font-semibold ${
                         rest.status === "APPROVED"
                           ? "bg-green-100 text-green-800"
                           : rest.status === "PENDING"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-red-100 text-red-800"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-red-100 text-red-800"
                       }`}
                     >
                       {rest.status}
@@ -342,15 +372,17 @@ export default function Dashboard() {
                   <td className="px-4 py-3 text-sm text-gray-800">
                     ⭐ {rest.avgRating.toFixed(2)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-800">{rest.totalReviews}</td>
+                  <td className="px-4 py-3 text-sm text-gray-800">
+                    {rest.totalReviews}
+                  </td>
                   <td className="px-4 py-3 text-sm font-semibold">
                     <span
                       className={
                         rest.reportPercentage > 20
                           ? "text-red-600"
                           : rest.reportPercentage > 10
-                          ? "text-orange-600"
-                          : "text-green-600"
+                            ? "text-orange-600"
+                            : "text-green-600"
                       }
                     >
                       {rest.reportPercentage.toFixed(1)}%

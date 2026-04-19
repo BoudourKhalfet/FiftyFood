@@ -128,6 +128,24 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
               final status = (offer['status'] ?? 'ACTIVE')
                   .toString()
                   .toUpperCase();
+                final bool isActive = status == 'ACTIVE';
+                final bool isSoldOut = status == 'SOLD_OUT';
+                final bool isExpired = status == 'EXPIRED';
+                final Color statusBg = isActive
+                  ? const Color(0xFF10B981)
+                  : (isSoldOut
+                    ? const Color(0xFFE5E7EB)
+                    : (isExpired
+                        ? const Color(0xFFEF4444)
+                        : const Color(0xFFFFA500)));
+                final String statusLabel = isActive
+                  ? 'Active'
+                  : (isSoldOut
+                    ? 'Sold Out'
+                    : (isExpired ? 'Expired' : 'Paused'));
+                final Color statusTextColor = isActive
+                  ? Colors.white
+                  : (isExpired ? Colors.white : const Color(0xFF6B7280));
               final visibility = (offer['visibility'] ?? 'IDENTIFIED')
                   .toString()
                   .toUpperCase();
@@ -265,23 +283,13 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: status == 'ACTIVE'
-                                  ? const Color(0xFF10B981)
-                                  : (status == 'SOLD_OUT'
-                                        ? const Color(0xFFE5E7EB)
-                                        : const Color(0xFFFFA500)),
+                              color: statusBg,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              status == 'ACTIVE'
-                                  ? 'Active'
-                                  : (status == 'SOLD_OUT'
-                                        ? 'Sold Out'
-                                        : 'Paused'),
+                              statusLabel,
                               style: TextStyle(
-                                color: status == 'ACTIVE'
-                                    ? Colors.white
-                                    : const Color(0xFF6B7280),
+                                color: statusTextColor,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                               ),

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Delete,
   Param,
   Patch,
   Post,
@@ -20,6 +21,7 @@ import { join } from 'path';
 
 import { RestaurantsService } from './restaurants.service';
 import { OnboardingAuthGuard } from '../auth/guards/onboarding-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RestaurantIdentityDto } from './dto/restaurant-identity.dto';
 import { RestaurantLegalDto } from './dto/restaurant-legal.dto';
 import { RestaurantPayoutDto } from './dto/restaurant-payout.dto';
@@ -176,7 +178,7 @@ export class RestaurantsController {
     return this.restaurants.submit(req.user.sub);
   }
 
-  @UseGuards(OnboardingAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('stats')
   async getStats(@Req() req: ReqWithUser) {
     this.ensureRestaurant(req);
@@ -209,5 +211,40 @@ export class PublicRestaurantsController {
       reviews,
       reviewsCount: reviews.length,
     };
+  }
+}
+
+@Controller('restaurants')
+export class RestaurantAccountController {
+  constructor(private readonly restaurants: RestaurantsService) {}
+
+  private ensureRestaurant(req: ReqWithUser) {
+    if (req.user.role !== Role.RESTAURANT) {
+      throw new ForbiddenException('Only RESTAURANT can access this resource');
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/profile')
+  updateProfile(
+    @Req() req: ReqWithUser,
+    @Body() dto: Partial<RestaurantIdentityDto>,
+  ) {
+    this.ensureRestaurant(req);
+    return this.restaurants.updateAccountProfile(req.user.sub, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/payout')
+  updatePayout(@Req() req: ReqWithUser, @Body() dto: RestaurantPayoutDto) {
+    this.ensureRestaurant(req);
+    return this.restaurants.updatePayout(req.user.sub, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me')
+  async deleteAccount(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return await this.restaurants.deleteAccount(req.user.sub);
   }
 }

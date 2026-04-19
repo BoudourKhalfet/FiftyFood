@@ -6,14 +6,18 @@ import {
   Post,
   Query,
   Delete,
+  UseGuards,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { AdminService } from './admin.service';
 import { DashboardService } from './dashboard.service';
 import { DecisionDto } from './dto/decision.dto';
+import { AdminCreateUserDto } from './dto/create-user.dto';
 
 @Controller('admin')
+@UseGuards(RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminController {
   constructor(
@@ -89,5 +93,10 @@ export class AdminController {
   @Delete('users/:id')
   async deleteUser(@Param('id') id: string) {
     return this.admin.deleteUser(id);
+  }
+
+  @Post('users')
+  async createUser(@Body() dto: AdminCreateUserDto) {
+    return this.admin.createUser(dto.email, dto.password, dto.role);
   }
 }

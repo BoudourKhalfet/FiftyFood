@@ -3,7 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { RestaurantUploadType } from './restaurants-upload.constants';
 
 export function getPublicBaseUrl() {
-  return process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000';
+  return process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
 }
 
 export function makeRestaurantUploadPublicUrl(

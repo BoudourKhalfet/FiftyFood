@@ -7,7 +7,20 @@ import {
 import { AccountStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import * as crypto from 'crypto';
 type PendingRoleFilter = 'RESTAURANT' | 'LIVREUR';
+
+function sha256(input: string) {
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+function getEmailPayloadKey(): Buffer {
+  const secret =
+    process.env.EMAIL_CREDENTIALS_SECRET ||
+    process.env.JWT_SECRET ||
+    'dev_secret_change_me';
+  return crypto.createHash('sha256').update(secret).digest();
+}
 
 @Injectable()
 export class AdminService {
@@ -15,6 +28,26 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
   ) {}
+
+  private encryptWelcomePayload(payload: {
+    email: string;
+    password: string;
+    roleLabel: string;
+  }): string {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv(
+      'aes-256-gcm',
+      getEmailPayloadKey(),
+      iv,
+    );
+    const encrypted = Buffer.concat([
+      cipher.update(JSON.stringify(payload), 'utf8'),
+      cipher.final(),
+    ]);
+    const tag = cipher.getAuthTag();
+
+    return `${iv.toString('base64url')}.${tag.toString('base64url')}.${encrypted.toString('base64url')}`;
+  }
 
   async listAll(role?: PendingRoleFilter) {
     const roleFilter =
@@ -588,6 +621,110 @@ export class AdminService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async createUser(email: string, password: string, role: Role) {
+    const allowed =
+      role === Role.CLIENT || role === Role.LIVREUR || role === Role.RESTAURANT;
+
+    if (!allowed) {
+      throw new BadRequestException('Invalid role');
+    }
+
+    const emailLower = email.toLowerCase();
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: emailLower },
+    });
+    if (existing) throw new BadRequestException('Email already in use');
+
+    const bcrypt = await import('bcrypt');
+    const passwordHash = await bcrypt.hash(password, 10);
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = sha256(rawToken);
+    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    // Admin-created users are approved immediately and then forced through email verification.
+    const status = AccountStatus.APPROVED;
+
+    // Admin-created accounts must verify email first
+    const emailVerifiedAt = null;
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: emailLower,
+        passwordHash,
+        role,
+        status,
+        emailVerifiedAt,
+        emailVerificationTokenHash: tokenHash,
+        emailVerificationExpiresAt: tokenExpires,
+        clientProfile:
+          role === Role.CLIENT
+            ? { create: { termsAcceptedAt: new Date() } }
+            : undefined,
+        restaurantProfile:
+          role === Role.RESTAURANT ? { create: {} } : undefined,
+        livreurProfile: role === Role.LIVREUR ? { create: {} } : undefined,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    // Send welcome email
+    const baseUrl =
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+    const roleLabel =
+      role === Role.CLIENT
+        ? 'Client'
+        : role === Role.RESTAURANT
+          ? 'Restaurant'
+          : 'Livreur';
+    const welcomeToken = this.encryptWelcomePayload({
+      email: user.email,
+      password,
+      roleLabel,
+    });
+    const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}&welcome=${encodeURIComponent(welcomeToken)}`;
+
+    try {
+      await this.mailService.sendMail(
+        user.email,
+        `Verify your email for FiftyFood (${roleLabel})`,
+        `<h2>Verify your email</h2>
+         <p>Your ${roleLabel} account has been created by an administrator.</p>
+         <p>Please <a href="${verifyUrl}">click here to verify your email address</a>.</p>
+         <p>After verification, you will receive a second email with your sign-in credentials.</p>
+         <p>If you did not request this, please contact support.</p>`,
+      );
+    } catch (error) {
+      console.error(
+        'Failed to send verification email for admin-created user:',
+        error,
+      );
+      // Don't throw - account creation succeeds even if email fails
+    }
+
+    const adminId = 'cmlz4rqup0000v1bcnh1zy7ps'; // Use actual admin id in real code
+    await this.logHistory({
+      userId: user.id,
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'APPROVE', // Log as creation/approval
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      message: `${roleLabel} account created successfully`,
+    };
   }
 
   async deleteUser(userId: string) {

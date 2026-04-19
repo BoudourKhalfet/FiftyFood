@@ -57,10 +57,14 @@ export class AuthController {
 
   @Public()
   @Get('verify-email')
-  async verifyEmail(@Query('token') token: string, @Res() res: Response) {
+  async verifyEmail(
+    @Query('token') token: string,
+    @Res() res: Response,
+    @Query('welcome') welcome?: string,
+    @Query('changeEmail') changeEmail?: string,
+  ) {
     try {
-      await this.auth.verifyEmail(token);
-      
+      await this.auth.verifyEmail(token, welcome, changeEmail === '1');
       return res.send(`
         <html>
           <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f9fafb;">
@@ -77,7 +81,7 @@ export class AuthController {
         e instanceof Error && typeof e.message === 'string'
           ? e.message
           : 'La vérification a échoué.';
-      
+
       return res.status(400).send(`
         <html>
           <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fef2f2;">
@@ -97,6 +101,21 @@ export class AuthController {
   async resendVerificationEmail(@Body('email') email: string) {
     await this.auth.resendVerificationEmail(email);
     return { status: 'ok' };
+  }
+
+  @Post('request-email-change')
+  @UseGuards(JwtAuthGuard)
+  async requestEmailChange(
+    @Req() req: RequestWithUser,
+    @Body('email') email: string,
+  ) {
+    const authService = this.auth as AuthService & {
+      requestEmailChange(
+        userId: string,
+        newEmail: string,
+      ): Promise<{ message: string }>;
+    };
+    return await authService.requestEmailChange(req.user.sub, email);
   }
 
   @Patch('change-password')

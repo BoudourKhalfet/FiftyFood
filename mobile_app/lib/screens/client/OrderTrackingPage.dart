@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import '../../api/auth_storage.dart';
+import '../../constants/api.dart';
 
 LatLng? parseLatLng(String loc) {
   if (loc.isEmpty) return null;
@@ -62,7 +63,7 @@ class OrderTrackingScreen extends StatelessWidget {
     print('fetchTracking called for $orderId');
     final token = await getJwt();
     final response = await http.get(
-      Uri.parse('http://localhost:3000/orders/$orderId/tracking'),
+      Uri.parse(apiUrl('orders/$orderId/tracking')),
       headers: {if (token != null) "Authorization": "Bearer $token"},
     );
     print('HTTP response: ${response.statusCode} ${response.body}');
@@ -140,6 +141,35 @@ class OrderTrackingPage extends StatelessWidget {
     Icons.location_on,
     Icons.check_circle,
   ];
+
+  Future<void> _confirmDelivery(BuildContext context) async {
+    final token = await getJwt();
+    if (token == null) {
+      throw Exception('Missing session token');
+    }
+
+    final response = await http.patch(
+      Uri.parse(apiUrl('orders/${order.id}/confirm-delivery')),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    print('Confirm delivery response: ${response.statusCode} ${response.body}');
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (!context.mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => OrderTrackingScreen(orderId: order.id),
+        ),
+      );
+      return;
+    }
+
+    throw Exception('Failed to confirm delivery (${response.statusCode})');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -552,13 +582,21 @@ class OrderTrackingPage extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 17),
                 child: Column(
                   children: [
-                    // Confirm Delivery Gradient Button
-                    _confirmDeliveryGradientButton(
-                      onPressed: () {
-                        // your handler logic
-                      },
-                    ),
-                    SizedBox(height: 11),
+                    if (statusIndex < steps.length - 1) ...[
+                      _confirmDeliveryGradientButton(
+                        onPressed: () async {
+                          try {
+                            await _confirmDelivery(context);
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(SnackBar(content: Text('$e')));
+                          }
+                        },
+                      ),
+                      SizedBox(height: 11),
+                    ],
                     Row(
                       children: [
                         Expanded(

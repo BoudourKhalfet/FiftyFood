@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../constants/api.dart';
 import 'package:http_parser/http_parser.dart';
 import '../models/deliverer_profile.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static Future<Map<String, dynamic>> post(
@@ -13,24 +14,32 @@ class ApiService {
     Map<String, String>? headers,
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
-    print(
-      'POST $url\n  Headers: ${{'Content-Type': 'application/json', ...?headers}}\n  Body: $data',
-    );
+    // --- NEW JWT LOGIC ---
+    final prefs = await SharedPreferences.getInstance();
+    final jwt = prefs.getString('jwt');
+    final defaultHeaders = {
+      'Content-Type': 'application/json',
+      if (jwt != null) 'Authorization': 'Bearer $jwt',
+    };
+    final mergedHeaders = {...defaultHeaders, ...?headers};
+    // ----------------------
+
+    print('POST $url\n  Headers: $mergedHeaders\n  Body: $data');
     try {
-      final res = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json', ...?headers},
-        body: jsonEncode(data),
-      ).timeout(Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Request timeout after 30 seconds');
-      });
+      final res = await http
+          .post(url, headers: mergedHeaders, body: jsonEncode(data))
+          .timeout(
+            Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Request timeout after 30 seconds');
+            },
+          );
       print('POST RESPONSE: ${res.statusCode} ${res.body}');
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       } else {
         print('POST ERROR: ${res.statusCode} ${res.body}');
-        // Return error response as-is to allow proper error handling
         try {
           return jsonDecode(res.body) as Map<String, dynamic>;
         } catch (e) {
@@ -87,15 +96,23 @@ class ApiService {
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
 
+    final prefs = await SharedPreferences.getInstance();
+    final jwt = prefs.getString('jwt');
+    final defaultHeaders = {
+      'Content-Type': 'application/json',
+      if (jwt != null) 'Authorization': 'Bearer $jwt',
+    };
+    final mergedHeaders = {...defaultHeaders, ...?headers};
+
     final res = await http.patch(
       url,
-      headers: {'Content-Type': 'application/json', ...?headers},
+      headers: mergedHeaders,
       body: jsonEncode(data),
     );
 
     print('RAW RESPONSE PATCH: ${res.statusCode} ${res.body}');
     print('PATCH to $url');
-    print('Request headers: ${headers.toString()}');
+    print('Request headers: ${mergedHeaders.toString()}');
     print('Request body: $data');
 
     final decoded = res.body.isNotEmpty

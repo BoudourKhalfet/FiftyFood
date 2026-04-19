@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../constants/api.dart';
 
 class RestaurantDetailsPage extends StatefulWidget {
   final String restaurantId;
@@ -22,7 +23,7 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
   }
 
   Future<Map<String, dynamic>> fetchRestaurantData(String id) async {
-    final url = Uri.parse('http://localhost:3000/api/restaurants/$id');
+    final url = Uri.parse(apiUrl('api/restaurants/$id'));
     final response = await http.get(url); // Add headers if needed (auth etc)
     if (response.statusCode == 200) {
       return jsonDecode(response.body);

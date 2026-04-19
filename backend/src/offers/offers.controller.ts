@@ -16,7 +16,6 @@ import { Role } from '@prisma/client';
 
 import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
-import { VerifyPhotoDto } from './dto/verify-photo.dto';
 import { GenerateDescriptionDto } from './dto/generate-description.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -149,7 +148,7 @@ export class OffersController {
   uploadOfferImage(@UploadedFile() file: Express.Multer.File) {
     try {
       if (!file) throw new ForbiddenException('No file uploaded');
-      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+      const baseUrl = process.env.BASE_URL || 'http://192.168.245.51:3000';
       return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
     } catch (error) {
       console.error('Upload error:', error);

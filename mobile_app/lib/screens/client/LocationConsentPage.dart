@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../api/auth_storage.dart';
 import 'dart:convert';
+import 'package:location/location.dart';
+import '../../constants/api.dart';
 
 class LocationConsentPage extends StatefulWidget {
   const LocationConsentPage({Key? key}) : super(key: key);
@@ -20,7 +22,7 @@ class _LocationConsentPageState extends State<LocationConsentPage> {
     final token = await getJwt();
     try {
       final res = await http.patch(
-        Uri.parse('http://localhost:3000/users/me/location-consent'),
+        Uri.parse(apiUrl('users/me/location-consent')),
         headers: {
           if (token != null) "Authorization": "Bearer $token",
           "Content-Type": "application/json",
@@ -31,6 +33,34 @@ class _LocationConsentPageState extends State<LocationConsentPage> {
       if (!(res.statusCode >= 200 && res.statusCode < 300)) {
         throw Exception('Failed to set location consent');
       }
+
+      final location = Location();
+      final serviceEnabled =
+          await location.serviceEnabled() || await location.requestService();
+      if (serviceEnabled) {
+        var permission = await location.hasPermission();
+        if (permission == PermissionStatus.denied) {
+          permission = await location.requestPermission();
+        }
+        if (permission == PermissionStatus.granted ||
+            permission == PermissionStatus.grantedLimited) {
+          final current = await location.getLocation();
+          if (current.latitude != null && current.longitude != null) {
+            await http.patch(
+              Uri.parse(apiUrl('users/me/location')),
+              headers: {
+                if (token != null) 'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({
+                'latitude': current.latitude,
+                'longitude': current.longitude,
+              }),
+            );
+          }
+        }
+      }
+
       // Call navigation callback after the PATCH and *after* loading set to false
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/offers');

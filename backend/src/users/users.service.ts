@@ -344,4 +344,25 @@ export class UsersService {
       },
     });
   }
+
+  async updateClientLocation(userId: string, latitude: number, longitude: number) {
+    const profile = await this.prisma.clientProfile.findUnique({
+      where: { userId },
+      select: { id: true, locationConsentGiven: true },
+    });
+
+    if (!profile) throw new NotFoundException('Client profile not found');
+    if (!profile.locationConsentGiven) {
+      throw new BadRequestException('Location consent is required');
+    }
+
+    return this.prisma.clientProfile.update({
+      where: { userId },
+      data: {
+        lastLatitude: latitude,
+        lastLongitude: longitude,
+        lastLocationAt: new Date(),
+      } as any,
+    });
+  }
 }

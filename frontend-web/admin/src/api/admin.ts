@@ -15,8 +15,7 @@ export async function approveRestaurant(id: string) {
   });
   // Show toast / refetch as needed
 }
-export async function rejectRestaurant(id: string) {
-  const reason = prompt("Reason for rejection?");
+export async function rejectRestaurant(id: string, reason: string) {
   await fetch(`/admin/users/${id}/reject`, {
     method: "POST",
     headers: {
@@ -26,8 +25,7 @@ export async function rejectRestaurant(id: string) {
     body: JSON.stringify({ reason }),
   });
 }
-export async function requireChangesRestaurant(id: string) {
-  const reason = prompt("Improvements required?");
+export async function requireChangesRestaurant(id: string, reason: string) {
   await fetch(`/admin/users/${id}/require-changes`, {
     method: "POST",
     headers: {
@@ -39,7 +37,7 @@ export async function requireChangesRestaurant(id: string) {
 }
 
 export async function fetchAllOrders() {
-  const res = await fetch("http://localhost:3000/orders", {
+  const res = await fetch("http://192.168.245.51:3000/orders", {
     headers: {
       Authorization: "Bearer " + localStorage.getItem("access_token"),
       // add others like Content-Type if needed

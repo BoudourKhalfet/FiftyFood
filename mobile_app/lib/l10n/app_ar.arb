@@ -24,6 +24,8 @@
   "btnGoogle": "جوجل",
   "errorRequired": "مطلوب",
   "errorInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.",
+  "errorAccountDoesNotExist": "هذا الحساب غير موجود.",
+  "errorAccountSuspended": "تم تعليق حسابك.",
   "infoVerificationSent": "تم إعادة إرسال بريد التحقق.",
   "btnResendVerification": "إعادة إرسال بريد التحقق",
   "btnJoinAsClient": "انضم كعميل",

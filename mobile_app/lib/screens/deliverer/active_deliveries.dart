@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../api/auth_storage.dart';
+import '../../constants/api.dart';
 
 class ActiveDeliveries extends StatefulWidget {
   final Function(Map<String, dynamic>)? onOrderTap;
@@ -29,7 +30,7 @@ class _ActiveDeliveriesState extends State<ActiveDeliveries> {
       error = null;
     });
 
-    final url = Uri.parse('http://localhost:3000/orders/deliverer/active');
+    final url = Uri.parse(apiUrl('orders/deliverer/active'));
     final jwt = await getJwt();
 
     try {

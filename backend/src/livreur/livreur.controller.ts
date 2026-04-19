@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Patch,
   Post,
+  Delete,
   Req,
   UploadedFile,
   UseGuards,
@@ -41,6 +42,26 @@ export class LivreurOnboardingController {
   @UseGuards(OnboardingAuthGuard)
   @Patch('profile')
   updateProfile(
+    @Req() req: ReqWithUser,
+    @Body() dto: LivreurProfileDto,
+  ): Promise<LivreurProfile> {
+    this.ensureLivreur(req);
+    return this.livreur.updateProfile(req.user.sub, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/profile')
+  updateMyProfile(
+    @Req() req: ReqWithUser,
+    @Body() dto: LivreurProfileDto,
+  ): Promise<LivreurProfile> {
+    this.ensureLivreur(req);
+    return this.livreur.updateProfile(req.user.sub, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/payment')
+  updateMyPayment(
     @Req() req: ReqWithUser,
     @Body() dto: LivreurProfileDto,
   ): Promise<LivreurProfile> {
@@ -125,5 +146,43 @@ export class LivreurOnboardingController {
   getMyProfile(@Req() req: ReqWithUser) {
     this.ensureLivreur(req);
     return this.livreur.getLivreurProfile(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('ping')
+  async livreurPing(@Req() req: ReqWithUser) {
+    return this.livreur.pingOnline(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('location')
+  async updateLocation(
+    @Req() req: ReqWithUser,
+    @Body() dto: { latitude: number; longitude: number },
+  ) {
+    this.ensureLivreur(req);
+    return this.livreur.updateLocation(
+      req.user.sub,
+      dto.latitude,
+      dto.longitude,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('notifications')
+  updateNotifications(
+    @Req() req: ReqWithUser,
+    @Body()
+    dto: { newOffers?: boolean; orderUpdates?: boolean },
+  ) {
+    this.ensureLivreur(req);
+    return this.livreur.updateNotifications(req.user.sub, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me')
+  deleteMyAccount(@Req() req: ReqWithUser) {
+    this.ensureLivreur(req);
+    return this.livreur.deleteAccount(req.user.sub);
   }
 }

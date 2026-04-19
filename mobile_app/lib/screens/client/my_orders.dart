@@ -6,6 +6,7 @@ import '../../api/auth_storage.dart';
 import '../../widgets/RatingModal.dart';
 import '../../widgets/ComplaintModal.dart';
 import 'OrderTrackingPage.dart';
+import '../../constants/api.dart';
 
 void _openRatingModal(BuildContext ctx, String who) {
   showDialog(
@@ -46,7 +47,7 @@ void _openComplaintModal(BuildContext ctx, String who) {
 }
 
 Future<List<Map<String, dynamic>>> fetchMyOrders() async {
-  final uri = Uri.parse('http://localhost:3000/users/me/orders');
+  final uri = Uri.parse(apiUrl('orders/client'));
 
   final token = await getJwt();
 
@@ -136,7 +137,10 @@ class MyOrdersPage extends StatelessWidget {
 
             final canReportDeliverer = canRateDeliverer;
             final canTrack =
-                (collectionMethod == 'DELIVERY') && (status == 'ASSIGNED');
+                (collectionMethod == 'DELIVERY') &&
+                (status == 'ASSIGNED' ||
+                    status == 'READY' ||
+                    status == 'PICKED_UP');
 
             return OrderCard(
               key: ValueKey(o['reference']),
@@ -152,11 +156,15 @@ class MyOrdersPage extends StatelessWidget {
                   : (double.tryParse(o['price']?.toString() ?? '') ?? 0),
               reference: o['reference'] ?? '',
 
-              canViewQR: status == 'CONFIRMED' && collectionMethod == 'PICKUP',
+              canViewQR:
+                  collectionMethod == 'PICKUP' &&
+                  (status == 'CONFIRMED' || status == 'READY'),
               canRateRestaurant: canRateRestaurant,
               canReportRestaurant: canReportRestaurant,
               canRateDeliverer: canRateDeliverer,
               canReportDeliverer: canReportDeliverer,
+              pickupQrToken: o['pickupQrToken']?.toString(),
+              pickupQrDisplay: o['pickupQrDisplay']?.toString(),
 
               onRateRestaurant: () => _openRatingModal(context, "Restaurant"),
               onReportRestaurant: () =>

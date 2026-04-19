@@ -430,6 +430,18 @@ abstract class AppLocalizations {
   /// **'This account is not allowed to login yet. Please contact support.'**
   String get errorForbidden;
 
+  /// No description provided for @errorAccountDoesNotExist.
+  ///
+  /// In en, this message translates to:
+  /// **'This account does not exist.'**
+  String get errorAccountDoesNotExist;
+
+  /// No description provided for @errorAccountSuspended.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account is suspended.'**
+  String get errorAccountSuspended;
+
   /// No description provided for @errorNetwork.
   ///
   /// In en, this message translates to:

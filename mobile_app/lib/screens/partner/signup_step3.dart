@@ -204,6 +204,19 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
         headers: {'Authorization': 'Bearer $jwt'},
       );
 
+      await ApiService.post(
+        'restaurant/onboarding/accept-terms',
+        {
+          'name': _termsNameController.text.trim(),
+          'agreements': [
+            {'type': 'hygiene', 'accepted': _acceptedHygiene},
+            {'type': 'no-preparation', 'accepted': _acceptedNoPreparation},
+            {'type': 'liability', 'accepted': _acceptedLiability},
+          ],
+        },
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
       Navigator.of(context).pushNamed('/partner/signup4');
     } catch (e) {
       setState(() {

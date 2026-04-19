@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:location/location.dart';
 
 import 'available_deliveries.dart';
 import 'active_deliveries.dart';
 import 'active_order_detail.dart';
+import 'history_page.dart';
+import 'profile_page.dart';
+import '../../api/api_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -11,9 +16,68 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedTab = 0;
   String? selectedActiveOrderId;
+  Timer? _onlinePingTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _pingOnline();
+    _onlinePingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _pingOnline();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _pingOnline();
+    }
+  }
+
+  Future<void> _pingOnline() async {
+    try {
+      await ApiService.post('livreur/onboarding/ping', {});
+    } catch (_) {
+      // Keep ping best-effort; no UI disruption for transient errors.
+    }
+
+    try {
+      final location = Location();
+      final serviceEnabled =
+          await location.serviceEnabled() || await location.requestService();
+      if (!serviceEnabled) return;
+
+      var permission = await location.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await location.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) {
+        return;
+      }
+
+      final current = await location.getLocation();
+      if (current.latitude == null || current.longitude == null) return;
+
+      await ApiService.post('livreur/onboarding/location', {
+        'latitude': current.latitude,
+        'longitude': current.longitude,
+      });
+    } catch (_) {
+      // Keep location updates best-effort.
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _onlinePingTimer?.cancel();
+    super.dispose();
+  }
 
   void _showActiveOrderDetail(Map<String, dynamic> order) {
     setState(() {
@@ -43,6 +107,12 @@ class _MainScreenState extends State<MainScreen> {
         case 1:
           middleContent = ActiveDeliveries(onOrderTap: _showActiveOrderDetail);
           break;
+        case 2:
+          middleContent = const DelivererHistoryPage();
+          break;
+        case 3:
+          middleContent = const DelivererProfilePage();
+          break;
         default:
           middleContent = Center(child: Text('Coming soon!'));
       }
@@ -53,7 +123,6 @@ class _MainScreenState extends State<MainScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // --- HEADER: logo + stats ---
             Container(
               color: Colors.white,
               child: Column(
@@ -90,7 +159,6 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
             ),
-            // --- MAIN CONTENT ---
             Expanded(child: middleContent),
           ],
         ),

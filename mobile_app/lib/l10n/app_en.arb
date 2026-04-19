@@ -57,6 +57,8 @@
   "errorEmailNotVerified": "You must verify your email before you can continue. Please check your inbox (and spam) and verify your email.",
   "errorUnauthorized": "Invalid email or password. Please try again.",
   "errorForbidden": "This account is not allowed to login yet. Please contact support.",
+  "errorAccountDoesNotExist": "This account does not exist.",
+  "errorAccountSuspended": "Your account is suspended.",
   "errorNetwork": "Network error. Please try again later.",
   "errorRoleMismatch": "This email is registered as a {role}, not a {targetRole}. Please sign in from the correct portal or register a new account.",
   "@errorRoleMismatch": {

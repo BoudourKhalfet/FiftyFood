@@ -16,6 +16,8 @@ import 'screens/partner/signup_step2.dart' as partner;
 import 'screens/partner/signup_step1.dart' as partner1;
 import 'screens/partner/signup_step3.dart' as partner3;
 import 'screens/partner/signup_step4.dart' as partner4;
+import 'screens/deliverer/signup_step2.dart' as deliverer2;
+import 'screens/deliverer/signup_step4.dart' as deliverer4;
 import 'screens/submission.dart' as Submitted;
 import 'screens/partner/dashboard.dart' as partnerDashboard;
 import 'screens/pending_approval.dart';
@@ -145,6 +147,14 @@ class MyAppState extends State<MyApp> {
           case '/partner/signup4':
             return MaterialPageRoute(
               builder: (_) => const partner4.PartnerSignupStep4(),
+            );
+          case '/deliverer/signup2':
+            return MaterialPageRoute(
+              builder: (_) => const deliverer2.DelivererSignupStep2(),
+            );
+          case '/deliverer/signup4':
+            return MaterialPageRoute(
+              builder: (_) => const deliverer4.DelivererSignupStep4(),
             );
           case '/submitted':
             return MaterialPageRoute(

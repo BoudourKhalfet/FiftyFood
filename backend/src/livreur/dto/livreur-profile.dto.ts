@@ -13,4 +13,8 @@ export class LivreurProfileDto {
   @IsString() @IsOptional() vehiclePhotoUrl?: string;
   @IsEnum(PayoutMethod) @IsOptional() payoutMethod?: PayoutMethod;
   @IsString() @IsOptional() payoutDetails?: string;
+  @IsOptional() notificationPreferences?: {
+    newOffers?: boolean;
+    orderUpdates?: boolean;
+  };
 }

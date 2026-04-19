@@ -59,6 +59,7 @@ export class UsersController {
     console.log('[Controller] PATCH result:', result);
     return result;
   }
+  @UseGuards(RolesGuard)
   @Patch('me/submit-profile')
   @Roles(Role.CLIENT)
   submitClientProfile(@Req() req: RequestWithUser) {
@@ -85,12 +86,14 @@ export class UsersController {
     return this.users.getMyOrders(req.user.sub);
   }
 
+  @UseGuards(RolesGuard)
   @Delete('me')
   @Roles(Role.CLIENT)
   deleteMyAccount(@Req() req: RequestWithUser) {
     return this.users.deleteAccount(req.user.sub);
   }
 
+  @UseGuards(RolesGuard)
   @Patch('me/location-consent')
   @Roles(Role.CLIENT)
   setClientLocationConsent(
@@ -98,5 +101,19 @@ export class UsersController {
     @Body() dto: { consented: boolean },
   ) {
     return this.users.setClientLocationConsent(req.user.sub, dto.consented);
+  }
+
+  @UseGuards(RolesGuard)
+  @Patch('me/location')
+  @Roles(Role.CLIENT)
+  setClientLocation(
+    @Req() req: RequestWithUser,
+    @Body() dto: { latitude: number; longitude: number },
+  ) {
+    return this.users.updateClientLocation(
+      req.user.sub,
+      dto.latitude,
+      dto.longitude,
+    );
   }
 }

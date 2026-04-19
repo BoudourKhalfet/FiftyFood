@@ -5,6 +5,7 @@ import '../../api/auth_storage.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:location/location.dart';
+import '../../constants/api.dart';
 
 class ActiveOrderDetail extends StatefulWidget {
   final String orderId;
@@ -30,7 +31,7 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
   }
 
   Future<Map<String, dynamic>> fetchOrderTracking(String orderId) async {
-    final url = Uri.parse('http://192.168.166.154:3000/orders/$orderId/tracking');
+    final url = Uri.parse(apiUrl('orders/$orderId/tracking'));
     final jwt = await getJwt();
     final response = await http.get(
       url,
@@ -188,7 +189,7 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
   Future<bool> updateLocationConsentOnBackend() async {
     final jwt = await getJwt();
     final response = await http.post(
-      Uri.parse('http://192.168.166.154:3000/livreur/onboarding/location-consent'),
+      Uri.parse(apiUrl('livreur/onboarding/location-consent')),
       headers: {
         'Content-Type': 'application/json',
         if (jwt != null) 'Authorization': 'Bearer $jwt',
@@ -598,25 +599,6 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
                           ],
                         ),
                       ],
-                    ),
-                  ),
-
-                  // === Mark as Delivered ===
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {}, // TODO: handle delivered
-                      icon: const Icon(Icons.check, color: Colors.white),
-                      label: const Text("Mark as Delivered"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF197144),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                      ),
                     ),
                   ),
                 ],

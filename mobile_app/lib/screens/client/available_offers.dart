@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../../widgets/main_scaffold.dart';
 import '../../api/api_service.dart';
 import 'offer_details.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:location/location.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   if (imgUrl.startsWith('data:image')) {
@@ -27,6 +29,7 @@ class AvailableOffersPage extends StatefulWidget {
 class _AvailableOffersPageState extends State<AvailableOffersPage> {
   final TextEditingController _searchController = TextEditingController();
   final Map<String, Uint8List> _imageCache = {};
+  Timer? _locationTimer;
   String _searchTerm = '';
   List<dynamic> filteredOffers = [];
   List<dynamic> offers = [];
@@ -51,7 +54,46 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
   void initState() {
     super.initState();
     fetchOffers();
+    _syncClientLocation();
+    _locationTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _syncClientLocation();
+    });
     _searchController.addListener(_updateFilteredOffers);
+  }
+
+  @override
+  void dispose() {
+    _locationTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _syncClientLocation() async {
+    try {
+      final location = Location();
+      final serviceEnabled = await location.serviceEnabled() ||
+          await location.requestService();
+      if (!serviceEnabled) return;
+
+      var permission = await location.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await location.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) {
+        return;
+      }
+
+      final current = await location.getLocation();
+      if (current.latitude == null || current.longitude == null) return;
+
+      await ApiService.patch('users/me/location', {
+        'latitude': current.latitude,
+        'longitude': current.longitude,
+      });
+    } catch (_) {
+      // Keep location sync best-effort; ignore failures here.
+    }
   }
 
   Future<void> fetchOffers() async {

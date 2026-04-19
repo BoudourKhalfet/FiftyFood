@@ -5,6 +5,7 @@ import '../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/client/LocationConsentPage.dart' as client_consent;
 import '../screens/deliverer/LocationConsentPage.dart' as deliverer_consent;
+import '../screens/deliverer/signup_step3.dart';
 import '../l10n/app_localizations.dart';
 
 class SignInPage extends StatefulWidget {
@@ -41,7 +42,23 @@ class _SignInPageState extends State<SignInPage> {
         'password': _passwordController.text.trim(),
       });
 
-      if (response['code'] == 'EMAIL_NOT_VERIFIED') {
+      final dynamic messageField = response['message'];
+      final dynamic nestedCode = messageField is Map<String, dynamic>
+          ? messageField['code']
+          : null;
+      final String code = (response['code'] ?? nestedCode ?? '')
+          .toString()
+          .toUpperCase();
+      final String messageText = messageField is String
+          ? messageField
+          : (messageField is Map<String, dynamic>
+                ? (messageField['message']?.toString() ??
+                      messageField['reason']?.toString() ??
+                      messageField['code']?.toString() ??
+                      '')
+                : '');
+
+      if (code == 'EMAIL_NOT_VERIFIED') {
         setState(() {
           _error = AppLocalizations.of(context)!.errorEmailNotVerified;
           _isEmailNotVerified = true;
@@ -49,7 +66,21 @@ class _SignInPageState extends State<SignInPage> {
         return;
       }
 
+      if (code == 'ACCOUNT_SUSPENDED' ||
+          messageText.toLowerCase().contains('suspended')) {
+        setState(() {
+          _error = AppLocalizations.of(context)!.errorAccountSuspended;
+        });
+        return;
+      }
+
       if (response['error'] == 'Unauthorized') {
+        if (messageText.toLowerCase().contains('account does not exist')) {
+          setState(() {
+            _error = AppLocalizations.of(context)!.errorAccountDoesNotExist;
+          });
+          return;
+        }
         setState(() {
           _error = AppLocalizations.of(context)!.errorInvalidCredentials;
         });
@@ -72,6 +103,8 @@ class _SignInPageState extends State<SignInPage> {
       // Handle login success flows
       final onboardingToken = response['onboardingToken'];
       final accessToken = response['accessToken'];
+      final requiresOnboarding = response['requiresOnboarding'] == true;
+      final nextOnboardingStep = response['nextOnboardingStep'];
       final user = response['user'];
 
       final prefs = await SharedPreferences.getInstance();
@@ -90,13 +123,90 @@ class _SignInPageState extends State<SignInPage> {
 
         // Check if user role matches the signin page role
         final userRole = user['role']?.toString().toUpperCase() ?? '';
-        final expectedRole = widget.role == 'Client' ? 'CLIENT' : widget.role.toUpperCase();
-        
+        final expectedRole = widget.role.toUpperCase() == 'DELIVERER'
+            ? 'LIVREUR'
+            : widget.role.toUpperCase();
+
         if (userRole != expectedRole) {
           setState(() {
-            _error = AppLocalizations.of(context)!.errorRoleMismatch(user['role'].toString(), widget.role);
+            _error = AppLocalizations.of(
+              context,
+            )!.errorRoleMismatch(user['role'].toString(), widget.role);
           });
           return;
+        }
+
+        // Resume onboarding from the exact incomplete step returned by backend.
+        if (requiresOnboarding) {
+          final int step = (nextOnboardingStep is int)
+              ? nextOnboardingStep
+              : int.tryParse(nextOnboardingStep?.toString() ?? '') ?? 2;
+
+          if (user['role'] == 'CLIENT') {
+            Navigator.of(context).pushReplacementNamed('/client/signup2');
+            return;
+          }
+
+          if (user['role'].toString().toUpperCase() == 'LIVREUR') {
+            if (step <= 2) {
+              Navigator.of(context).pushReplacementNamed('/deliverer/signup2');
+              return;
+            }
+
+            if (step == 3) {
+              try {
+                final p = await ApiService.get(
+                  'livreur/onboarding/me',
+                  headers: {'Authorization': 'Bearer $realToken'},
+                );
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => DelivererSignupStep3(
+                      fullName: (p['fullName'] ?? '').toString(),
+                      phone: (p['phone'] ?? '').toString(),
+                      vehicleType: (p['vehicleType'] ?? '').toString(),
+                      zone: (p['zone'] ?? '').toString(),
+                      photoUrl: p['photoUrl']?.toString(),
+                    ),
+                  ),
+                );
+              } catch (_) {
+                Navigator.of(
+                  context,
+                ).pushReplacementNamed('/deliverer/signup2');
+              }
+              return;
+            }
+
+            Navigator.of(context).pushReplacementNamed('/deliverer/signup4');
+            return;
+          }
+
+          if (user['role'].toString().toUpperCase() == 'RESTAURANT') {
+            final route = step <= 2
+                ? '/partner/signup2'
+                : step == 3
+                ? '/partner/signup3'
+                : '/partner/signup4';
+            Navigator.of(context).pushReplacementNamed(route);
+            return;
+          }
+        }
+
+        // Backward compatibility: if backend only returned onboarding token.
+        if (onboardingToken != null) {
+          if (user['role'] == 'CLIENT') {
+            Navigator.of(context).pushReplacementNamed('/client/signup2');
+            return;
+          }
+          if (user['role'].toString().toUpperCase() == 'LIVREUR') {
+            Navigator.of(context).pushReplacementNamed('/deliverer/signup2');
+            return;
+          }
+          if (user['role'].toString().toUpperCase() == 'RESTAURANT') {
+            Navigator.of(context).pushReplacementNamed('/partner/signup2');
+            return;
+          }
         }
 
         // ==== CLIENT logic ====
@@ -128,13 +238,9 @@ class _SignInPageState extends State<SignInPage> {
                 Navigator.of(context).pushReplacementNamed('/offers');
               }
             } catch (e) {
-              if (e.toString().contains('PROFILE_INCOMPLETE')) {
-                Navigator.of(context).pushReplacementNamed('/client/signup2');
-              } else {
-                setState(() {
-                  _error = AppLocalizations.of(context)!.errorNetwork;
-                });
-              }
+              setState(() {
+                _error = AppLocalizations.of(context)!.errorNetwork;
+              });
             }
           } else {
             // Client is not yet approved, must finish onboarding
@@ -143,8 +249,13 @@ class _SignInPageState extends State<SignInPage> {
         }
         // ==== DELIVERER logic ====
         else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
-          print('hehehehe');
           if (user['status'] == 'APPROVED') {
+            try {
+              // Ping backend to mark as online!
+              await ApiService.post('livreur/onboarding/ping', {});
+            } catch (e) {
+              print('Deliverer ping failed: $e');
+            }
             try {
               final profile = await ApiService.getDelivererProfile(realToken);
               if (profile.locationConsentGiven != true) {
@@ -231,7 +342,9 @@ class _SignInPageState extends State<SignInPage> {
       }
     } catch (e) {
       setState(() {
-        _resendInfo = AppLocalizations.of(context)!.errorResendException(e.toString());
+        _resendInfo = AppLocalizations.of(
+          context,
+        )!.errorResendException(e.toString());
       });
     } finally {
       setState(() => _sendingResend = false);
@@ -272,7 +385,9 @@ class _SignInPageState extends State<SignInPage> {
       child: TextFormField(
         controller: controller,
         obscureText: obscure ? _obscure : false,
-        validator: (v) => (v == null || v.isEmpty) ? AppLocalizations.of(context)!.errorRequired : null,
+        validator: (v) => (v == null || v.isEmpty)
+            ? AppLocalizations.of(context)!.errorRequired
+            : null,
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
@@ -316,6 +431,20 @@ class _SignInPageState extends State<SignInPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  onPressed: () {
+                    final nav = Navigator.of(context);
+                    if (nav.canPop()) {
+                      nav.pop();
+                    } else {
+                      nav.pushReplacementNamed('/home');
+                    }
+                  },
+                  icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+                ),
+              ),
               const SizedBox(height: 12),
               Center(
                 child: Image.asset(
@@ -340,7 +469,10 @@ class _SignInPageState extends State<SignInPage> {
               Center(
                 child: Text(
                   AppLocalizations.of(context)!.signInSubtitle,
-                  style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 14),
+                  style: const TextStyle(
+                    color: Color(0xFF1A1A1A),
+                    fontSize: 14,
+                  ),
                 ),
               ),
               const SizedBox(height: 18),
@@ -368,7 +500,9 @@ class _SignInPageState extends State<SignInPage> {
                             alignment: Alignment.centerRight,
                             children: [
                               _buildField(
-                                label: AppLocalizations.of(context)!.labelPassword,
+                                label: AppLocalizations.of(
+                                  context,
+                                )!.labelPassword,
                                 icon: Icons.lock_outline,
                                 controller: _passwordController,
                                 obscure: true,

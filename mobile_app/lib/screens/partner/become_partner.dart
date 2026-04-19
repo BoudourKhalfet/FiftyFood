@@ -16,6 +16,17 @@ class BecomePartner extends StatelessWidget {
             pinned: true,
             toolbarHeight: 70,
             automaticallyImplyLeading: false,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+              onPressed: () {
+                final nav = Navigator.of(context);
+                if (nav.canPop()) {
+                  nav.pop();
+                } else {
+                  nav.pushReplacementNamed('/home');
+                }
+              },
+            ),
             title: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

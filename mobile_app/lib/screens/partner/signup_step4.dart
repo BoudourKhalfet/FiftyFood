@@ -122,7 +122,13 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
         Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
         return;
       }
-      Navigator.pushReplacementNamed(context, '/submitted');
+
+      final status = (userResponse['status'] ?? '').toString().toUpperCase();
+      if (status == 'APPROVED') {
+        Navigator.pushReplacementNamed(context, '/partner/dashboard');
+      } else {
+        Navigator.pushReplacementNamed(context, '/submitted');
+      }
     } catch (e) {
       setState(() => _error = 'Error: $e');
     } finally {
@@ -151,7 +157,13 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
         Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
         return;
       }
-      Navigator.pushReplacementNamed(context, '/submitted');
+
+      final status = (userResponse['status'] ?? '').toString().toUpperCase();
+      if (status == 'APPROVED') {
+        Navigator.pushReplacementNamed(context, '/partner/dashboard');
+      } else {
+        Navigator.pushReplacementNamed(context, '/submitted');
+      }
     } catch (e) {
       setState(() => _error = 'Error: $e');
     } finally {

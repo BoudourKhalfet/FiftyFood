@@ -12,6 +12,8 @@ import 'orders_tab.dart';
 import 'stats_tab.dart';
 import 'profile_tab.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../constants/api.dart';
 
 Widget buildPickupTimeDropdown({
   required String value,
@@ -194,7 +196,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
 
-      final uri = Uri.parse('http://localhost:3000/offers/upload-photo');
+      final uri = Uri.parse(apiUrl('offers/upload-photo'));
       final request = http.MultipartRequest('POST', uri);
       request.headers['Authorization'] = 'Bearer $jwt';
       request.files.add(
@@ -217,8 +219,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         });
 
         // Auto-generate description using Gemini
-        await _generateDescriptionForImage(
-            data['url'], modalSetState);
+        await _generateDescriptionForImage(data['url'], modalSetState);
       } else {
         modalSetState(() {
           _offerImageUploadError = 'Failed to upload img: $respStr';
@@ -243,21 +244,18 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
-      
+
       // Get current language code
       final locale = Localizations.localeOf(context);
       final languageCode = locale.languageCode;
 
       final response = await http.post(
-        Uri.parse('http://localhost:3000/offers/generate-description'),
+        Uri.parse(apiUrl('offers/generate-description')),
         headers: {
           'Authorization': 'Bearer $jwt',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'imageUrl': imageUrl,
-          'language': languageCode,
-        }),
+        body: jsonEncode({'imageUrl': imageUrl, 'language': languageCode}),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -297,8 +295,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   Map<String, dynamic>? _aiResult;
 
   // QR Scanner
-  String _qrInput = '';
   Map<String, dynamic>? _qrResult;
+  bool _qrValidating = false;
 
   // Restaurant Dashboard Stats
   double _totalSales = 0.0;
@@ -316,7 +314,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   final List<Map<String, dynamic>> _orders = [];
   final GlobalKey<PartnerOffersTabState> _offersTabKey =
       GlobalKey<PartnerOffersTabState>();
-  
+
   // Timer for real-time stats refresh
   Timer? _statsRefreshTimer;
 
@@ -325,7 +323,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     super.initState();
     _fetchRestaurantProfile();
     _fetchRestaurantStats();
-    
+
     // Refresh stats every 30 seconds for real-time updates
     _statsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _fetchRestaurantStats();
@@ -371,12 +369,12 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
       if (jwt == null) return;
-      
+
       final response = await ApiService.get(
         'restaurant/onboarding/stats',
         headers: {'Authorization': 'Bearer $jwt'},
       );
-      
+
       if (mounted) {
         setState(() {
           _totalSales = (response['totalSales'] ?? 0).toDouble();
@@ -396,10 +394,125 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     }
   }
 
+  static const bool _autoCloseQrDialogOnSuccess = true;
+  static const Duration _qrSuccessAutoCloseDelay = Duration(milliseconds: 900);
+
+  Future<void> _validateQrToken(
+    String token, {
+    BuildContext? dialogContext,
+    bool autoCloseOnSuccess = false,
+  }) async {
+    setState(() {
+      _qrValidating = true;
+      _qrResult = null;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      final response = await ApiService.post(
+        'orders/qr/validate',
+        {'token': token.trim()},
+        headers: {if (jwt != null) 'Authorization': 'Bearer $jwt'},
+      );
+
+      if (!mounted) return;
+      final success = response['success'] == true;
+      final message = (response['message'] ?? 'QR validation completed')
+          .toString();
+
+      setState(() {
+        _qrResult = {'success': success, 'message': message};
+      });
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(0xFF10B981),
+          ),
+        );
+
+        if (autoCloseOnSuccess && dialogContext != null) {
+          Future.delayed(_qrSuccessAutoCloseDelay, () {
+            if (!mounted) return;
+            try {
+              if (Navigator.of(dialogContext).canPop()) {
+                _qrResult = null;
+                Navigator.of(dialogContext).pop();
+              }
+            } catch (_) {
+              // Dialog might already be closed.
+            }
+          });
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _qrResult = {
+          'success': false,
+          'message': e.toString().replaceFirst('Exception: ', ''),
+        };
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _qrValidating = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _scanQrWithCamera(BuildContext dialogContext) async {
+    bool consumed = false;
+
+    final scannedToken = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Scan QR Code'),
+        content: SizedBox(
+          width: 320,
+          height: 320,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: MobileScanner(
+              onDetect: (capture) {
+                if (consumed) return;
+                final barcodes = capture.barcodes;
+                if (barcodes.isEmpty) return;
+                final value = barcodes.first.rawValue;
+                if (value == null || value.trim().isEmpty) return;
+                consumed = true;
+                Navigator.of(dialogContext).pop(value.trim());
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (scannedToken == null || scannedToken.isEmpty) return;
+
+    await _validateQrToken(
+      scannedToken,
+      dialogContext: dialogContext,
+      autoCloseOnSuccess: _autoCloseQrDialogOnSuccess,
+    );
+  }
+
   void _showQrScannerDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: const Text('Validate Customer QR Code'),
         content: SingleChildScrollView(
@@ -407,43 +520,18 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Enter or scan the customer\'s QR code',
+                'Scan the customer\'s QR code',
                 style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
               ),
               const SizedBox(height: 16),
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFF9CA3AF),
-                    style: BorderStyle.solid,
-                  ),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.qr_code,
-                    size: 40,
-                    color: Color(0xFF9CA3AF),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                onChanged: (v) {
-                  _qrInput = v;
-                },
-                decoration: InputDecoration(
-                  hintText: 'Paste QR token here...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 10,
-                  ),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _qrValidating
+                      ? null
+                      : () => _scanQrWithCamera(dialogContext),
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Scan with Camera'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -494,30 +582,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         actions: [
           TextButton(
             onPressed: () {
-              _qrInput = '';
               _qrResult = null;
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
             },
             child: const Text('Close'),
-          ),
-          ElevatedButton(
-            onPressed: _qrInput.isNotEmpty
-                ? () {
-                    setState(
-                      () => _qrResult = {
-                        'success': true,
-                        'message': 'QR Code validated successfully!',
-                      },
-                    );
-                  }
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1F9D7A),
-            ),
-            child: const Text(
-              'Validate',
-              style: TextStyle(color: Colors.white),
-            ),
           ),
         ],
       ),
@@ -949,7 +1017,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
 
   void _showCreateOfferDialog() {
     _descriptionController = TextEditingController();
-    
+
     setState(() {
       _offerDescription = '';
       _originalPrice = '';
@@ -1195,7 +1263,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             ),
                           )
                           .toList(),
-                      title: Text(AppLocalizations.of(context)!.labelCategories),
+                      title: Text(
+                        AppLocalizations.of(context)!.labelCategories,
+                      ),
                       selectedColor: Color(0xFF1F9D7A),
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -1229,7 +1299,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                AppLocalizations.of(context)!.labelOriginalPrice,
+                                AppLocalizations.of(
+                                  context,
+                                )!.labelOriginalPrice,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
@@ -1263,7 +1335,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                AppLocalizations.of(context)!.labelDiscountedPrice,
+                                AppLocalizations.of(
+                                  context,
+                                )!.labelDiscountedPrice,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
@@ -1538,8 +1612,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                             backgroundColor: Color(0xFF1F9D7A),
                                           ),
                                         );
-                                        Navigator.pop(context);
-                                        _descriptionController.dispose();
+                                        _descriptionController.clear();
                                       }
                                     } catch (e) {
                                       modalSetState(() {

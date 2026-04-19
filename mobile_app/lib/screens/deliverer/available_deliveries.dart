@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../api/auth_storage.dart';
+import '../../constants/api.dart';
 
 class AvailableDeliveries extends StatefulWidget {
   const AvailableDeliveries({Key? key}) : super(key: key);
@@ -27,7 +28,7 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
       error = null;
     });
 
-    final url = Uri.parse('http://192.168.166.154:3000/orders/deliverer/available');
+    final url = Uri.parse(apiUrl('orders/deliverer/available'));
     final jwt = await getJwt();
 
     try {
@@ -59,7 +60,7 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
   }
 
   Future<bool> acceptDelivery(String orderId) async {
-    final url = Uri.parse('http://192.168.166.154:3000/orders/$orderId/accept');
+    final url = Uri.parse(apiUrl('orders/$orderId/accept'));
     final jwt = await getJwt();
     final response = await http.post(
       url,

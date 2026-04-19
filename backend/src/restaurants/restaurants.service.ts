@@ -24,6 +24,44 @@ export type RawReviewResult = {
 export class RestaurantsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private normalizeText(value?: string | null): string {
+    return (value ?? '').trim().toLowerCase();
+  }
+
+  private async geocodeAddress(
+    address: string,
+    city: string,
+  ): Promise<{ lat: number; lng: number } | null> {
+    const query = [address, city]
+      .filter((v) => !!this.normalizeText(v))
+      .join(', ');
+    if (!query) return null;
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'FiftyFood/1.0 (restaurant-geocoding)',
+        },
+      });
+      if (!response.ok) return null;
+
+      const rows = (await response.json()) as Array<{
+        lat: string;
+        lon: string;
+      }>;
+      if (!rows.length) return null;
+
+      const lat = Number(rows[0].lat);
+      const lng = Number(rows[0].lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+      return { lat, lng };
+    } catch {
+      return null;
+    }
+  }
+
   async logProfileChanges<T>(
     userId: string,
     dto: T,
@@ -84,6 +122,82 @@ export class RestaurantsService {
       'RESTAURANT',
     );
 
+    // Best-effort geocoding of restaurant address to persist coordinates.
+    const coords = await this.geocodeAddress(dto.address, dto.city);
+    if (coords) {
+      await this.prisma.$executeRaw`
+        UPDATE "RestaurantProfile"
+        SET
+          "latitude" = ${coords.lat},
+          "longitude" = ${coords.lng},
+          "lastGeocodedAt" = NOW()
+        WHERE "userId" = ${userId}
+      `;
+    }
+
+    return updatedProfile;
+  }
+
+  async updateAccountProfile(
+    userId: string,
+    dto: Partial<RestaurantIdentityDto>,
+  ) {
+    const oldProfile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId },
+    });
+
+    const data: {
+      restaurantName?: string;
+      phone?: string;
+      address?: string;
+      city?: string;
+    } = {};
+
+    if (dto.restaurantName !== undefined) {
+      data.restaurantName = dto.restaurantName;
+    }
+    if (dto.phone !== undefined) {
+      data.phone = dto.phone;
+    }
+    if (dto.address !== undefined) {
+      data.address = dto.address;
+    }
+    if (dto.city !== undefined) {
+      data.city = dto.city;
+    }
+
+    const updatedProfile = await this.prisma.restaurantProfile.update({
+      where: { userId },
+      data,
+    });
+
+    await this.logProfileChanges(
+      userId,
+      dto,
+      oldProfile,
+      ['restaurantName', 'phone', 'address', 'city'],
+      'RESTAURANT',
+    );
+
+    // Best-effort geocoding when address data changes.
+    if (dto.address !== undefined || dto.city !== undefined) {
+      const geocodeAddress = dto.address ?? updatedProfile.address;
+      const geocodeCity = dto.city ?? updatedProfile.city;
+      if (geocodeAddress && geocodeCity) {
+        const coords = await this.geocodeAddress(geocodeAddress, geocodeCity);
+        if (coords) {
+          await this.prisma.$executeRaw`
+            UPDATE "RestaurantProfile"
+            SET
+              "latitude" = ${coords.lat},
+              "longitude" = ${coords.lng},
+              "lastGeocodedAt" = NOW()
+            WHERE "userId" = ${userId}
+          `;
+        }
+      }
+    }
+
     return updatedProfile;
   }
 
@@ -142,6 +256,19 @@ export class RestaurantsService {
     return updatedProfile;
   }
 
+  async deleteAccount(userId: string): Promise<{ message: string }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: 'SUSPENDED',
+        suspendedAt: new Date(),
+        statusReason: 'deleted',
+      },
+    });
+
+    return { message: 'Account deleted.' };
+  }
+
   async saveUploadUrl(userId: string, type: RestaurantUploadType, url: string) {
     const data =
       type === 'logo'
@@ -173,13 +300,16 @@ export class RestaurantsService {
     // 1. Save legacy termsAcceptedAt/termsAcceptedName, or remove if not needed
     await this.prisma.restaurantProfile.update({
       where: { userId },
-      data: {},
+      data: {
+        termsAcceptedAt: new Date(),
+        termsAcceptedName: name,
+      },
     });
 
-    // 2. (Good practice!) Remove existing agreements for this user, to avoid duplicates:
+    // Remove existing agreements for this user to avoid duplicates.
     await this.prisma.legalAgreement.deleteMany({ where: { userId } });
 
-    // 3. Insert an agreement for each checked agreement
+    // Insert an agreement for each checked agreement.
     for (const ag of agreements) {
       if (ag.accepted) {
         await this.prisma.legalAgreement.create({
@@ -194,7 +324,6 @@ export class RestaurantsService {
       }
     }
 
-    // 4. Optionally: return latest profile
     const profile = await this.prisma.restaurantProfile.findUnique({
       where: { userId },
     });
@@ -280,6 +409,15 @@ export class RestaurantsService {
   }
 
   async getRestaurantStats(userId: string) {
+    await this.prisma.offer.updateMany({
+      where: {
+        restaurantId: userId,
+        status: 'ACTIVE',
+        pickupDateTime: { lt: new Date() },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
     // Get restaurant profile for avgRating
     const profile = await this.prisma.restaurantProfile.findUnique({
       where: { userId },
@@ -307,7 +445,11 @@ export class RestaurantsService {
 
     // Get count of active offers
     const activeOffersCount = await this.prisma.offer.count({
-      where: { restaurantId: userId, status: 'ACTIVE' },
+      where: {
+        restaurantId: userId,
+        status: 'ACTIVE',
+        pickupDateTime: { gte: new Date() },
+      },
     });
 
     return {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import './my_orders.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../api/api_service.dart';
 import '../../api/client_profile_service.dart';
 import '../../models/client_profile.dart';
 import '../../models/client_order.dart';
@@ -20,6 +21,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   ClientProfile? profile;
   String email = "";
+  String? pendingEmail;
   bool loading = true;
   String? error;
 
@@ -101,14 +103,22 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     });
 
     try {
-      final fetchedProfile = await ProfileService.getProfile(stored);
-      final fetchedOrders = await ProfileService.getOrders(stored);
+      final results = await Future.wait([
+        ProfileService.getProfile(stored),
+        ProfileService.getOrders(stored),
+        ApiService.get('auth/me', headers: {'Authorization': 'Bearer $stored'}),
+      ]);
+
+      final fetchedProfile = results[0] as ClientProfile;
+      final fetchedOrders = results[1] as List<ClientOrder>;
+      final authMe = results[2] as Map<String, dynamic>;
 
       await prefs.setString('clientName', fetchedProfile.fullName);
 
       setState(() {
         profile = fetchedProfile; // ClientProfile!
         email = profile?.email ?? '';
+        pendingEmail = authMe['pendingEmail']?.toString();
         orders = fetchedOrders;
         selectedCategories = List.from(profile?.cuisinePreferences ?? []);
         dietaryRestrictions = List.from(profile?.dietaryRestrictions ?? []);
@@ -193,6 +203,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             ),
           ),
           Text(email, style: TextStyle(fontSize: 16, color: Color(0xFF6B7280))),
+          if (pendingEmail != null && pendingEmail!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                "Pending verification: $pendingEmail",
+                style: TextStyle(fontSize: 13, color: Colors.orange[700]),
+              ),
+            ),
           SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -489,6 +507,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 
   Widget _editProfileModal(BuildContext context) {
+    final emailController = TextEditingController(text: email);
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       insetPadding: EdgeInsets.symmetric(horizontal: 24),
@@ -516,6 +536,21 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 ],
               ),
               SizedBox(height: 8),
+              _profileTextForm("Email", emailController),
+              if (pendingEmail != null && pendingEmail!.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 6),
+                    child: Text(
+                      'Pending verification: $pendingEmail',
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
               _profileTextForm("Full Name", _nameController),
               _profileTextForm("Phone", _phoneController),
               _profileTextForm("Default Address", _addressController),
@@ -523,7 +558,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: savingProfile ? null : () => _saveProfile(),
+                  onPressed: savingProfile
+                      ? null
+                      : () => _saveProfile(emailController.text.trim()),
                   child: savingProfile
                       ? SizedBox(
                           width: 18,
@@ -565,7 +602,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     );
   }
 
-  Future<void> _saveProfile() async {
+  Future<void> _saveProfile(String newEmail) async {
+    if (newEmail.isEmpty || !newEmail.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid email address.')),
+      );
+      return;
+    }
+
     setState(() => savingProfile = true);
     try {
       await ProfileService.updateProfile(
@@ -574,6 +618,17 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         phone: _phoneController.text,
         defaultAddress: _addressController.text,
       );
+
+      var emailChangeRequested = false;
+      if (newEmail.toLowerCase() != email.toLowerCase()) {
+        await ApiService.post(
+          'auth/request-email-change',
+          {'email': newEmail},
+          headers: {'Authorization': 'Bearer $jwt'},
+        );
+        emailChangeRequested = true;
+      }
+
       // refetch profile
       final updated = await ProfileService.getProfile(jwt!);
 
@@ -581,6 +636,10 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       await prefs.setString('clientName', updated.fullName);
       setState(() {
         profile = updated;
+        email = updated.email ?? '';
+        if (emailChangeRequested) {
+          pendingEmail = newEmail;
+        }
         savingProfile = false;
       });
       Navigator.of(context).pop();
@@ -591,7 +650,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
               Text(
-                "Profile saved!",
+                emailChangeRequested
+                    ? "Profile saved. Verification email sent."
+                    : "Profile saved!",
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.white,

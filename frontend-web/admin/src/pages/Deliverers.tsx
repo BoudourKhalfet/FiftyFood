@@ -7,11 +7,15 @@ import {
   FaPause,
   FaPlay,
   FaSearch,
+  FaTrash,
+  FaPlus,
 } from "react-icons/fa";
 import { StatusBadge } from "../components/StatusBadge";
 import { DelivererModal } from "../components/UsersViewModals/DelivererModal.tsx";
+import { ConfirmActionModal } from "../components/ConfirmActionModal";
+import { ReasonActionModal } from "../components/ReasonActionModal";
+import { InfoModal } from "../components/InfoModal";
 import { flattenDelivererForModal } from "../utils/flattenDelivererForModal";
-import { data } from "react-router-dom";
 
 type DelivererUser = {
   id: string;
@@ -41,6 +45,25 @@ export default function Deliverers() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDeliverer, setSelectedDeliverer] = useState<any | null>(null);
 
+  // Add user modal state
+  const [addUserModalOpen, setAddUserModalOpen] = useState(false);
+  const [addUserFormData, setAddUserFormData] = useState({
+    email: "",
+    password: "",
+  });
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(
+    null,
+  );
+  const [reasonModal, setReasonModal] = useState<{
+    action: "reject" | "suspend";
+    targetId: string;
+  } | null>(null);
+  const [actionReason, setActionReason] = useState("");
+  const [infoModal, setInfoModal] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
+
   useEffect(() => {
     async function fetchDeliverers() {
       setLoading(true);
@@ -50,10 +73,15 @@ export default function Deliverers() {
             Authorization: "Bearer " + localStorage.getItem("access_token"),
           },
         });
-        setDeliverers(await resp.json());
-        console.log("Fetched delivers from API:", data);
+        if (!resp.ok) throw new Error("Failed to fetch deliverers");
+        const data = await resp.json();
+        setDeliverers(data);
+        console.log("Fetched deliverers from API:", data);
       } catch {
-        alert("Error fetching deliverers!");
+        setInfoModal({
+          title: "Load Error",
+          message: "Failed to fetch deliverers.",
+        });
       } finally {
         setLoading(false);
       }
@@ -62,51 +90,171 @@ export default function Deliverers() {
   }, [refresh]);
 
   async function handleApprove(id: string) {
-    await fetch(`/admin/users/${id}/approve`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + localStorage.getItem("access_token"),
-      },
-    });
-    setRefresh((v) => v + 1);
+    try {
+      const resp = await fetch(`/admin/users/${id}/approve`, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("access_token"),
+        },
+      });
+      if (!resp.ok) throw new Error("Failed to approve");
+      setRefresh((v) => v + 1);
+      setInfoModal({
+        title: "Deliverer Approved",
+        message: "Deliverer account approved successfully.",
+      });
+    } catch {
+      setInfoModal({
+        title: "Action Failed",
+        message: "Unable to approve this deliverer.",
+      });
+    }
   }
 
-  async function handleReject(id: string) {
-    const reason = prompt("Reason for rejection?");
-    if (!reason) return;
-    await fetch(`/admin/users/${id}/reject`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + localStorage.getItem("access_token"),
-      },
-      body: JSON.stringify({ reason }),
-    });
-    setRefresh((v) => v + 1);
+  function handleReject(id: string) {
+    setReasonModal({ action: "reject", targetId: id });
+    setActionReason("");
   }
 
-  async function handleSuspend(id: string) {
-    const reason = prompt("Reason for suspension?");
-    if (!reason) return;
-    await fetch(`/admin/livreurs/${id}/suspend`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + localStorage.getItem("access_token"),
-      },
-      body: JSON.stringify({ reason }),
-    });
-    setRefresh((v) => v + 1);
+  function handleSuspend(id: string) {
+    setReasonModal({ action: "suspend", targetId: id });
+    setActionReason("");
+  }
+
+  async function submitReasonAction() {
+    if (!reasonModal) return;
+    if (!actionReason.trim()) {
+      setInfoModal({
+        title: "Missing Reason",
+        message: "Please provide a reason before submitting.",
+      });
+      return;
+    }
+
+    try {
+      const endpoint =
+        reasonModal.action === "reject"
+          ? `/admin/users/${reasonModal.targetId}/reject`
+          : `/admin/livreurs/${reasonModal.targetId}/suspend`;
+
+      const resp = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + localStorage.getItem("access_token"),
+        },
+        body: JSON.stringify({ reason: actionReason.trim() }),
+      });
+
+      if (!resp.ok) throw new Error("Reason action failed");
+
+      setRefresh((v) => v + 1);
+      setInfoModal({
+        title:
+          reasonModal.action === "reject"
+            ? "Deliverer Rejected"
+            : "Deliverer Suspended",
+        message:
+          reasonModal.action === "reject"
+            ? "Deliverer account was rejected."
+            : "Deliverer account was suspended.",
+      });
+      setReasonModal(null);
+      setActionReason("");
+    } catch {
+      setInfoModal({
+        title: "Action Failed",
+        message: "Unable to complete this action.",
+      });
+    }
   }
 
   async function handleReactivate(id: string) {
-    await fetch(`/admin/livreurs/${id}/unsuspend`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + localStorage.getItem("access_token"),
-      },
-    });
-    setRefresh((v) => v + 1);
+    try {
+      const resp = await fetch(`/admin/livreurs/${id}/unsuspend`, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("access_token"),
+        },
+      });
+      if (!resp.ok) throw new Error("Failed to reactivate");
+      setRefresh((v) => v + 1);
+      setInfoModal({
+        title: "Deliverer Reactivated",
+        message: "Deliverer account is active again.",
+      });
+    } catch {
+      setInfoModal({
+        title: "Action Failed",
+        message: "Unable to reactivate this deliverer.",
+      });
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      const resp = await fetch(`/admin/users/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("access_token"),
+        },
+      });
+      if (!resp.ok) throw new Error("Failed to delete");
+      setRefresh((v) => v + 1);
+      setInfoModal({
+        title: "Deliverer Deleted",
+        message: "Deliverer deleted successfully.",
+      });
+    } catch {
+      setInfoModal({
+        title: "Delete Failed",
+        message: "Unable to delete this deliverer.",
+      });
+    }
+  }
+
+  async function handleAddUser() {
+    if (!addUserFormData.email || !addUserFormData.password) {
+      setInfoModal({
+        title: "Missing Fields",
+        message: "Please fill in all fields.",
+      });
+      return;
+    }
+    try {
+      const resp = await fetch("/admin/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + localStorage.getItem("access_token"),
+        },
+        body: JSON.stringify({
+          email: addUserFormData.email,
+          password: addUserFormData.password,
+          role: "LIVREUR",
+        }),
+      });
+      if (!resp.ok) {
+        const error = await resp.json();
+        setInfoModal({
+          title: "Create Failed",
+          message: error.message || "Failed to create deliverer.",
+        });
+        return;
+      }
+      setInfoModal({
+        title: "Deliverer Created",
+        message: "Deliverer created successfully.",
+      });
+      setAddUserFormData({ email: "", password: "" });
+      setAddUserModalOpen(false);
+      setRefresh((v) => v + 1);
+    } catch {
+      setInfoModal({
+        title: "Create Failed",
+        message: "Unable to create deliverer.",
+      });
+    }
   }
 
   const filtered = deliverers.filter((d) => {
@@ -132,6 +280,12 @@ export default function Deliverers() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold">Deliverer Management</h2>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setAddUserModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium"
+          >
+            <FaPlus /> Add Deliverer
+          </button>
           <div className="relative">
             <input
               value={search}
@@ -300,6 +454,12 @@ export default function Deliverers() {
                             <FaPlay className="text-green-600" />
                           </button>
                         )}
+                        <button
+                          title="Delete"
+                          onClick={() => setDeleteCandidateId(d.id)}
+                        >
+                          <FaTrash className="text-red-600" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -326,6 +486,111 @@ export default function Deliverers() {
           deliverer={selectedDeliverer}
         />
       )}
+
+      {/* --- ADD USER MODAL --- */}
+      {addUserModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 w-96">
+            <h3 className="text-xl font-bold mb-6">Add New Deliverer</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Email</label>
+                <input
+                  type="email"
+                  value={addUserFormData.email}
+                  onChange={(e) =>
+                    setAddUserFormData({
+                      ...addUserFormData,
+                      email: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={addUserFormData.password}
+                  onChange={(e) =>
+                    setAddUserFormData({
+                      ...addUserFormData,
+                      password: e.target.value,
+                    })
+                  }
+                  placeholder="Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-400"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={handleAddUser}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Create
+              </button>
+              <button
+                onClick={() => {
+                  setAddUserModalOpen(false);
+                  setAddUserFormData({ email: "", password: "" });
+                }}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmActionModal
+        open={deleteCandidateId !== null}
+        title="Delete Deliverer"
+        message="Are you sure you want to delete this deliverer? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        onCancel={() => setDeleteCandidateId(null)}
+        onConfirm={() => {
+          if (!deleteCandidateId) return;
+          void handleDelete(deleteCandidateId);
+          setDeleteCandidateId(null);
+        }}
+      />
+
+      <ReasonActionModal
+        open={reasonModal !== null}
+        title={
+          reasonModal?.action === "reject"
+            ? "Reject Deliverer"
+            : "Suspend Deliverer"
+        }
+        message={
+          reasonModal?.action === "reject"
+            ? "Provide a reason for rejecting this deliverer account."
+            : "Provide a reason for suspending this deliverer account."
+        }
+        value={actionReason}
+        placeholder="Reason"
+        confirmText={reasonModal?.action === "reject" ? "Reject" : "Suspend"}
+        onChange={setActionReason}
+        onCancel={() => {
+          setReasonModal(null);
+          setActionReason("");
+        }}
+        onConfirm={() => {
+          void submitReasonAction();
+        }}
+      />
+
+      <InfoModal
+        open={infoModal !== null}
+        title={infoModal?.title || ""}
+        message={infoModal?.message || ""}
+        onClose={() => setInfoModal(null)}
+      />
     </div>
   );
 }

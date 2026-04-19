@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../../widgets/main_scaffold.dart';
 import 'restaurant_details.dart';
+import 'my_orders.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'OrderTrackingPage.dart';
+import '../../constants/api.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   // Remove data prefix if needed
@@ -35,6 +36,39 @@ class _OfferDetailsPageState extends State<OfferDetails> {
   String? deliveryAddress;
   String? phoneNumber;
   String paymentMethod = 'card';
+
+  Future<bool> _checkDeliveryAvailable(String restaurantId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt');
+    debugPrint(
+      '[DELIVERY DEBUG][CLIENT] checking availability for restaurantId=$restaurantId',
+    );
+    try {
+      if (restaurantId.trim().isEmpty) {
+        debugPrint('[DELIVERY DEBUG][CLIENT] restaurantId is empty');
+        return false;
+      }
+
+      final response = await http.get(
+        Uri.parse(
+          apiUrl('orders/can-deliver'),
+        ).replace(queryParameters: {'restaurantId': restaurantId}),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      debugPrint(
+        '[DELIVERY DEBUG][CLIENT] status=${response.statusCode} body=${response.body}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['available'] == true;
+      }
+    } catch (e) {
+      debugPrint('[DELIVERY DEBUG][CLIENT] request failed: $e');
+    }
+    return false;
+  }
 
   Widget buildOfferImage(String? imgUrl) {
     if (imgUrl == null || imgUrl.isEmpty) {
@@ -547,7 +581,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     // --- Helper widget for radio card ---
     Widget collectionOption({
       required bool selected,
-      required VoidCallback onTap,
+      required void Function()? onTap,
       required Color highlightColor,
       required IconData icon,
       required String title,
@@ -607,8 +641,23 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     await showDialog(
       context: context,
       builder: (context) {
+        bool deliveryChecked = false;
+        bool deliveryAvailable = true;
         return StatefulBuilder(
           builder: (dialogContext, setState) {
+            if (!deliveryChecked) {
+              deliveryChecked = true;
+              final restaurantId =
+                  (widget.offer['restaurant']?['id'] ??
+                          widget.offer['restaurantId'] ??
+                          '')
+                      .toString();
+              _checkDeliveryAvailable(restaurantId).then((val) {
+                setState(() {
+                  deliveryAvailable = val;
+                });
+              });
+            }
             return Dialog(
               backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
@@ -669,21 +718,39 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                         subtitle: "Free - Collect from restaurant",
                       ),
 
-                      // --- Delivery Option Card (always visible)
-                      collectionOption(
-                        selected: selectedMethod == "delivery",
-                        onTap: () {
-                          setState(() {
-                            selectedMethod = "delivery";
-                            errorText = null; // clear error
-                          });
-                        },
-                        highlightColor: Color(0xFF9A65A6),
-                        icon: Icons.local_shipping,
-                        title: "Home Delivery",
-                        subtitle:
-                            "+€${deliveryFee.toStringAsFixed(2)} - Delivered to your door",
-                      ),
+                      if (!deliveryChecked) ...[
+                        SizedBox(height: 14),
+                        Row(
+                          children: [
+                            CircularProgressIndicator(strokeWidth: 2),
+                            SizedBox(width: 12),
+                            Text("Checking delivery availability..."),
+                          ],
+                        ),
+                      ] else if (deliveryChecked && deliveryAvailable)
+                        collectionOption(
+                          selected: selectedMethod == "delivery",
+                          onTap: () {
+                            setState(() {
+                              selectedMethod = "delivery";
+                              errorText = null;
+                            });
+                          },
+                          highlightColor: Color(0xFF9A65A6),
+                          icon: Icons.local_shipping,
+                          title: "Home Delivery",
+                          subtitle:
+                              "+€${deliveryFee.toStringAsFixed(2)} - Delivered to your door",
+                        )
+                      else
+                        collectionOption(
+                          selected: false,
+                          onTap: null, // disables this card!
+                          highlightColor: Colors.grey,
+                          icon: Icons.local_shipping,
+                          title: "Home Delivery (Unavailable)",
+                          subtitle: "No deliverers available right now",
+                        ),
 
                       // --- Delivery Fields if selected
                       if (selectedMethod == "delivery") ...[
@@ -1159,14 +1226,20 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                                 if (collectionMethod == "pickup") {
                                   // Show the QR dialog, and after it's closed, go back to OfferDetails
-                                  showPickupQRDialog(
-                                    qrCode: order['reference'],
+                                  await showPickupQRDialog(
+                                    qrCode:
+                                        (order['pickupQrToken'] ??
+                                                order['reference'])
+                                            .toString(),
+                                    displayCode:
+                                        (order['pickupQrDisplay'] ??
+                                                order['reference'])
+                                            .toString(),
                                     pickupTime: order['pickupTime'],
                                     restaurantName: order['restaurantName'],
                                   );
+                                  return;
                                 }
-
-                                // In both cases, go back to offer details
                                 Navigator.of(context).pushReplacement(
                                   MaterialPageRoute(
                                     builder: (_) => OfferDetails(offer: offer),
@@ -1190,12 +1263,13 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     );
   }
 
-  void showPickupQRDialog({
+  Future<void> showPickupQRDialog({
     required String qrCode,
+    required String displayCode,
     required String pickupTime,
     required String restaurantName,
   }) {
-    showDialog(
+    return showDialog(
       context: context,
       builder: (context) {
         return Dialog(
@@ -1240,7 +1314,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        qrCode, // human copy of the code
+                        displayCode,
                         style: TextStyle(
                           letterSpacing: 2.2,
                           fontWeight: FontWeight.bold,
@@ -1255,24 +1329,59 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                 _infoRow("Pickup:", pickupTime),
                 _infoRow("Restaurant:", restaurantName),
                 SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF3D9176),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: EdgeInsets.symmetric(vertical: 13),
-                      textStyle: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF3D9176)),
+                          foregroundColor: const Color(0xFF3D9176),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(this.context).pushNamedAndRemoveUntil(
+                            '/offers',
+                            (route) => false,
+                          );
+                        },
+                        child: const Text("Back to Home"),
                       ),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text("Go Back"),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF3D9176),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(this.context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MyOrdersScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text("My Orders"),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1333,7 +1442,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       final token = prefs.getString('jwt');
 
       final response = await http.post(
-        Uri.parse('http://localhost:3000/orders'),
+        Uri.parse(apiUrl('orders')),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -1397,12 +1506,17 @@ class _OfferDetailsPageState extends State<OfferDetails> {
   Widget _infoRow(String left, String right, {bool strong = false}) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3.5),
     child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment:
           CrossAxisAlignment.start, // handles long multiline addresses
       children: [
-        Text(left, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        Flexible(
+        SizedBox(
+          width: 95,
+          child: Text(
+            left,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+        ),
+        Expanded(
           child: Text(
             right,
             style: TextStyle(
@@ -1411,6 +1525,8 @@ class _OfferDetailsPageState extends State<OfferDetails> {
               fontSize: 15,
             ),
             textAlign: TextAlign.right,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

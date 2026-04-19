@@ -55,6 +55,9 @@ model User {
   emailVerifiedAt            DateTime?
   emailVerificationTokenHash String?
   emailVerificationExpiresAt DateTime?
+  pendingEmail               String?
+  emailChangeTokenHash       String?
+  emailChangeExpiresAt       DateTime?
 
   statusReason String?
   suspendedAt  DateTime?
@@ -113,6 +116,9 @@ model ClientProfile {
 
   locationConsentGiven     Boolean   @default(false)
   locationConsentGivenAt   DateTime?
+  lastLatitude             Float?
+  lastLongitude            Float?
+  lastLocationAt           DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -149,6 +155,9 @@ model RestaurantProfile {
   phone               String?
   address             String?
   city                String?
+  latitude            Float?
+  longitude           Float?
+  lastGeocodedAt      DateTime?
   logoUrl            String?
   coverImageUrl       String?
 
@@ -238,14 +247,22 @@ model LivreurProfile {
   payoutMethod   PayoutMethod?
   payoutDetails  Json?
 
+  // App settings
+  notificationPreferences Json? @default("{}")
+
   // Platform fields
   termsAcceptedAt     DateTime?
   termsAcceptedName   String?
 
   submittedAt         DateTime?
 
+  lastOnlineAt DateTime?
+
   locationConsentGiven     Boolean   @default(false)
   locationConsentGivenAt   DateTime?
+  lastLatitude             Float?
+  lastLongitude            Float?
+  lastLocationAt           DateTime?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -276,6 +293,10 @@ model Order {
   delivererLocation String?
   paymentMethod     String?
   paymentDetails    Json? 
+  pickupQrTokenHash String?
+  pickupQrExpiresAt DateTime?
+  pickupQrUsedAt    DateTime?
+  pickupQrStatus    QrStatus @default(NOT_SCANNED)
 
   reviews Review[]
 }
@@ -299,6 +320,13 @@ enum OrderStatus {
   PICKED_UP
   DELIVERED
   CANCELLED
+}
+
+enum QrStatus {
+  NOT_SCANNED
+  SCANNED
+  USED
+  EXPIRED
 }
 
 enum OfferVisibility {

@@ -24,6 +24,8 @@
   "btnGoogle": "Google",
   "errorRequired": "Requis",
   "errorInvalidCredentials": "Email ou mot de passe invalide. Veuillez réessayer.",
+  "errorAccountDoesNotExist": "Ce compte n'existe pas.",
+  "errorAccountSuspended": "Votre compte est suspendu.",
   "infoVerificationSent": "E-mail de vérification renvoyé.",
   "btnResendVerification": "Renvoyer l'e-mail de vérification",
   "btnJoinAsClient": "Rejoindre en tant que client",

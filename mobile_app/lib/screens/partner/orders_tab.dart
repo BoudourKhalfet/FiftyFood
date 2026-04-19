@@ -84,13 +84,23 @@ class _PartnerOrdersTabState extends State<PartnerOrdersTab> {
     }
   }
 
+  String _displayOrderCode(Map<String, dynamic> order) {
+    final method = (order['method'] ?? '').toString().toUpperCase();
+    final code = (order['orderCode'] ?? order['reference'] ?? order['id'])
+        .toString();
+
+    if (method == 'PICKUP') {
+      return code.replaceFirst(RegExp(r'^DEL', caseSensitive: false), 'PUP');
+    }
+
+    return code;
+  }
+
   Widget _buildFilteredOrderList() {
     final keyword = searchQuery.trim().toLowerCase();
 
     final filteredOrders = orders.where((order) {
-      final code = (order['orderCode'] ?? order['reference'] ?? order['id'])
-          .toString()
-          .toLowerCase();
+      final code = _displayOrderCode(order).toLowerCase();
       final name = (order['customerName'] ?? '').toString().toLowerCase();
       final status = (order['status'] ?? '').toString().toLowerCase();
 
@@ -116,7 +126,7 @@ class _PartnerOrdersTabState extends State<PartnerOrdersTab> {
         final o = filteredOrders[i];
         return _buildOrderCard(
           context: context,
-          orderId: o['orderCode'] ?? o['reference'] ?? o['id'],
+          orderId: _displayOrderCode(o),
           status: o['status'] ?? '',
           customer: o['customerName'] ?? '',
           items: o['itemsCount'] ?? 1,

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
-import { OfferVisibility } from '@prisma/client';
+import { Category, OfferVisibility } from '@prisma/client';
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const AUTHENTICITY_PROMPT = `You are a photo authenticity detector with HIGH SENSITIVITY. Determine if a food photo was genuinely taken today by the seller using their phone, or downloaded from the internet.
@@ -80,20 +80,27 @@ interface FreshnessResult {
   confidence?: number;
   reasons?: string[];
 }
-interface DescriptionResult {
-  description: string;
-}
 
 @Injectable()
 export class OffersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async expirePastOffers() {
+    await this.prisma.offer.updateMany({
+      where: {
+        status: { in: ['ACTIVE', 'PAUSED'] },
+        pickupDateTime: { lt: new Date() },
+      },
+      data: { status: 'EXPIRED' },
+    });
+  }
 
   // --- Properly type toolDef as object
   private async callModel<T extends object>(
     model: string,
     systemPrompt: string,
     imageBase64: string,
-    toolDef: object,
+    toolDef: { function: { name: string } } & Record<string, unknown>,
   ): Promise<T> {
     if (!OPENROUTER_API_KEY) {
       throw new Error('OPENROUTER_API_KEY not configured');
@@ -126,7 +133,7 @@ export class OffersService {
             tools: [toolDef],
             tool_choice: {
               type: 'function',
-              function: { name: (toolDef as any).function.name }, // unavoidable due to OpenAI's API shape
+              function: { name: toolDef.function.name },
             },
           }),
         },
@@ -440,6 +447,19 @@ export class OffersService {
       throw new BadRequestException('pickupDateTime is required');
     }
 
+    const normalizedCategories = dto.categories.map((category) =>
+      category
+        .trim()
+        .toUpperCase()
+        .replace(/[-\s]+/g, '_'),
+    );
+    const invalidCategory = normalizedCategories.find(
+      (category) => !Object.values(Category).includes(category as Category),
+    );
+    if (invalidCategory) {
+      throw new BadRequestException(`Invalid category: ${invalidCategory}`);
+    }
+
     return this.prisma.offer.create({
       data: {
         restaurantId: userId,
@@ -450,7 +470,7 @@ export class OffersService {
         quantity: dto.quantity,
         pickupTime: dto.pickupTime,
         pickupDateTime: new Date(dto.pickupDateTime),
-        categories: dto.categories,
+        categories: normalizedCategories as Category[],
         visibility:
           (dto.visibility as OfferVisibility) || OfferVisibility.IDENTIFIED,
         deliveryAvailable: dto.deliveryAvailable ?? false,
@@ -460,6 +480,8 @@ export class OffersService {
 
   // List all offers for a restaurant.
   async getMyOffers(userId: string) {
+    await this.expirePastOffers();
+
     return this.prisma.offer.findMany({
       where: { restaurantId: userId, NOT: { status: 'DELETED' } },
       orderBy: { createdAt: 'desc' },
@@ -503,12 +525,20 @@ export class OffersService {
 
   // Toggle offer status between ACTIVE and PAUSED.
   async toggleStatus(userId: string, offerId: string) {
+    await this.expirePastOffers();
+
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
     });
     if (!offer) throw new NotFoundException('Offer not found');
     if (offer.restaurantId !== userId)
       throw new ForbiddenException('Not your offer');
+
+    if (offer.status !== 'ACTIVE' && offer.status !== 'PAUSED') {
+      throw new BadRequestException(
+        'Only ACTIVE or PAUSED offers can be toggled',
+      );
+    }
 
     const newStatus = offer.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
 
@@ -520,6 +550,8 @@ export class OffersService {
 
   // List all active, visible offers for clients
   async getAvailableOffers() {
+    await this.expirePastOffers();
+
     const now = new Date();
     return this.prisma.offer.findMany({
       where: {
