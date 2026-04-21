@@ -17,12 +17,18 @@ type Order = {
 const Orders: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAllOrders()
       .then((data) => {
-        console.log("Fetched orders:", data); // <--- add this line
+        console.log("Fetched orders:", data);
         setOrders(data);
+        setError(null);
+      })
+      .catch((err) => {
+        console.error("Error fetching orders:", err);
+        setError("Failed to load orders");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -77,6 +83,12 @@ const Orders: React.FC = () => {
                 <tr>
                   <td colSpan={8} className="text-center text-gray-400 py-10">
                     Loading...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={8} className="text-center text-red-500 py-10">
+                    {error}
                   </td>
                 </tr>
               ) : orders.length === 0 ? (

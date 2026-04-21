@@ -73,16 +73,24 @@ export default function Clients() {
     async function fetchClients() {
       setLoading(true);
       try {
+        const token = localStorage.getItem("access_token");
+        console.log("Bearer token exists:", !!token);
         const resp = await fetch("/admin/users?role=CLIENT", {
           headers: {
-            Authorization: "Bearer " + localStorage.getItem("access_token"),
+            Authorization: "Bearer " + token,
           },
         });
-        if (!resp.ok) throw new Error("Failed to fetch clients");
+        console.log("Fetch response status:", resp.status);
+        if (!resp.ok) {
+          const errorData = await resp.json().catch(() => ({ error: "Unable to parse error" }));
+          console.log("Error response:", errorData);
+          throw new Error(`Failed to fetch clients: ${resp.status}`);
+        }
         const data = await resp.json();
         console.log("Fetched clients:", data);
         setClients(data);
-      } catch {
+      } catch (error) {
+        console.error("Fetch error:", error);
         setInfoModal({
           title: "Load Error",
           message: "Failed to fetch clients.",

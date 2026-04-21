@@ -72,17 +72,24 @@ export default function Restaurants() {
     async function fetchRestaurants() {
       setLoading(true);
       try {
-        console.log("Bearer token", localStorage.getItem("access_token"));
+        const token = localStorage.getItem("access_token");
+        console.log("Bearer token exists:", !!token);
         const resp = await fetch("/admin/users?role=RESTAURANT", {
           headers: {
-            Authorization: "Bearer " + localStorage.getItem("access_token"),
+            Authorization: "Bearer " + token,
           },
         });
-        if (!resp.ok) throw new Error("Failed to fetch restaurants");
+        console.log("Fetch response status:", resp.status);
+        if (!resp.ok) {
+          const errorData = await resp.json().catch(() => ({ error: "Unable to parse error" }));
+          console.log("Error response:", errorData);
+          throw new Error(`Failed to fetch restaurants: ${resp.status}`);
+        }
         const data = await resp.json();
         setRestaurants(data);
         console.log("Fetched restaurants from API:", data);
-      } catch {
+      } catch (error) {
+        console.error("Fetch error:", error);
         setInfoModal({
           title: "Load Error",
           message: "Failed to fetch restaurants.",

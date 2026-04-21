@@ -95,8 +95,9 @@ class _SignInPageState extends State<SignInPage> {
       if (response['message'] != null &&
           (response['accessToken'] == null &&
               response['onboardingToken'] == null)) {
+        debugPrint('Login rejected response: ${response['message']}');
         setState(() {
-          _error = response['message'].toString();
+          _error = AppLocalizations.of(context)!.errorInvalidCredentials;
         });
         return;
       }
@@ -254,7 +255,7 @@ class _SignInPageState extends State<SignInPage> {
               // Ping backend to mark as online!
               await ApiService.post('livreur/onboarding/ping', {});
             } catch (e) {
-              print('Deliverer ping failed: $e');
+              debugPrint('Deliverer ping failed: $e');
             }
             try {
               final profile = await ApiService.getDelivererProfile(realToken);
@@ -311,10 +312,10 @@ class _SignInPageState extends State<SignInPage> {
         });
       }
     } catch (e, st) {
-      print('ERROR in _handleLogin: $e\n$st');
-      print('Error type: ${e.runtimeType}');
+      debugPrint('ERROR in _handleLogin: $e\n$st');
+      debugPrint('Error type: ${e.runtimeType}');
       setState(() {
-        _error = "${AppLocalizations.of(context)!.errorNetwork}: $e";
+        _error = AppLocalizations.of(context)!.errorNetwork;
       });
     } finally {
       setState(() => _loading = false);
@@ -340,11 +341,10 @@ class _SignInPageState extends State<SignInPage> {
           _resendInfo = AppLocalizations.of(context)!.errorResendFailed;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Resend verification failed: $e\n$st');
       setState(() {
-        _resendInfo = AppLocalizations.of(
-          context,
-        )!.errorResendException(e.toString());
+        _resendInfo = AppLocalizations.of(context)!.errorResendFailed;
       });
     } finally {
       setState(() => _sendingResend = false);

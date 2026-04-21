@@ -148,7 +148,7 @@ export class OffersController {
   uploadOfferImage(@UploadedFile() file: Express.Multer.File) {
     try {
       if (!file) throw new ForbiddenException('No file uploaded');
-      const baseUrl = process.env.BASE_URL || 'http://192.168.245.51:3000';
+      const baseUrl = process.env.BASE_URL || 'http://192.168.61.154:3000';
       return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
     } catch (error) {
       console.error('Upload error:', error);

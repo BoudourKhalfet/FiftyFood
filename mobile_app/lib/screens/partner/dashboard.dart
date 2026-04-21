@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../api/api_service.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import '../../l10n/app_localizations.dart';
 import 'offers_tab.dart';
 import 'orders_tab.dart';
@@ -162,29 +161,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final picked = await picker.pickImage(source: ImageSource.gallery);
       if (picked == null) return;
 
-      final bytes = await picked.readAsBytes();
-
-      String extension = picked.name.split('.').last.toLowerCase();
-      MediaType? mediaType;
-      switch (extension) {
-        case 'jpg':
-        case 'jpeg':
-          mediaType = MediaType('image', 'jpeg');
-          break;
-        case 'png':
-          mediaType = MediaType('image', 'png');
-          break;
-        case 'gif':
-          mediaType = MediaType('image', 'gif');
-          break;
-        case 'bmp':
-          mediaType = MediaType('image', 'bmp');
-          break;
-        case 'webp':
-          mediaType = MediaType('image', 'webp');
-          break;
-        default:
-          mediaType = MediaType('application', 'octet-stream');
+      if (picked.path.isEmpty) {
+        throw Exception('Selected image path is not available');
       }
 
       modalSetState(() {
@@ -196,36 +174,21 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
 
-      final uri = Uri.parse(apiUrl('offers/upload-photo'));
-      final request = http.MultipartRequest('POST', uri);
-      request.headers['Authorization'] = 'Bearer $jwt';
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: picked.name,
-          contentType: mediaType,
-        ),
+      final data = await ApiService.uploadFile(
+        'offers/upload-photo',
+        'file',
+        picked.path,
+        fileName: picked.name,
+        headers: {'Authorization': 'Bearer $jwt'},
       );
 
-      final streamedResponse = await request.send();
-      final respStr = await streamedResponse.stream.bytesToString();
-      if (streamedResponse.statusCode == 200 ||
-          streamedResponse.statusCode == 201) {
-        final data = jsonDecode(respStr);
-        modalSetState(() {
-          _uploadedOfferImageUrl = data['url'];
-          _offerImageUploadError = null;
-        });
+      modalSetState(() {
+        _uploadedOfferImageUrl = data['url'];
+        _offerImageUploadError = null;
+      });
 
-        // Auto-generate description using Gemini
-        await _generateDescriptionForImage(data['url'], modalSetState);
-      } else {
-        modalSetState(() {
-          _offerImageUploadError = 'Failed to upload img: $respStr';
-          _uploadedOfferImageUrl = null;
-        });
-      }
+      // Auto-generate description using Gemini
+      await _generateDescriptionForImage(data['url'], modalSetState);
     } catch (e) {
       modalSetState(
         () => _offerImageUploadError = 'Image picker/upload error: $e',

@@ -1,6 +1,6 @@
 const String apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.245.51:3000/',
+  defaultValue: 'http://192.168.61.154:3000/',
 );
 
 String apiUrl(String path) {

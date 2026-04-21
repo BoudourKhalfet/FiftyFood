@@ -162,7 +162,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.61.154:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
 
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
@@ -332,7 +332,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.61.154:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}&changeEmail=1`;
 
     try {
@@ -673,7 +673,7 @@ export class AuthService {
 
     const resetUrl =
       (process.env.PASSWORD_RESET_URL ||
-        'http://192.168.245.51:52530/#/reset-password') + `?token=${rawToken}`;
+        'http://192.168.61.154:52530/#/reset-password') + `?token=${rawToken}`;
     try {
       await this.mailService.sendMail(
         user.email,
@@ -783,7 +783,7 @@ export class AuthService {
     if (user.emailVerifiedAt) throw new ForbiddenException('Already verified');
     const token = await this.generateEmailVerificationToken(user);
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.61.154:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${token}`;
     try {
       await this.mailService.sendMail(

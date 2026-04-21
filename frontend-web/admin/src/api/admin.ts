@@ -37,7 +37,7 @@ export async function requireChangesRestaurant(id: string, reason: string) {
 }
 
 export async function fetchAllOrders() {
-  const res = await fetch("http://192.168.245.51:3000/orders", {
+  const res = await fetch("/admin/orders", {
     headers: {
       Authorization: "Bearer " + localStorage.getItem("access_token"),
       // add others like Content-Type if needed

@@ -24,6 +24,7 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
+  @UseGuards(AuthGuard('jwt'))
   async create(
     @Body() createOrderDto: CreateOrderDto,
     @Req() req: Request,
