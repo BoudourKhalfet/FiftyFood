@@ -8,7 +8,6 @@ import 'package:http/http.dart' as http;
 import '../../l10n/app_localizations.dart';
 import 'offers_tab.dart';
 import 'orders_tab.dart';
-import 'stats_tab.dart';
 import 'profile_tab.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -40,12 +39,18 @@ Widget buildPickupTimeDropdown({
 
   bool isPast(String slot) {
     if (slot == 'Custom...') return false;
-    final endStr = slot.split('-').last.trim();
-    final h = int.parse(endStr.split(':')[0]);
-    final m = int.parse(endStr.split(':')[1]);
-    final end = TimeOfDay(hour: h, minute: m);
-    if (end.hour < now.hour) return true;
-    if (end.hour == now.hour && end.minute <= now.minute) return true;
+    final parts = slot.split('-').map((s) => s.trim()).toList();
+    if (parts.length != 2) return false;
+    final startParts = parts[0].split(':');
+    if (startParts.length != 2) return false;
+
+    final h = int.tryParse(startParts[0]);
+    final m = int.tryParse(startParts[1]);
+    if (h == null || m == null) return false;
+
+    final start = TimeOfDay(hour: h, minute: m);
+    if (start.hour < now.hour) return true;
+    if (start.hour == now.hour && start.minute <= now.minute) return true;
     return false;
   }
 
@@ -83,6 +88,55 @@ Widget buildPickupTimeDropdown({
           helpText: 'Pickup To',
         );
         if (to == null) return;
+        final now = DateTime.now();
+        final fromDateTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          from.hour,
+          from.minute,
+        );
+        final toDateTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          to.hour,
+          to.minute,
+        );
+
+        if (fromDateTime.isAtSameMomentAs(toDateTime)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Pickup start time must be different from end time.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        DateTime adjustedFrom = fromDateTime;
+        DateTime adjustedTo = toDateTime;
+        if (!adjustedTo.isAfter(adjustedFrom)) {
+          adjustedTo = adjustedTo.add(const Duration(days: 1));
+        }
+
+        if (!adjustedFrom.isAfter(now)) {
+          adjustedFrom = adjustedFrom.add(const Duration(days: 1));
+          adjustedTo = adjustedTo.add(const Duration(days: 1));
+        }
+
+        if (!adjustedFrom.isAfter(now) || !adjustedTo.isAfter(now)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Pickup start and end times must be after now.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
         String twoDigits(int n) => n.toString().padLeft(2, '0');
         final custom =
             "${twoDigits(from.hour)}:${twoDigits(from.minute)} - ${twoDigits(to.hour)}:${twoDigits(to.minute)}";
@@ -109,7 +163,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   List<String> _selectedCategories = [];
   final List<String> _categories = [
     'BAKERY',
-    'CAFE',
     'GRILL',
     'FAST_FOOD',
     'VEGETARIAN',
@@ -132,7 +185,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
 
   final Map<String, String> _categoryLabels = {
     'BAKERY': 'Bakery',
-    'CAFE': 'Cafe',
     'GRILL': 'Grill',
     'FAST_FOOD': 'Fast Food',
     'VEGETARIAN': 'Vegetarian',
@@ -237,11 +289,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       }
     } catch (e) {
       print('Error generating description: $e');
-      // Don't show error to user - description generation is optional
     }
   }
 
-  int _activeTab = 0; // 0: offers, 1: orders, 2: stats, 3: profile
+  int _activeTab = 0;
 
   // New Offer Form
   late TextEditingController _descriptionController;
@@ -277,13 +328,29 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   final List<Map<String, dynamic>> _orders = [];
   final GlobalKey<PartnerOffersTabState> _offersTabKey =
       GlobalKey<PartnerOffersTabState>();
+  late final List<Widget> _tabViews;
 
   // Timer for real-time stats refresh
   Timer? _statsRefreshTimer;
 
+  Future<void> _signOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('jwt');
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/signin/partner', (route) => false);
+  }
+
   @override
   void initState() {
     super.initState();
+    _tabViews = [
+      PartnerOffersTab(key: _offersTabKey),
+      const PartnerOrdersTab(),
+      const PartnerProfileTab(),
+    ];
+
     _fetchRestaurantProfile();
     _fetchRestaurantStats();
 
@@ -434,6 +501,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: const Text('Scan QR Code'),
         content: SizedBox(
@@ -476,6 +544,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: const Text('Validate Customer QR Code'),
         content: SingleChildScrollView(
@@ -675,15 +744,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                       ),
                       const SizedBox(height: 5),
                       _buildDrawerItem(
-                        icon: Icons.bar_chart_rounded,
-                        label: 'Statistics',
-                        index: 2,
-                      ),
-                      const SizedBox(height: 5),
-                      _buildDrawerItem(
                         icon: Icons.person_outline,
                         label: 'Profile',
-                        index: 3,
+                        index: 2,
                       ),
                       const SizedBox(height: 24),
                       GestureDetector(
@@ -781,7 +844,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     ),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    onTap: () {},
+                    onTap: _signOut,
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -920,6 +983,18 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     );
   }
 
+  Widget _buildTabContent() {
+    return Stack(
+      children: List.generate(_tabViews.length, (index) {
+        final isActive = _activeTab == index;
+        return Offstage(
+          offstage: !isActive,
+          child: TickerMode(enabled: isActive, child: _tabViews[index]),
+        );
+      }),
+    );
+  }
+
   Widget _buildVisibilityOptionDialog(
     String value,
     String title,
@@ -991,6 +1066,28 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       _uploadedOfferImageUrl = null;
     });
 
+    InputDecoration modalInputDecoration(String hint) {
+      return InputDecoration(
+        hintText: hint,
+        filled: true,
+        fillColor: const Color(0xFFF9FAFB),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF1F9D7A), width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+      );
+    }
+
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -1000,8 +1097,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         return StatefulBuilder(
           builder: (modalContext, modalSetState) => Dialog(
             backgroundColor: Colors.white,
+            clipBehavior: Clip.antiAlias,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(28),
             ),
             insetPadding: const EdgeInsets.symmetric(
               horizontal: 16,
@@ -1013,22 +1111,34 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                 maxHeight: MediaQuery.of(context).size.height * 0.94,
               ),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(22),
+                padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE5E7EB),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     // Title
                     Center(
                       child: Text(
                         AppLocalizations.of(context)!.btnCreateOffer,
                         style: const TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     const Center(
                       child: Text(
                         'List your surplus food and help reduce waste',
@@ -1038,7 +1148,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 20),
 
                     // Image Picker Section
                     const Align(
@@ -1087,8 +1197,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                           width: double.infinity,
                           decoration: BoxDecoration(
                             color: const Color(0xFFF3F4F6),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFF9CA3AF)),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFD1D5DB)),
                           ),
                           child: _uploadingOfferImage
                               ? const Center(child: CircularProgressIndicator())
@@ -1105,7 +1215,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                       Stack(
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(14),
                             child: Image.network(
                               _uploadedOfferImageUrl!,
                               height: 200,
@@ -1190,19 +1300,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     TextField(
                       controller: _descriptionController,
                       onChanged: (v) => _offerDescription = v,
-                      decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)!.hintDescription,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
-                        ),
-                        hintStyle: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF9CA3AF),
-                        ),
+                      decoration: modalInputDecoration(
+                        AppLocalizations.of(context)!.hintDescription,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -1231,9 +1330,12 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                       ),
                       selectedColor: Color(0xFF1F9D7A),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: Color(0xFF9CA3AF), width: 1),
-                        borderRadius: BorderRadius.circular(8),
+                        color: const Color(0xFFF9FAFB),
+                        border: Border.all(
+                          color: const Color(0xFFD1D5DB),
+                          width: 1,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       buttonIcon: const Icon(
                         Icons.category,
@@ -1274,20 +1376,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               TextField(
                                 keyboardType: TextInputType.number,
                                 onChanged: (v) => _originalPrice = v,
-                                decoration: InputDecoration(
-                                  hintText: '18.50',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 10,
-                                  ),
-                                  hintStyle: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF9CA3AF),
-                                  ),
-                                ),
+                                decoration: modalInputDecoration('18.50'),
                               ),
                             ],
                           ),
@@ -1310,20 +1399,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               TextField(
                                 keyboardType: TextInputType.number,
                                 onChanged: (v) => _discountedPrice = v,
-                                decoration: InputDecoration(
-                                  hintText: '6.90',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 10,
-                                  ),
-                                  hintStyle: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF9CA3AF),
-                                  ),
-                                ),
+                                decoration: modalInputDecoration('6.90'),
                               ),
                             ],
                           ),
@@ -1351,20 +1427,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               TextField(
                                 keyboardType: TextInputType.number,
                                 onChanged: (v) => _quantity = v,
-                                decoration: InputDecoration(
+                                decoration: modalInputDecoration('5').copyWith(
                                   isDense: true,
-                                  hintText: '5',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 10,
-                                  ),
-                                  hintStyle: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF9CA3AF),
-                                  ),
                                 ),
                               ),
                             ],
@@ -1471,6 +1535,11 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             child: const Text('Cancel'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF1F9D7A),
+                              minimumSize: const Size.fromHeight(46),
+                              side: const BorderSide(color: Color(0xFF9CA3AF)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
                             ),
                           ),
                         ),
@@ -1504,26 +1573,89 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                       }
 
                                       final now = DateTime.now();
-                                      final pickupHour = int.parse(
-                                        _pickupTime.split(":")[0],
+                                      final timeParts = _pickupTime
+                                          .split('-')
+                                          .map((s) => s.trim())
+                                          .toList();
+                                      if (timeParts.length != 2) {
+                                        modalSetState(() {
+                                          modalError =
+                                              'Invalid pickup time format. Please select a valid time slot.';
+                                        });
+                                        return;
+                                      }
+
+                                      final startParts = timeParts[0].split(
+                                        ':',
                                       );
-                                      final pickupMinute = int.parse(
-                                        _pickupTime
-                                            .split(":")[1]
-                                            .split('-')[0]
-                                            .trim(),
+                                      final endParts = timeParts[1].split(':');
+                                      if (startParts.length != 2 ||
+                                          endParts.length != 2) {
+                                        modalSetState(() {
+                                          modalError =
+                                              'Invalid pickup time format. Please select a valid time slot.';
+                                        });
+                                        return;
+                                      }
+
+                                      final startHour = int.parse(
+                                        startParts[0],
                                       );
-                                      DateTime candidate = DateTime(
+                                      final startMinute = int.parse(
+                                        startParts[1],
+                                      );
+                                      final endHour = int.parse(endParts[0]);
+                                      final endMinute = int.parse(endParts[1]);
+
+                                      final todayStart = DateTime(
                                         now.year,
                                         now.month,
                                         now.day,
-                                        pickupHour,
-                                        pickupMinute,
+                                        startHour,
+                                        startMinute,
                                       );
-                                      if (candidate.isBefore(now)) {
-                                        candidate = candidate.add(
-                                          Duration(days: 1),
+                                      final rawEnd = DateTime(
+                                        now.year,
+                                        now.month,
+                                        now.day,
+                                        endHour,
+                                        endMinute,
+                                      );
+
+                                      if (todayStart.isAtSameMomentAs(rawEnd)) {
+                                        modalSetState(() {
+                                          modalError =
+                                              'Pickup start time must be different from end time.';
+                                        });
+                                        return;
+                                      }
+
+                                      DateTime startCandidate = todayStart;
+                                      DateTime endCandidate = rawEnd;
+                                      if (!endCandidate.isAfter(
+                                        startCandidate,
+                                      )) {
+                                        endCandidate = endCandidate.add(
+                                          const Duration(days: 1),
                                         );
+                                      }
+
+                                      if (!startCandidate.isAfter(now)) {
+                                        startCandidate = startCandidate.add(
+                                          const Duration(days: 1),
+                                        );
+                                        endCandidate = endCandidate.add(
+                                          const Duration(days: 1),
+                                        );
+                                      }
+
+                                      if (!startCandidate.isAfter(now) ||
+                                          !endCandidate.isAfter(now)) {
+                                        modalSetState(() {
+                                          modalError =
+                                              'Pickup start and end times must be after now.';
+                                        });
+                                        return;
                                       }
 
                                       final response = await ApiService.post(
@@ -1539,7 +1671,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                           ),
                                           'quantity': int.parse(_quantity),
                                           'pickupTime': _pickupTime,
-                                          'pickupDateTime': candidate
+                                          'pickupDateTime': endCandidate
                                               .toIso8601String(),
                                           'categories': _selectedCategories,
                                           'visibility': _visibility,
@@ -1588,6 +1720,14 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             child: const Text('Publish Offer'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1F9D7A),
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: const Color(0xFFE5E7EB),
+                              disabledForegroundColor: const Color(0xFFA3A3A3),
+                              elevation: 0,
+                              minimumSize: const Size.fromHeight(46),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
                             ),
                           ),
                         ),
@@ -1736,28 +1876,11 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                 children: [
                   _buildTabButton(0, 'Offers'),
                   _buildTabButton(1, 'Orders'),
-                  _buildTabButton(2, 'Stats'),
-                  _buildTabButton(3, 'Profile'),
+                  _buildTabButton(2, 'Profile'),
                 ],
               ),
               const SizedBox(height: 16),
-
-              Builder(
-                builder: (context) {
-                  switch (_activeTab) {
-                    case 0:
-                      return PartnerOffersTab(key: _offersTabKey);
-                    case 1:
-                      return PartnerOrdersTab();
-                    case 2:
-                      return PartnerStatsTab();
-                    case 3:
-                      return PartnerProfileTab();
-                    default:
-                      return SizedBox();
-                  }
-                },
-              ),
+              _buildTabContent(),
             ],
           ),
         ),

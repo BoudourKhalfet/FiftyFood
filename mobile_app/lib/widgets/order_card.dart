@@ -198,6 +198,7 @@ Widget universalImage(
 class OrderCard extends StatelessWidget {
   final String status;
   final String collectionMethod;
+  final String? orderId;
   final String mealName;
   final String restaurantName;
   final String timeSlot;
@@ -223,6 +224,7 @@ class OrderCard extends StatelessWidget {
     super.key,
     required this.status,
     required this.collectionMethod,
+    this.orderId,
     required this.mealName,
     required this.restaurantName,
     required this.timeSlot,
@@ -253,6 +255,8 @@ class OrderCard extends StatelessWidget {
         return Colors.green;
       case 'PAID':
         return Colors.teal;
+      case 'EXPIRED':
+        return Colors.grey;
       case 'PICKED_UP':
         return Colors.red;
       case 'DELIVERED':
@@ -301,6 +305,15 @@ class OrderCard extends StatelessWidget {
                       color: collectionMethod == 'PICKUP'
                           ? Colors.teal[300]!
                           : Colors.deepPurple[300]!,
+                    ),
+                    Spacer(),
+                    Text(
+                      'Code: ${shortenText((orderId?.isNotEmpty ?? false) ? orderId! : reference, limit: 6)}',
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ],
                 ),
@@ -508,6 +521,8 @@ class OrderCard extends StatelessWidget {
         return 'Confirmed';
       case 'READY':
         return 'Ready';
+      case 'EXPIRED':
+        return 'Expired';
       case 'PICKED_UP':
         return 'Picked Up';
       case 'DELIVERED':

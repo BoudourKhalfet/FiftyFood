@@ -3,9 +3,13 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
+import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Category, OfferVisibility } from '@prisma/client';
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
@@ -82,15 +86,131 @@ interface FreshnessResult {
 }
 
 @Injectable()
-export class OffersService {
+export class OffersService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(OffersService.name);
+  private expirationTimer?: NodeJS.Timeout;
+
   constructor(private readonly prisma: PrismaService) {}
 
+  async onModuleInit() {
+    await this.expirePastOffers();
+    this.expirationTimer = setInterval(() => {
+      void this.expirePastOffers().catch((error: unknown) => {
+        this.logger.error('Failed to expire offers', error as Error);
+      });
+    }, 60_000);
+  }
+
+  onModuleDestroy() {
+    if (this.expirationTimer) {
+      clearInterval(this.expirationTimer);
+      this.expirationTimer = undefined;
+    }
+  }
+
+  private parsePickupTimeRange(pickupTime: string | null): {
+    startHour: number;
+    startMinute: number;
+    endHour: number;
+    endMinute: number;
+  } | null {
+    const source = (pickupTime ?? '').trim();
+    const matches = [...source.matchAll(/(\d{1,2}):(\d{2})/g)];
+    if (matches.length < 2) return null;
+
+    return {
+      startHour: Number(matches[0][1]),
+      startMinute: Number(matches[0][2]),
+      endHour: Number(matches[matches.length - 1][1]),
+      endMinute: Number(matches[matches.length - 1][2]),
+    };
+  }
+
+  private normalizePickupDateTime(
+    pickupDateTime: Date,
+    pickupTime: string | null,
+  ): Date {
+    const range = this.parsePickupTimeRange(pickupTime);
+    if (!range) return pickupDateTime;
+
+    const normalized = new Date(pickupDateTime);
+    const startMinutes = range.startHour * 60 + range.startMinute;
+    const endMinutes = range.endHour * 60 + range.endMinute;
+    const crossesMidnight = endMinutes <= startMinutes;
+
+    if (crossesMidnight) {
+      normalized.setDate(normalized.getDate() + 1);
+    }
+    normalized.setHours(range.endHour, range.endMinute, 0, 0);
+    return normalized;
+  }
+
+  private normalizePickupDateTimeFromNow(pickupTime: string | null): Date {
+    return this.normalizePickupDateTime(new Date(), pickupTime);
+  }
+
+  private validatePickupTimeWindow(pickupTime: string | null) {
+    const range = this.parsePickupTimeRange(pickupTime);
+    if (!range) {
+      throw new BadRequestException(
+        'Invalid pickup time format. Expected HH:mm - HH:mm.',
+      );
+    }
+
+    if (
+      range.startHour === range.endHour &&
+      range.startMinute === range.endMinute
+    ) {
+      throw new BadRequestException(
+        'Pickup start time must be different from end time.',
+      );
+    }
+
+    const now = new Date();
+    let start = new Date(now);
+    start.setHours(range.startHour, range.startMinute, 0, 0);
+
+    let end = new Date(now);
+    end.setHours(range.endHour, range.endMinute, 0, 0);
+
+    if (end.getTime() <= start.getTime()) {
+      end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    // Keep validation strict by requiring the next full window to be in the future.
+    if (start.getTime() <= now.getTime()) {
+      start = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    if (start.getTime() <= now.getTime() || end.getTime() <= now.getTime()) {
+      throw new BadRequestException(
+        'Pickup start and end times must be after now.',
+      );
+    }
+  }
+
   private async expirePastOffers() {
-    await this.prisma.offer.updateMany({
+    const candidates = await this.prisma.offer.findMany({
       where: {
         status: { in: ['ACTIVE', 'PAUSED'] },
         pickupDateTime: { lt: new Date() },
       },
+      select: {
+        id: true,
+        pickupDateTime: true,
+      },
+    });
+
+    const nowMs = Date.now();
+    const expiredIds = candidates
+      .filter((offer) => offer.pickupDateTime.getTime() <= nowMs)
+      .map((offer) => offer.id);
+
+    if (!expiredIds.length) return;
+
+    await this.prisma.offer.updateMany({
+      where: { id: { in: expiredIds } },
       data: { status: 'EXPIRED' },
     });
   }
@@ -447,6 +567,8 @@ export class OffersService {
       throw new BadRequestException('pickupDateTime is required');
     }
 
+    this.validatePickupTimeWindow(dto.pickupTime);
+
     const normalizedCategories = dto.categories.map((category) =>
       category
         .trim()
@@ -469,7 +591,10 @@ export class OffersService {
         discountedPrice: dto.discountedPrice,
         quantity: dto.quantity,
         pickupTime: dto.pickupTime,
-        pickupDateTime: new Date(dto.pickupDateTime),
+        pickupDateTime: this.normalizePickupDateTime(
+          new Date(dto.pickupDateTime),
+          dto.pickupTime,
+        ),
         categories: normalizedCategories as Category[],
         visibility:
           (dto.visibility as OfferVisibility) || OfferVisibility.IDENTIFIED,
@@ -500,6 +625,55 @@ export class OffersService {
     return this.prisma.offer.update({
       where: { id: offerId },
       data: { status: 'DELETED' },
+    });
+  }
+
+  // Update editable offer fields (except photo) for the owning restaurant.
+  async updateOffer(userId: string, offerId: string, dto: UpdateOfferDto) {
+    await this.expirePastOffers();
+
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.restaurantId !== userId) {
+      throw new ForbiddenException('Not your offer');
+    }
+    if (offer.status === 'DELETED') {
+      throw new BadRequestException('Cannot edit a deleted offer');
+    }
+
+    const nextOriginalPrice = dto.originalPrice ?? offer.originalPrice;
+    const nextDiscountedPrice = dto.discountedPrice ?? offer.discountedPrice;
+
+    const discountPct =
+      ((nextOriginalPrice - nextDiscountedPrice) / nextOriginalPrice) * 100;
+    if (discountPct < 10 || discountPct > 90) {
+      throw new ForbiddenException(
+        'Discount must be between 10% and 90% of the original price.',
+      );
+    }
+
+    const nextPickupTime = dto.pickupTime ?? offer.pickupTime;
+    this.validatePickupTimeWindow(nextPickupTime);
+
+    const nextStatus = offer.status === 'EXPIRED' ? 'ACTIVE' : offer.status;
+    const nextPickupDateTime =
+      offer.status === 'EXPIRED'
+        ? this.normalizePickupDateTimeFromNow(nextPickupTime)
+        : this.normalizePickupDateTime(offer.pickupDateTime, nextPickupTime);
+
+    return this.prisma.offer.update({
+      where: { id: offerId },
+      data: {
+        description: dto.description ?? offer.description,
+        originalPrice: nextOriginalPrice,
+        discountedPrice: nextDiscountedPrice,
+        quantity: dto.quantity ?? offer.quantity,
+        pickupTime: nextPickupTime,
+        pickupDateTime: nextPickupDateTime,
+        status: nextStatus,
+      },
     });
   }
 
@@ -552,12 +726,10 @@ export class OffersService {
   async getAvailableOffers() {
     await this.expirePastOffers();
 
-    const now = new Date();
     return this.prisma.offer.findMany({
       where: {
         status: 'ACTIVE',
         quantity: { gt: 0 },
-        pickupDateTime: { gte: now },
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -571,6 +743,8 @@ export class OffersService {
                 logoUrl: true,
                 address: true,
                 avgRating: true,
+                latitude: true,
+                longitude: true,
               },
             },
           },

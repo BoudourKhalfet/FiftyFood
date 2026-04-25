@@ -7,8 +7,14 @@ export default defineConfig({
     strictPort: true,
     port: 5174,
     proxy: {
+<<<<<<< HEAD
       "^/auth/": "http://192.168.61.154:3000",
       "^/admin/(dashboard|users|clients|restaurants|orders|deliverers)": "http://192.168.61.154:3000",
+=======
+      "^/auth": "http://localhost:3000",
+      "^/admin": "http://localhost:3000",
+      "^/orders": "http://localhost:3000",
+>>>>>>> 18e96f867249be3dc473e4db2f6328544757fa0f
     },
     middlewareMode: false,
   },

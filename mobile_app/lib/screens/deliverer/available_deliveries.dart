@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/auth_storage.dart';
 import '../../constants/api.dart';
 
@@ -13,13 +14,62 @@ class AvailableDeliveries extends StatefulWidget {
 
 class _AvailableDeliveriesState extends State<AvailableDeliveries> {
   List<Map<String, dynamic>> _deliveryOrders = [];
+  final Set<String> _hiddenOrderIds = <String>{};
   bool isLoading = true;
   String? error;
+
+  String _hiddenOrdersPrefsKey = 'deliverer_hidden_order_ids';
 
   @override
   void initState() {
     super.initState();
-    fetchDeliveryOrders();
+    _initializePage();
+  }
+
+  Future<void> _initializePage() async {
+    await _initializePrefsKey();
+    await _loadHiddenOrderIds();
+    await fetchDeliveryOrders();
+  }
+
+  Future<void> _initializePrefsKey() async {
+    final jwt = await getJwt();
+    if (jwt == null || jwt.isEmpty) return;
+
+    final userId = _extractUserIdFromJwt(jwt);
+    if (userId != null && userId.isNotEmpty) {
+      _hiddenOrdersPrefsKey = 'deliverer_hidden_order_ids_$userId';
+    }
+  }
+
+  String? _extractUserIdFromJwt(String jwt) {
+    try {
+      final parts = jwt.split('.');
+      if (parts.length != 3) return null;
+
+      final normalized = base64Url.normalize(parts[1]);
+      final payloadMap =
+          json.decode(utf8.decode(base64Url.decode(normalized)))
+              as Map<String, dynamic>;
+
+      final sub = payloadMap['sub'];
+      return sub == null ? null : sub.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _loadHiddenOrderIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedIds = prefs.getStringList(_hiddenOrdersPrefsKey) ?? [];
+    _hiddenOrderIds
+      ..clear()
+      ..addAll(storedIds);
+  }
+
+  Future<void> _saveHiddenOrderIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenOrdersPrefsKey, _hiddenOrderIds.toList());
   }
 
   Future<void> fetchDeliveryOrders() async {
@@ -42,7 +92,11 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
-          _deliveryOrders = List<Map<String, dynamic>>.from(data);
+          _deliveryOrders = List<Map<String, dynamic>>.from(data)
+              .where(
+                (order) => !_hiddenOrderIds.contains(order['id'].toString()),
+              )
+              .toList();
           isLoading = false;
         });
       } else {
@@ -75,6 +129,14 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
       return decoded['success'] == true;
     }
     return false;
+  }
+
+  Future<void> declineDelivery(String orderId) async {
+    setState(() {
+      _hiddenOrderIds.add(orderId);
+      _deliveryOrders.removeWhere((order) => order['id'].toString() == orderId);
+    });
+    await _saveHiddenOrderIds();
   }
 
   Widget _buildOrderCard(Map<String, dynamic> order) {
@@ -260,7 +322,9 @@ class _AvailableDeliveriesState extends State<AvailableDeliveries> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {},
+                    onPressed: () async {
+                      await declineDelivery(order['id'].toString());
+                    },
                     icon: const Icon(Icons.close, color: Color(0xFF14C38E)),
                     label: const Text(
                       'Decline',

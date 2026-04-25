@@ -49,7 +49,7 @@ export class UsersController {
     return this.users.updateProfile(req.user.sub, dto);
   }
 
-  // 3️⃣ Update preferences (cuisinePreferences, dietaryRestrictions)
+  // 3️⃣ Update preferences (cuisinePreferences)
   @Patch('me/preferences')
   async updatePreferences(
     @Req() req: RequestWithUser,

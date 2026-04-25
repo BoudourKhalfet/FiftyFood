@@ -47,7 +47,6 @@ export class ProfileCompleteGuard implements CanActivate {
             phone: true,
             defaultAddress: true,
             cuisinePreferences: true,
-            dietaryRestrictions: true,
           },
         },
       },
@@ -60,8 +59,7 @@ export class ProfileCompleteGuard implements CanActivate {
       !!p?.fullName &&
       !!p?.phone &&
       !!p?.defaultAddress &&
-      (p?.cuisinePreferences?.length ?? 0) > 0 &&
-      (p?.dietaryRestrictions?.length ?? 0) > 0;
+      (p?.cuisinePreferences?.length ?? 0) > 0;
 
     if (!complete) {
       throw new ForbiddenException({
@@ -73,7 +71,6 @@ export class ProfileCompleteGuard implements CanActivate {
           'phone',
           'defaultAddress',
           'cuisinePreferences (min 1)',
-          'dietaryRestrictions (min 1)',
         ],
       });
     }

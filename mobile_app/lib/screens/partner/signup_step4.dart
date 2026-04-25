@@ -119,7 +119,10 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
         headers: {'Authorization': 'Bearer $jwt'},
       );
       if (userResponse['emailVerifiedAt'] == null) {
-        Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
+        Navigator.of(context).pushReplacementNamed(
+          '/verify_email_reminder',
+          arguments: 'commercant',
+        );
         return;
       }
 
@@ -127,7 +130,11 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
       if (status == 'APPROVED') {
         Navigator.pushReplacementNamed(context, '/partner/dashboard');
       } else {
-        Navigator.pushReplacementNamed(context, '/submitted');
+        Navigator.pushReplacementNamed(
+          context,
+          '/submitted',
+          arguments: 'restaurant',
+        );
       }
     } catch (e) {
       setState(() => _error = 'Error: $e');
@@ -154,7 +161,10 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
       );
 
       if (userResponse['emailVerifiedAt'] == null) {
-        Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
+        Navigator.of(context).pushReplacementNamed(
+          '/verify_email_reminder',
+          arguments: 'commercant',
+        );
         return;
       }
 
@@ -162,7 +172,11 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
       if (status == 'APPROVED') {
         Navigator.pushReplacementNamed(context, '/partner/dashboard');
       } else {
-        Navigator.pushReplacementNamed(context, '/submitted');
+        Navigator.pushReplacementNamed(
+          context,
+          '/submitted',
+          arguments: 'restaurant',
+        );
       }
     } catch (e) {
       setState(() => _error = 'Error: $e');

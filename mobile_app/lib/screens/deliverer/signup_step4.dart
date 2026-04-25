@@ -110,7 +110,9 @@ class _DelivererSignupStep4State extends State<DelivererSignupStep4> {
         headers: {'Authorization': 'Bearer $jwt'},
       );
       if (userResponse['emailVerifiedAt'] == null) {
-        Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
+        Navigator.of(
+          context,
+        ).pushReplacementNamed('/verify_email_reminder', arguments: 'livreur');
         return;
       }
       final profile = await ApiService.get(
@@ -123,7 +125,9 @@ class _DelivererSignupStep4State extends State<DelivererSignupStep4> {
           MaterialPageRoute(builder: (_) => LocationConsentPage()),
         );
       } else {
-        Navigator.of(context).pushReplacementNamed('/submitted');
+        Navigator.of(
+          context,
+        ).pushReplacementNamed('/submitted', arguments: 'livreur');
       }
     } catch (e) {
       setState(() {
@@ -155,10 +159,14 @@ class _DelivererSignupStep4State extends State<DelivererSignupStep4> {
         headers: {'Authorization': 'Bearer $jwt'},
       );
       if (userResponse['emailVerifiedAt'] == null) {
-        Navigator.of(context).pushReplacementNamed('/verify_email_reminder');
+        Navigator.of(
+          context,
+        ).pushReplacementNamed('/verify_email_reminder', arguments: 'livreur');
         return;
       }
-      Navigator.of(context).pushReplacementNamed('/submitted');
+      Navigator.of(
+        context,
+      ).pushReplacementNamed('/submitted', arguments: 'livreur');
     } catch (e) {
       setState(() {
         _error = "Payout info failed: $e";

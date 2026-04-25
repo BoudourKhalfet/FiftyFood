@@ -27,13 +27,15 @@ class _PartnerSignupStep2State extends State<PartnerSignupStep2> {
   bool _loading = false;
   String? _error;
 
-  final List<String> _types = [
-    'FAST_FOOD',
-    'CAFE',
-    'BAKERY',
-    'RESTAURANT',
-    'HOTEL',
-  ];
+  final List<String> _types = ['FAST_FOOD', 'BAKERY', 'RESTAURANT', 'HOTEL'];
+
+  String _toDisplayLabel(String raw) {
+    return raw
+        .split('_')
+        .where((part) => part.isNotEmpty)
+        .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
+        .join(' ');
+  }
 
   @override
   void dispose() {
@@ -311,6 +313,8 @@ class _PartnerSignupStep2State extends State<PartnerSignupStep2> {
                           value: _selectedType,
                           dropdownColor: Colors.white,
                           isExpanded: true,
+                          menuMaxHeight: 260,
+                          borderRadius: BorderRadius.circular(12),
                           decoration: InputDecoration(
                             labelText: 'Type of establishment',
                             prefixIcon: const Icon(
@@ -352,8 +356,10 @@ class _PartnerSignupStep2State extends State<PartnerSignupStep2> {
                           ),
                           items: _types
                               .map(
-                                (t) =>
-                                    DropdownMenuItem(value: t, child: Text(t)),
+                                (t) => DropdownMenuItem(
+                                  value: t,
+                                  child: Text(_toDisplayLabel(t)),
+                                ),
                               )
                               .toList(),
                           onChanged: (v) => setState(() => _selectedType = v),

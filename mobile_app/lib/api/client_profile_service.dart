@@ -55,7 +55,6 @@ class ProfileService {
   static Future<void> updatePreferences(
     String jwt, {
     List<String>? cuisinePreferences,
-    List<String>? dietaryRestrictions,
   }) async {
     print('ProfileService.updatePreferences CALLED');
     await ApiService.patch(
@@ -63,8 +62,6 @@ class ProfileService {
       {
         if (cuisinePreferences != null)
           'cuisinePreferences': cuisinePreferences,
-        if (dietaryRestrictions != null)
-          'dietaryRestrictions': dietaryRestrictions,
       },
       headers: {'Authorization': 'Bearer $jwt'},
     );

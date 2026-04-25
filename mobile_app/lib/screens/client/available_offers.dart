@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:math';
 import '../../widgets/main_scaffold.dart';
 import '../../api/api_service.dart';
 import 'offer_details.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:location/location.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../api/client_profile_service.dart';
+
+class _GeoPoint {
+  final double lat;
+  final double lng;
+
+  const _GeoPoint(this.lat, this.lng);
+}
 
 Uint8List? decodeImg(String imgUrl) {
   if (imgUrl.startsWith('data:image')) {
@@ -35,6 +46,217 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
   List<dynamic> offers = [];
   bool isLoading = true;
   String? error;
+  double? _clientLatitude;
+  double? _clientLongitude;
+  final Map<String, String> _distanceTextOverrides = {};
+  final Map<String, _GeoPoint?> _geoCache = {};
+  bool _resolvingDistanceFallbacks = false;
+
+  String _offerKey(Map<String, dynamic> offer) {
+    return (offer['id'] ?? offer['reference'] ?? offer['photoUrl'] ?? '')
+        .toString();
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  double _distanceKm(double lat1, double lon1, double lat2, double lon2) {
+    const earthRadiusKm = 6371.0;
+    final dLat = (lat2 - lat1) * (3.141592653589793 / 180.0);
+    final dLon = (lon2 - lon1) * (3.141592653589793 / 180.0);
+    final a =
+        (sin(dLat / 2) * sin(dLat / 2)) +
+        cos(lat1 * (3.141592653589793 / 180.0)) *
+            cos(lat2 * (3.141592653589793 / 180.0)) *
+            (sin(dLon / 2) * sin(dLon / 2));
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  double? _distanceKmForOffer(Map<String, dynamic> offer) {
+    for (final key in const [
+      'distanceKm',
+      'distance',
+      'distanceToRestaurantKm',
+    ]) {
+      final parsed = _asDouble(offer[key]);
+      if (parsed != null && parsed >= 0) {
+        return parsed;
+      }
+    }
+
+    final profile = offer['restaurant']?['restaurantProfile'];
+    final restaurantLat = _asDouble(profile?['latitude']);
+    final restaurantLng = _asDouble(profile?['longitude']);
+
+    if (_clientLatitude == null ||
+        _clientLongitude == null ||
+        restaurantLat == null ||
+        restaurantLng == null) {
+      return null;
+    }
+
+    return _distanceKm(
+      _clientLatitude!,
+      _clientLongitude!,
+      restaurantLat,
+      restaurantLng,
+    );
+  }
+
+  String _distanceTextForOffer(Map<String, dynamic> offer) {
+    final override = _distanceTextOverrides[_offerKey(offer)];
+    if (override != null) return override;
+
+    final km = _distanceKmForOffer(offer);
+    if (km == null) return 'Distance unavailable';
+    return '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+  }
+
+  Future<_GeoPoint?> _geocodeAddress(String address) async {
+    final query = address.trim().toLowerCase();
+    if (query.isEmpty) return null;
+    if (_geoCache.containsKey(query)) return _geoCache[query];
+
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${Uri.encodeComponent(query)}',
+      );
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'FiftyFood-Mobile/1.0'},
+      );
+
+      if (response.statusCode != 200) {
+        _geoCache[query] = null;
+        return null;
+      }
+
+      final rows = jsonDecode(response.body);
+      if (rows is! List || rows.isEmpty) {
+        _geoCache[query] = null;
+        return null;
+      }
+
+      final lat = double.tryParse(rows.first['lat']?.toString() ?? '');
+      final lng = double.tryParse(rows.first['lon']?.toString() ?? '');
+      if (lat == null || lng == null) {
+        _geoCache[query] = null;
+        return null;
+      }
+
+      final point = _GeoPoint(lat, lng);
+      _geoCache[query] = point;
+      return point;
+    } catch (_) {
+      _geoCache[query] = null;
+      return null;
+    }
+  }
+
+  Future<void> _resolveDistanceFallbacks() async {
+    if (_resolvingDistanceFallbacks || offers.isEmpty) return;
+    _resolvingDistanceFallbacks = true;
+
+    try {
+      double? clientLat = _clientLatitude;
+      double? clientLng = _clientLongitude;
+      String clientAddress = '';
+
+      if (clientLat == null || clientLng == null) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final jwt = prefs.getString('jwt');
+          if (jwt != null) {
+            final profile = await ProfileService.getProfile(jwt);
+            clientLat = profile.lastLatitude;
+            clientLng = profile.lastLongitude;
+            clientAddress = profile.defaultAddress;
+          }
+        } catch (_) {
+          // Keep fallback best-effort.
+        }
+      }
+
+      _GeoPoint? clientPoint;
+      if (clientLat != null && clientLng != null) {
+        clientPoint = _GeoPoint(clientLat, clientLng);
+      } else if (clientAddress.trim().isNotEmpty) {
+        clientPoint = await _geocodeAddress(clientAddress);
+      }
+
+      if (clientPoint == null) return;
+
+      final nextOverrides = Map<String, String>.from(_distanceTextOverrides);
+
+      for (final raw in offers) {
+        final offer = Map<String, dynamic>.from(raw as Map);
+        final key = _offerKey(offer);
+        if (nextOverrides.containsKey(key)) continue;
+
+        final precomputed = _distanceKmForOffer(offer);
+        if (precomputed != null && precomputed >= 0) {
+          nextOverrides[key] =
+              '${precomputed.toStringAsFixed(precomputed >= 10 ? 0 : 1)} km';
+          continue;
+        }
+
+        final profile = offer['restaurant']?['restaurantProfile'];
+        final restaurantLat = _asDouble(profile?['latitude']);
+        final restaurantLng = _asDouble(profile?['longitude']);
+
+        _GeoPoint? restaurantPoint;
+        if (restaurantLat != null && restaurantLng != null) {
+          restaurantPoint = _GeoPoint(restaurantLat, restaurantLng);
+        } else {
+          final restaurantAddress =
+              (profile?['address'] ?? offer['address'] ?? '').toString();
+          if (restaurantAddress.trim().isNotEmpty) {
+            restaurantPoint = await _geocodeAddress(restaurantAddress);
+          }
+        }
+
+        if (restaurantPoint == null) continue;
+
+        final km = _distanceKm(
+          clientPoint.lat,
+          clientPoint.lng,
+          restaurantPoint.lat,
+          restaurantPoint.lng,
+        );
+        nextOverrides[key] = '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _distanceTextOverrides
+          ..clear()
+          ..addAll(nextOverrides);
+      });
+    } finally {
+      _resolvingDistanceFallbacks = false;
+    }
+  }
+
+  String _pickupTimeTextForOffer(Map<String, dynamic> offer) {
+    final pickupTime = (offer['pickupTime'] ?? '').toString().trim();
+    if (pickupTime.isNotEmpty) return pickupTime;
+
+    final pickupDateTimeRaw = offer['pickupDateTime']?.toString();
+    if (pickupDateTimeRaw == null || pickupDateTimeRaw.isEmpty) {
+      return 'Time unavailable';
+    }
+
+    final parsed = DateTime.tryParse(pickupDateTimeRaw)?.toLocal();
+    if (parsed == null) return 'Time unavailable';
+
+    final hh = parsed.hour.toString().padLeft(2, '0');
+    final mm = parsed.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
 
   void _updateFilteredOffers() {
     setState(() {
@@ -71,8 +293,8 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
   Future<void> _syncClientLocation() async {
     try {
       final location = Location();
-      final serviceEnabled = await location.serviceEnabled() ||
-          await location.requestService();
+      final serviceEnabled =
+          await location.serviceEnabled() || await location.requestService();
       if (!serviceEnabled) return;
 
       var permission = await location.hasPermission();
@@ -87,12 +309,22 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
       final current = await location.getLocation();
       if (current.latitude == null || current.longitude == null) return;
 
+      if (mounted) {
+        setState(() {
+          _clientLatitude = current.latitude;
+          _clientLongitude = current.longitude;
+        });
+      }
+
       await ApiService.patch('users/me/location', {
         'latitude': current.latitude,
         'longitude': current.longitude,
       });
+
+      await _resolveDistanceFallbacks();
     } catch (_) {
       // Keep location sync best-effort; ignore failures here.
+      await _resolveDistanceFallbacks();
     }
   }
 
@@ -109,6 +341,7 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
         isLoading = false;
         error = null;
       });
+      await _resolveDistanceFallbacks();
     } catch (e) {
       setState(() {
         error = 'Failed to load offers. Try again.';
@@ -389,6 +622,7 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
               )
             else
               ...filteredOffers.map((offer) {
+                final offerMap = Map<String, dynamic>.from(offer as Map);
                 final restProfile = offer['restaurant']?['restaurantProfile'];
                 final imgUrl = offer['photoUrl'] ?? "";
                 final desc = offer['description'] ?? "";
@@ -406,14 +640,20 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                 final discountPct = (original > 0)
                     ? ((original - discounted) / original * 100).round()
                     : 0;
-                final pickupTime = offer['pickupTime'] ?? '';
-                final distance = "0.5 km";
+                final pickupTime = _pickupTimeTextForOffer(offerMap);
+                final distance = _distanceTextForOffer(offerMap);
 
                 return GestureDetector(
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => OfferDetails(offer: offer),
+                        builder: (_) => OfferDetails(
+                          offer: {
+                            ...offerMap,
+                            '_pickupTimeText': pickupTime,
+                            '_distanceText': distance,
+                          },
+                        ),
                       ),
                     );
                   },

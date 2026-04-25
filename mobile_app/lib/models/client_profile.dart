@@ -4,10 +4,11 @@ class ClientProfile {
   final String phone;
   final String defaultAddress;
   final List<String> cuisinePreferences;
-  final List<String> dietaryRestrictions;
   final DateTime? joinedAt;
   final Map<String, dynamic>? notificationPreferences;
   final bool? locationConsentGiven;
+  final double? lastLatitude;
+  final double? lastLongitude;
 
   ClientProfile({
     required this.email,
@@ -15,10 +16,11 @@ class ClientProfile {
     required this.phone,
     required this.defaultAddress,
     required this.cuisinePreferences,
-    required this.dietaryRestrictions,
     this.joinedAt,
     this.notificationPreferences,
     required this.locationConsentGiven,
+    this.lastLatitude,
+    this.lastLongitude,
   });
 
   factory ClientProfile.fromJson(Map<String, dynamic> json) {
@@ -28,12 +30,13 @@ class ClientProfile {
       phone: json['phone'] ?? '',
       defaultAddress: json['defaultAddress'] ?? '',
       cuisinePreferences: List<String>.from(json['cuisinePreferences'] ?? []),
-      dietaryRestrictions: List<String>.from(json['dietaryRestrictions'] ?? []),
       joinedAt: json['joinedAt'] != null
           ? DateTime.parse(json['joinedAt'])
           : null,
       notificationPreferences: json['notificationPreferences'] ?? {},
       locationConsentGiven: json['locationConsentGiven'] as bool?,
+      lastLatitude: (json['lastLatitude'] as num?)?.toDouble(),
+      lastLongitude: (json['lastLongitude'] as num?)?.toDouble(),
     );
   }
 }

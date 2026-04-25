@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import '../../widgets/main_scaffold.dart';
 import 'restaurant_details.dart';
@@ -7,9 +8,10 @@ import 'my_orders.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../checkout/order_checkout_screen.dart';
-import '../../widgets/payment_method_selector.dart';
 import '../../constants/api.dart';
+import '../../api/client_profile_service.dart';
+import '../../models/client_profile.dart';
+import 'package:location/location.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   // Remove data prefix if needed
@@ -38,7 +40,128 @@ class _OfferDetailsPageState extends State<OfferDetails> {
   String? deliveryAddress;
   String? phoneNumber;
   String paymentMethod = 'card';
-  bool _isCreatingOrder = false;
+  ClientProfile? _clientProfile;
+  double? _currentLatitude;
+  double? _currentLongitude;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClientProfile();
+    _loadCurrentLocation();
+  }
+
+  Future<void> _loadClientProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+
+      final profile = await ProfileService.getProfile(jwt);
+      if (!mounted) return;
+      setState(() {
+        _clientProfile = profile;
+      });
+    } catch (_) {
+      // Best-effort only; distance falls back to unavailable when no coords exist.
+    }
+  }
+
+  Future<void> _loadCurrentLocation() async {
+    try {
+      final location = Location();
+      final serviceEnabled = await location.serviceEnabled() ||
+          await location.requestService();
+      if (!serviceEnabled) return;
+
+      var permission = await location.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await location.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) {
+        return;
+      }
+
+      final current = await location.getLocation();
+      if (current.latitude == null || current.longitude == null) return;
+
+      if (!mounted) return;
+      setState(() {
+        _currentLatitude = current.latitude;
+        _currentLongitude = current.longitude;
+      });
+    } catch (_) {
+      // Best-effort only.
+    }
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  String _pickupTimeText(dynamic offer) {
+    final direct = (offer['_pickupTimeText'] ?? offer['pickupTime'] ?? '')
+        .toString()
+        .trim();
+    if (direct.isNotEmpty) return direct;
+
+    final pickupDateTimeRaw = offer['pickupDateTime']?.toString();
+    if (pickupDateTimeRaw == null || pickupDateTimeRaw.isEmpty) {
+      return 'Time unavailable';
+    }
+
+    final parsed = DateTime.tryParse(pickupDateTimeRaw)?.toLocal();
+    if (parsed == null) return 'Time unavailable';
+
+    final hh = parsed.hour.toString().padLeft(2, '0');
+    final mm = parsed.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _distanceText(dynamic offer, dynamic restProfile) {
+    final fromList = (offer['_distanceText'] ?? '').toString().trim();
+    if (fromList.isNotEmpty && fromList != 'Distance unavailable') {
+      return fromList;
+    }
+
+    for (final key in const [
+      'distanceKm',
+      'distance',
+      'distanceToRestaurantKm',
+    ]) {
+      final km = _asDouble(offer[key]);
+      if (km != null && km >= 0) {
+        return '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+      }
+    }
+
+    final clientLat = _currentLatitude ?? _clientProfile?.lastLatitude;
+    final clientLng = _currentLongitude ?? _clientProfile?.lastLongitude;
+    final restaurantLat = _asDouble(restProfile?['latitude']);
+    final restaurantLng = _asDouble(restProfile?['longitude']);
+
+    if (clientLat != null &&
+        clientLng != null &&
+        restaurantLat != null &&
+        restaurantLng != null) {
+      const earthRadiusKm = 6371.0;
+      final dLat = (restaurantLat - clientLat) * (3.141592653589793 / 180.0);
+      final dLon = (restaurantLng - clientLng) * (3.141592653589793 / 180.0);
+      final a =
+          (sin(dLat / 2) * sin(dLat / 2)) +
+          cos(clientLat * (3.141592653589793 / 180.0)) *
+              cos(restaurantLat * (3.141592653589793 / 180.0)) *
+              (sin(dLon / 2) * sin(dLon / 2));
+      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+      final km = earthRadiusKm * c;
+      return '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+    }
+
+    return fromList.isNotEmpty ? fromList : 'Distance unavailable';
+  }
 
   Future<bool> _checkDeliveryAvailable(String restaurantId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -115,7 +238,8 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     final rating = restProfile?['avgRating'] ?? 4.5;
     final discounted = (offer['discountedPrice'] as num?)?.toDouble() ?? 0.0;
     final original = (offer['originalPrice'] as num?)?.toDouble() ?? 0.0;
-    final pickup = offer['pickupTime'] ?? '';
+    final pickupDisplay = _pickupTimeText(offer);
+    final distanceDisplay = _distanceText(offer, restProfile);
     final left = offer['quantity'] ?? 1;
     final save = original - discounted;
     final isAnonymous = offer['visibility'] == 'ANONYMOUS';
@@ -148,6 +272,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (_clientProfile == null) const SizedBox.shrink(),
                     Stack(
                       children: [
                         ClipRRect(
@@ -179,145 +304,76 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        // Eco & distance badges
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Color(0xFFEAF9F4),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Column(
-                                  children: [
-                                    Icon(
-                                      Icons.eco,
-                                      size: 21,
-                                      color: Color(0xFF3D9176),
-                                    ),
-                                    SizedBox(height: 3),
-                                    Text(
-                                      'Eco-Friendly',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF3D9176),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Reducing food waste',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Color(0xFFF5EDF7),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Column(
-                                  children: [
-                                    Icon(
-                                      Icons.place_outlined,
-                                      size: 21,
-                                      color: Color(0xFF9A65A6),
-                                    ),
-                                    SizedBox(height: 3),
-                                    Text(
-                                      'Distance',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF9A65A6),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    Text(
-                                      '0.5 km', // TODO: Dynamically calculate using user and restaurant addresses
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    Row(children: []),
                     const SizedBox(height: 18),
                     Row(
                       children: [
-                        if (isAnonymous)
-                          Text(
-                            displayName,
-                            style: const TextStyle(
-                              color: Color(0xFF3D9176),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          )
-                        else
-                          MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            child: GestureDetector(
-                              onTap: () {
-                                final restaurantUserId =
-                                    offer['restaurant']?['id'];
-                                if (restaurantUserId == null ||
-                                    restaurantUserId.isEmpty) {
-                                  return;
-                                }
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => RestaurantDetailsPage(
-                                      restaurantId: restaurantUserId,
-                                    ),
+                        Expanded(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  displayName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: const Color(0xFF3D9176),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    fontStyle: isAnonymous
+                                        ? FontStyle.italic
+                                        : FontStyle.normal,
                                   ),
-                                );
-                              },
-                              child: Tooltip(
-                                message: "See restaurant details",
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      displayName,
-                                      style: const TextStyle(
-                                        color: Color(0xFF3D9176),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 18,
-                                      color: Color(0xFF3D9176),
-                                    ),
-                                  ],
                                 ),
                               ),
-                            ),
+                              if (!isAnonymous) ...[
+                                const SizedBox(width: 6),
+                                Tooltip(
+                                  message: 'See restaurant details',
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      final restaurantUserId =
+                                          offer['restaurant']?['id'];
+                                      if (restaurantUserId == null ||
+                                          restaurantUserId.isEmpty) {
+                                        return;
+                                      }
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => RestaurantDetailsPage(
+                                            restaurantId: restaurantUserId,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.info_outline,
+                                      size: 14,
+                                    ),
+                                    label: const Text(
+                                      'Details',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      minimumSize: const Size(0, 28),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      side: const BorderSide(
+                                        color: Color(0xFF3D9176),
+                                      ),
+                                      foregroundColor: const Color(0xFF3D9176),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                        ),
                         const SizedBox(width: 6),
                         const Icon(Icons.star, color: Colors.amber, size: 18),
                         Text(
@@ -404,7 +460,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   ),
                                 ),
                                 Text(
-                                  '13:00 - 14:00',
+                                  pickupDisplay,
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Colors.black,
@@ -442,7 +498,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   ),
                                 ),
                                 Text(
-                                  '0.5 km', // TODO: Dynamically calculate using user and restaurant addresses
+                                  distanceDisplay,
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.black,
@@ -542,7 +598,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                           onPressed: () {
                             showCollectionMethodDialog(
                               discounted: discounted,
-                              pickup: pickup,
+                              pickup: pickupDisplay,
                               address: address,
                             );
                           },
@@ -913,15 +969,13 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                padding: EdgeInsets.symmetric(vertical: 13),
+                                padding: EdgeInsets.symmetric(vertical: 11),
                                 textStyle: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 15.5,
+                                  fontSize: 13.5,
                                 ),
                               ),
-                              onPressed: _isCreatingOrder
-                                  ? null
-                                  : () async {
+                              onPressed: () {
                                 if (selectedMethod == 'delivery' &&
                                     (addressController.text.isEmpty ||
                                         phoneController.text.isEmpty)) {
@@ -936,40 +990,33 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   errorText = null;
                                 });
                                 Navigator.of(context).pop();
-                                await _createOrderAndPay(
-                                  {
-                                    "restaurantId": widget.offer['restaurant']['id'],
-                                    "offerId": widget.offer['id'].toString(),
-                                    "items": {"offerId": widget.offer['id'], "quantity": quantity},
-
-                                    "total": (discounted * quantity).toDouble(), // ensure double type!
-                                    "collectionMethod": selectedMethod.toUpperCase(),
-                                    "deliveryAddress": selectedMethod == 'delivery'
-                                        ? addressController.text.trim()
-                                        : null,
-                                    "deliveryPhone": selectedMethod == 'delivery'
-                                        ? phoneController.text.trim()
-                                        : null,
-                                    "deliveryFee": deliveryFee,
-                                    "paymentMethod": "CARD",
-                                    "paymentDetails": {},
-                                  },
-                                  context,
+                                showPaymentDialog(
+                                  collectionMethod: selectedMethod,
+                                  deliveryAddress: addressController.text,
+                                  phoneNumber: phoneController.text,
+                                  deliveryFee: selectedMethod == "delivery"
+                                      ? deliveryFee
+                                      : 0,
+                                  discounted: discounted,
+                                  subtotal: subtotal,
+                                  total:
+                                      subtotal +
+                                      (selectedMethod == "delivery"
+                                          ? deliveryFee
+                                          : 0),
+                                  offer: widget.offer,
+                                  pickup: pickup,
+                                  address: address,
                                 );
                               },
-                              child: _isCreatingOrder
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
-                                      ),
-                                    )
-                                  : Text('Confirm and Pay'),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'Continue to Payment',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -985,81 +1032,511 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     );
   }
 
-  Future<void> _createOrderAndPay(
-    Map<String, dynamic> orderDetails,
-    BuildContext context,
-  ) async {
-    if (_isCreatingOrder) return;
-    if (mounted) {
-      setState(() => _isCreatingOrder = true);
-    }
+  void showPaymentDialog({
+    required String collectionMethod,
+    String? deliveryAddress,
+    String? phoneNumber,
+    required double deliveryFee,
+    required double discounted,
+    required double subtotal,
+    required double total,
+    required dynamic offer,
+    required String pickup,
+    required String address,
+  }) {
+    String selectedPayment = 'card';
+    String selectedCollectionMethod = collectionMethod;
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt');
-    if (token == null) {
-      // Handle user not logged in
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You are not logged in.')),
+    Widget paymentOption({
+      required bool selected,
+      required VoidCallback onTap,
+      required IconData icon,
+      required String label,
+      required Color color,
+    }) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: EdgeInsets.only(bottom: 11),
+          padding: EdgeInsets.symmetric(vertical: 14, horizontal: 13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+              color: selected ? color : Color(0xFFE5E7EB),
+              width: selected ? 2 : 1.2,
+            ),
+            boxShadow: [
+              if (selected)
+                BoxShadow(
+                  color: color.withOpacity(0.13),
+                  blurRadius: 3,
+                  spreadRadius: 0,
+                ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: selected ? color : Colors.grey[500], size: 26),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                ),
+              ),
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: selected ? color : Colors.grey[400],
+                size: 22,
+              ),
+            ],
+          ),
+        ),
       );
-      if (mounted) {
-        setState(() => _isCreatingOrder = false);
-      }
-      return;
     }
 
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (dialogContext, setState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(19),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22.0,
+                  vertical: 23,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              "Payment",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 19.5,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 3),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Choose your payment method and complete your order",
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 15),
+
+                      // Summary Card
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFF6F6F8),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _summaryRow(
+                              'Item',
+                              '€${subtotal.toStringAsFixed(2)}',
+                            ),
+                            _summaryRow('Quantity', '$quantity'),
+                            if (deliveryFee > 0)
+                              _summaryRow(
+                                'Delivery fee',
+                                '€${deliveryFee.toStringAsFixed(2)}',
+                              ),
+                            _summaryRow(
+                              'Collection',
+                              collectionMethod == 'pickup'
+                                  ? 'On-site Pickup'
+                                  : 'Home Delivery',
+                            ),
+                            Divider(height: 17),
+                            _summaryRow(
+                              'Total',
+                              '€${total.toStringAsFixed(2)}',
+                              true,
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: 12),
+
+                      // "Payment Method"
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Payment Method",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15.5,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      paymentOption(
+                        selected: selectedPayment == 'card',
+                        onTap: () => setState(() => selectedPayment = 'card'),
+                        icon: Icons.credit_card,
+                        label: "Credit / Debit Card",
+                        color: Color(0xFF3D9176),
+                      ),
+                      paymentOption(
+                        selected: selectedPayment == 'd17',
+                        onTap: () => setState(() => selectedPayment = 'd17'),
+                        icon: Icons.account_balance_wallet_outlined,
+                        label: "D17",
+                        color: Color(0xFF9A65A6),
+                      ),
+                      paymentOption(
+                        selected: selectedPayment == 'cash',
+                        onTap: () => setState(() => selectedPayment = 'cash'),
+                        icon: Icons.payments_outlined,
+                        label: "Cash (pay at pickup/delivery)",
+                        color: Color(0xFF607274),
+                      ),
+                      SizedBox(height: 11),
+
+                      // Order info (pickup/delivery details)
+                      if (collectionMethod == 'pickup') ...[
+                        _infoRow('Pickup:', pickup),
+                        _infoRow('Location:', address),
+                      ],
+                      if (collectionMethod == 'delivery') ...[
+                        _infoRow('Delivery:', deliveryAddress ?? ''),
+                        _infoRow('Phone:', phoneNumber ?? ''),
+                      ],
+
+                      SizedBox(height: 18),
+
+                      // Button row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Color(0xFF3D9176),
+                                side: BorderSide(
+                                  color: Color(0xFF3D9176),
+                                  width: 2,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: EdgeInsets.symmetric(vertical: 13),
+                                textStyle: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text('Back'),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Color(0xFF3D9176),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: EdgeInsets.symmetric(vertical: 13),
+                                textStyle: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              onPressed: () async {
+                                final order = await _submitReservation(
+                                  collectionMethod: selectedCollectionMethod,
+                                  deliveryAddress: deliveryAddress,
+                                  phoneNumber: phoneNumber,
+                                  discounted: discounted,
+                                  deliveryFee: deliveryFee,
+                                  subtotal: subtotal,
+                                  total: total,
+                                  quantity: quantity,
+                                  paymentMethod: selectedPayment,
+                                  offer: offer,
+                                );
+
+                                if (!mounted) return;
+
+                                Navigator.of(
+                                  context,
+                                ).pop(); // close payment dialog/modal
+
+                                if (collectionMethod == "pickup") {
+                                  // Show the QR dialog, and after it's closed, go back to OfferDetails
+                                  await showPickupQRDialog(
+                                    qrCode:
+                                        (order['pickupQrToken'] ??
+                                                order['reference'])
+                                            .toString(),
+                                    displayCode:
+                                        (order['pickupQrDisplay'] ??
+                                                order['reference'])
+                                            .toString(),
+                                    pickupTime: order['pickupTime'],
+                                    restaurantName: order['restaurantName'],
+                                  );
+                                  return;
+                                }
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(
+                                    builder: (_) => OfferDetails(offer: offer),
+                                  ),
+                                );
+                              },
+
+                              child: Text('Pay €${total.toStringAsFixed(2)}'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> showPickupQRDialog({
+    required String qrCode,
+    required String displayCode,
+    required String pickupTime,
+    required String restaurantName,
+  }) {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(19),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 26.0,
+              vertical: 29.0,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Your Pickup QR Code",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20.5),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 4),
+                Text(
+                  "Show this code to collect your order",
+                  style: TextStyle(fontSize: 14.2, color: Colors.grey[700]),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 18),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Color(0xFFF6F6F8),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: EdgeInsets.symmetric(vertical: 18, horizontal: 28),
+                  child: Column(
+                    children: [
+                      // The QR image:
+                      QrImageView(
+                        data:
+                            qrCode, // order reference, ID, or whatever backend provides
+                        size: 120,
+                        backgroundColor: Colors.white,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        displayCode,
+                        style: TextStyle(
+                          letterSpacing: 2.2,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16.2,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 15),
+                _infoRow("Pickup:", pickupTime),
+                _infoRow("Restaurant:", restaurantName),
+                SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF3D9176)),
+                          foregroundColor: const Color(0xFF3D9176),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(this.context).pushNamedAndRemoveUntil(
+                            '/offers',
+                            (route) => false,
+                          );
+                        },
+                        child: const Text("Back to Home"),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF3D9176),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(this.context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MyOrdersScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text("My Orders"),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<dynamic> _submitReservation({
+    required String collectionMethod,
+    String? deliveryAddress,
+    String? phoneNumber,
+    required double deliveryFee,
+    required double subtotal,
+    required double total,
+    required int quantity,
+    required String paymentMethod,
+    required dynamic offer,
+    required double discounted,
+  }) async {
     try {
+      // Build paymentDetails (empty for cash, add reference/tx for real card/D17).
+      Map<String, dynamic>? paymentDetails;
+      if (paymentMethod == "card") {
+        paymentDetails = {
+          //TO DO after integrating with a card gateway
+          "provider": "stripe",
+          "status": "pending",
+        };
+      } else if (paymentMethod == "d17") {
+        paymentDetails = {
+          //TO DO after integrating with D17
+          "provider": "d17",
+
+          "status": "pending",
+        };
+      }
+
+      // If you have a logged-in client user, add clientId or handle on backend.
+      final prefs = await SharedPreferences.getInstance();
+
+      final data = {
+        // "clientId": clientId, // Only include if required and non-null string!
+        "restaurantId": offer['restaurant']['id'],
+        "offerId": offer['id'].toString(),
+        "items": {"offerId": offer['id'], "quantity": quantity},
+
+        "total": (discounted * quantity).toDouble(), // ensure double type!
+        "collectionMethod": collectionMethod.toUpperCase(),
+        "deliveryAddress": deliveryAddress,
+        "deliveryPhone": phoneNumber,
+        "deliveryFee": deliveryFee,
+        "paymentMethod": paymentMethod.toUpperCase(),
+        "paymentDetails": paymentDetails,
+      };
+
+      final token = prefs.getString('jwt');
+
       final response = await http.post(
         Uri.parse(apiUrl('orders')),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode(orderDetails),
+        body: jsonEncode(data),
       );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        final order = decoded['order'];
 
-      if (response.statusCode == 201) {
-        final responseData = jsonDecode(response.body);
-        final orderId =
-            (responseData['order']?['id'] ?? responseData['orderId'])
-                ?.toString();
-        final clientSecret = responseData['clientSecret'];
-        final totalAmount =
-            (orderDetails['total'] is num)
-                ? (orderDetails['total'] as num).toDouble()
-                : 0.0;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Reservation successful!")));
 
-        if (orderId == null || orderId.isEmpty || orderId == 'null') {
-          throw Exception('Order created but no order id returned by backend');
-        }
-
-        // Navigate to a success page or show a success message
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => OrderCheckoutScreen(
-              orderDetails: orderDetails,
-              orderId: orderId,
-              totalAmount: totalAmount,
-              clientSecret: clientSecret,
-            ),
-          ),
-        );
+        return order;
       } else {
-        final errorData = jsonDecode(response.body);
-        // Handle error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text('Failed to create order: ${errorData['message']}')),
+        throw Exception(
+          "Failed to create order: ${response.statusCode} ${response.body}",
         );
       }
+      // If needed, pop or redirect:
+      // Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('An error occurred: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isCreatingOrder = false);
-      }
+      // Show error
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Reservation failed: $e")));
+      throw e;
     }
   }
 

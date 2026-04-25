@@ -1,11 +1,52 @@
 import 'package:flutter/material.dart';
+import 'client/signup_step1.dart';
+import 'partner/signup_step1.dart';
+import 'deliverer/signup_step1.dart';
 
 class VerifyEmailReminderPage extends StatelessWidget {
-  const VerifyEmailReminderPage({Key? key}) : super(key: key);
+  final String role;
+
+  const VerifyEmailReminderPage({Key? key, this.role = 'client'})
+    : super(key: key);
+
+  void _goBackToSignupStart(BuildContext context) {
+    final normalizedRole = role.toLowerCase();
+
+    Widget destination;
+    switch (normalizedRole) {
+      case 'commercant':
+      case 'partner':
+      case 'restaurant':
+      case 'merchant':
+        destination = const PartnerSignupStep1();
+        break;
+      case 'livreur':
+      case 'deliverer':
+        destination = const DelivererSignupStep1();
+        break;
+      case 'client':
+      default:
+        destination = const SignupStep1();
+        break;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => destination),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => _goBackToSignupStart(context),
+        ),
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),

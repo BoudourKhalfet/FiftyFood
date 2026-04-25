@@ -6,7 +6,9 @@ import 'package:location/location.dart';
 import '../../constants/api.dart';
 
 class LocationConsentPage extends StatefulWidget {
-  const LocationConsentPage({Key? key}) : super(key: key);
+  final VoidCallback? onCompleted;
+
+  const LocationConsentPage({Key? key, this.onCompleted}) : super(key: key);
 
   @override
   State<LocationConsentPage> createState() => _LocationConsentPageState();
@@ -63,7 +65,11 @@ class _LocationConsentPageState extends State<LocationConsentPage> {
 
       // Call navigation callback after the PATCH and *after* loading set to false
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/offers');
+      if (widget.onCompleted != null) {
+        widget.onCompleted!();
+      } else {
+        Navigator.of(context).pushReplacementNamed('/offers');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

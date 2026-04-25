@@ -95,9 +95,8 @@ class _SignInPageState extends State<SignInPage> {
       if (response['message'] != null &&
           (response['accessToken'] == null &&
               response['onboardingToken'] == null)) {
-        debugPrint('Login rejected response: ${response['message']}');
         setState(() {
-          _error = AppLocalizations.of(context)!.errorInvalidCredentials;
+          _error = response['message'].toString();
         });
         return;
       }
@@ -196,6 +195,11 @@ class _SignInPageState extends State<SignInPage> {
 
         // Backward compatibility: if backend only returned onboarding token.
         if (onboardingToken != null) {
+          if (response['pendingApproval'] == true) {
+            Navigator.of(context).pushReplacementNamed('/pending_approval');
+            return;
+          }
+
           if (user['role'] == 'CLIENT') {
             Navigator.of(context).pushReplacementNamed('/client/signup2');
             return;
@@ -210,22 +214,22 @@ class _SignInPageState extends State<SignInPage> {
           }
         }
 
-        // ==== CLIENT logic ====
         if (user['role'] == 'CLIENT') {
           try {
             final profile = await ProfileService.getProfile(realToken);
-            // You may want to store their name locally, for UX:
-            if (profile.fullName != "" && profile.fullName.trim().isNotEmpty) {
+            if (profile.fullName.isNotEmpty) {
               await prefs.setString('clientName', profile.fullName.trim());
             }
-          } catch (e) {
+          } catch (_) {
             // No action needed here for now.
           }
+
           if (response['message'] != null) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(response['message'].toString())),
             );
           }
+
           if (user['status'] == 'APPROVED') {
             try {
               final profile = await ProfileService.getProfile(realToken);
@@ -238,25 +242,22 @@ class _SignInPageState extends State<SignInPage> {
               } else {
                 Navigator.of(context).pushReplacementNamed('/offers');
               }
-            } catch (e) {
+            } catch (_) {
               setState(() {
                 _error = AppLocalizations.of(context)!.errorNetwork;
               });
             }
           } else {
-            // Client is not yet approved, must finish onboarding
             Navigator.of(context).pushReplacementNamed('/client/signup2');
           }
-        }
-        // ==== DELIVERER logic ====
-        else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
+        } else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
           if (user['status'] == 'APPROVED') {
             try {
-              // Ping backend to mark as online!
               await ApiService.post('livreur/onboarding/ping', {});
             } catch (e) {
-              debugPrint('Deliverer ping failed: $e');
+              print('Deliverer ping failed: $e');
             }
+
             try {
               final profile = await ApiService.getDelivererProfile(realToken);
               if (profile.locationConsentGiven != true) {
@@ -282,23 +283,25 @@ class _SignInPageState extends State<SignInPage> {
               }
             }
           } else if (user['status'] == 'PENDING') {
-            Navigator.of(context).pushReplacementNamed('/pending_approval');
+            Navigator.of(
+              context,
+            ).pushReplacementNamed('/pending_approval', arguments: 'LIVREUR');
           } else if (user['status'] == 'REJECTED') {
             Navigator.of(context).pushReplacementNamed('/rejected');
           } else {
-            // fallback: treat as incomplete
             Navigator.of(context).pushReplacementNamed('/deliverer/signup2');
           }
         } else if (user['role'].toString().toUpperCase() == 'RESTAURANT') {
           if (user['status'] == 'APPROVED') {
-            // If your API returns restaurantProfile or similar, check onboarding completeness here if needed.
             Navigator.of(context).pushReplacementNamed('/partner/dashboard');
           } else if (user['status'] == 'PENDING') {
-            Navigator.of(context).pushReplacementNamed('/pending_approval');
+            Navigator.of(context).pushReplacementNamed(
+              '/pending_approval',
+              arguments: 'RESTAURANT',
+            );
           } else if (user['status'] == 'REJECTED') {
             Navigator.of(context).pushReplacementNamed('/rejected');
           } else {
-            // fallback: treat as incomplete
             Navigator.of(context).pushReplacementNamed('/partner/signup2');
           }
         } else {
@@ -312,10 +315,11 @@ class _SignInPageState extends State<SignInPage> {
         });
       }
     } catch (e, st) {
+      final networkMessage = AppLocalizations.of(context)!.errorNetwork;
       debugPrint('ERROR in _handleLogin: $e\n$st');
       debugPrint('Error type: ${e.runtimeType}');
       setState(() {
-        _error = AppLocalizations.of(context)!.errorNetwork;
+        _error = networkMessage;
       });
     } finally {
       setState(() => _loading = false);
@@ -341,10 +345,11 @@ class _SignInPageState extends State<SignInPage> {
           _resendInfo = AppLocalizations.of(context)!.errorResendFailed;
         });
       }
-    } catch (e, st) {
-      debugPrint('Resend verification failed: $e\n$st');
+    } catch (e) {
+      debugPrint('ERROR in _resendVerificationEmail: $e');
+      final resendMessage = AppLocalizations.of(context)!.errorResendFailed;
       setState(() {
-        _resendInfo = AppLocalizations.of(context)!.errorResendFailed;
+        _resendInfo = resendMessage;
       });
     } finally {
       setState(() => _sendingResend = false);
@@ -530,7 +535,7 @@ class _SignInPageState extends State<SignInPage> {
                                   ).pushNamed('/forgot-password');
                                 },
                                 child: Text(
-                                  'Forgot password?',
+                                  AppLocalizations.of(context)!.btnForgotPassword,
                                   style: TextStyle(
                                     color: const Color(0xFF1F9D7A),
                                   ),
@@ -597,32 +602,32 @@ class _SignInPageState extends State<SignInPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  RichText(
-                                    text: TextSpan(
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 15,
-                                      ),
-                                      children: [
-                                        TextSpan(text: _error!),
-                                        if (_isEmailNotVerified)
-                                          TextSpan(
-                                            text: "  Resend Email",
-                                            style: TextStyle(
-                                              color: Colors.blue[700],
-                                              decoration:
-                                                  TextDecoration.underline,
-                                              fontWeight: FontWeight.w500,
-                                              fontSize: 14,
-                                            ),
-                                            recognizer: TapGestureRecognizer()
-                                              ..onTap = _sendingResend
-                                                  ? null
-                                                  : _resendVerificationEmail,
-                                          ),
-                                      ],
+                                  Text(
+                                    _error!,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 15,
                                     ),
                                   ),
+                                  if (_isEmailNotVerified)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: GestureDetector(
+                                        onTap: _sendingResend
+                                            ? null
+                                            : _resendVerificationEmail,
+                                        child: Text(
+                                          'Resend Email',
+                                          style: TextStyle(
+                                            color: Colors.blue[700],
+                                            decoration:
+                                                TextDecoration.underline,
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   if (_isEmailNotVerified &&
                                       _resendInfo != null)
                                     Padding(

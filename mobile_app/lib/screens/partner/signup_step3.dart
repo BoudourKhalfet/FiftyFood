@@ -249,8 +249,8 @@ class _PartnerSignupStep3State extends State<PartnerSignupStep3> {
                 Center(
                   child: Image.asset(
                     'assets/images/logo.png',
-                    width: 110,
-                    height: 76,
+                    width: 200,
+                    height: 120,
                     errorBuilder: (context, error, stack) =>
                         const Icon(Icons.fastfood, size: 64),
                   ),

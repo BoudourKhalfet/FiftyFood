@@ -34,54 +34,62 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   final _addressController = TextEditingController();
 
   final List<String> allCategories = [
-    "ITALIAN",
-    "JAPANESE",
-    "HEALTHY",
-    "BURGERS",
     "BAKERY",
-    "CAFE",
+    "GRILL",
+    "FAST_FOOD",
+    "VEGETARIAN",
+    "HALAL",
+    "SEAFOOD",
+    "SUSHI",
+    "PIZZA",
+    "BURGER",
+    "BBQ",
+    "HEALTHY",
+    "DESSERT",
+    "STREET_FOOD",
     "SANDWICHES",
-    "VEGAN",
+    "SALAD",
+    "PASTA",
+    "BREAKFAST",
+    "FINE_DINING",
+    "BRUNCH",
   ];
   final Map<String, String> categoryLabels = {
-    "ITALIAN": "Italian",
-    "JAPANESE": "Japanese",
-    "HEALTHY": "Healthy",
-    "BURGERS": "Burgers",
     "BAKERY": "Bakery",
-    "CAFE": "Café",
-    "SANDWICHES": "Sandwiches",
-    "VEGAN": "Vegan",
-  };
-
-  // For dietary restrictions:
-  final List<String> allDiets = [
-    "VEGETARIAN",
-    "VEGAN",
-    "GLUTEN_FREE",
-    "DAIRY_FREE",
-    "NUT_FREE",
-    "HALAL",
-    "NO_RESTRICTIONS",
-  ];
-  final Map<String, String> dietLabels = {
+    "GRILL": "Grill",
+    "FAST_FOOD": "Fast Food",
     "VEGETARIAN": "Vegetarian",
-    "VEGAN": "Vegan",
-    "GLUTEN_FREE": "Gluten-Free",
-    "DAIRY_FREE": "Dairy-Free",
-    "NUT_FREE": "Nut-Free",
     "HALAL": "Halal",
-    "NO_RESTRICTIONS": "No restrictions",
+    "SEAFOOD": "Seafood",
+    "SUSHI": "Sushi",
+    "PIZZA": "Pizza",
+    "BURGER": "Burger",
+    "BBQ": "BBQ",
+    "HEALTHY": "Healthy",
+    "DESSERT": "Dessert",
+    "STREET_FOOD": "Street Food",
+    "SANDWICHES": "Sandwiches",
+    "SALAD": "Salad",
+    "PASTA": "Pasta",
+    "BREAKFAST": "Breakfast",
+    "FINE_DINING": "Fine Dining",
+    "BRUNCH": "Brunch",
   };
 
   // For preferences editing
   late List<String> selectedCategories;
-  late List<String> dietaryRestrictions;
   Map<String, bool> notificationSettings = {
     "newOffers": true,
     "orderUpdates": true,
     "promotions": false,
   };
+
+  int get _completedOrdersCount {
+    return orders.where((order) {
+      final status = order.status.toUpperCase();
+      return status == 'PICKED_UP' || status == 'DELIVERED';
+    }).length;
+  }
 
   @override
   void initState() {
@@ -121,7 +129,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         pendingEmail = authMe['pendingEmail']?.toString();
         orders = fetchedOrders;
         selectedCategories = List.from(profile?.cuisinePreferences ?? []);
-        dietaryRestrictions = List.from(profile?.dietaryRestrictions ?? []);
         notificationSettings = Map<String, bool>.from(
           profile?.notificationPreferences ?? notificationSettings,
         );
@@ -218,7 +225,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               Icon(Icons.eco_outlined, color: Color(0xFF16807A), size: 18),
               SizedBox(width: 4),
               Text(
-                "${orders.length} meals saved",
+                "$_completedOrdersCount meals saved",
                 style: TextStyle(fontSize: 14, color: Color(0xFF16807A)),
               ),
               SizedBox(width: 16),
@@ -356,31 +363,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 .toList(),
           ),
           SizedBox(height: 20),
-          Text(
-            "Dietary Restrictions",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          SizedBox(height: 6),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            children: allDiets
-                .map(
-                  (diet) => FilterChip(
-                    label: Text(dietLabels[diet] ?? diet),
-                    selected: dietaryRestrictions.contains(diet),
-                    selectedColor: Color(0xFFE8F5F0),
-                    onSelected: (sel) => setState(() {
-                      if (sel)
-                        dietaryRestrictions.add(diet);
-                      else
-                        dietaryRestrictions.remove(diet);
-                    }),
-                  ),
-                )
-                .toList(),
-          ),
-          SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -412,22 +394,46 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Widget _emojiForCategory(String cat) {
     switch (cat) {
-      case "ITALIAN":
-        return Text("🍕", style: TextStyle(fontSize: 18));
-      case "JAPANESE":
-        return Text("🍣", style: TextStyle(fontSize: 18));
-      case "HEALTHY":
-        return Text("🥗", style: TextStyle(fontSize: 18));
-      case "BURGERS":
-        return Text("🍔", style: TextStyle(fontSize: 18));
-      case "SANDWICHES":
-        return Text("🥪", style: TextStyle(fontSize: 18));
-      case "VEGAN":
-        return Text("🌱", style: TextStyle(fontSize: 18));
-      case "CAFE":
-        return Text("☕", style: TextStyle(fontSize: 18));
       case "BAKERY":
         return Text("🥖", style: TextStyle(fontSize: 18));
+      case "CAFE":
+        return Text("☕", style: TextStyle(fontSize: 18));
+      case "GRILL":
+        return Text("🔥", style: TextStyle(fontSize: 18));
+      case "FAST_FOOD":
+        return Text("🍟", style: TextStyle(fontSize: 18));
+      case "VEGETARIAN":
+        return Text("🥬", style: TextStyle(fontSize: 18));
+      case "HALAL":
+        return Text("🕌", style: TextStyle(fontSize: 18));
+      case "SEAFOOD":
+        return Text("🐟", style: TextStyle(fontSize: 18));
+      case "SUSHI":
+        return Text("🍣", style: TextStyle(fontSize: 18));
+      case "PIZZA":
+        return Text("🍕", style: TextStyle(fontSize: 18));
+      case "BURGER":
+        return Text("🍔", style: TextStyle(fontSize: 18));
+      case "BBQ":
+        return Text("🍖", style: TextStyle(fontSize: 18));
+      case "HEALTHY":
+        return Text("🥗", style: TextStyle(fontSize: 18));
+      case "DESSERT":
+        return Text("🍰", style: TextStyle(fontSize: 18));
+      case "STREET_FOOD":
+        return Text("🌮", style: TextStyle(fontSize: 18));
+      case "SANDWICHES":
+        return Text("🥪", style: TextStyle(fontSize: 18));
+      case "SALAD":
+        return Text("🥗", style: TextStyle(fontSize: 18));
+      case "PASTA":
+        return Text("🍝", style: TextStyle(fontSize: 18));
+      case "BREAKFAST":
+        return Text("🍳", style: TextStyle(fontSize: 18));
+      case "FINE_DINING":
+        return Text("🍽", style: TextStyle(fontSize: 18));
+      case "BRUNCH":
+        return Text("🥞", style: TextStyle(fontSize: 18));
       default:
         return SizedBox(width: 0, height: 0);
     }
@@ -510,6 +516,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     final emailController = TextEditingController(text: email);
 
     return Dialog(
+      backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       insetPadding: EdgeInsets.symmetric(horizontal: 24),
       child: Padding(
@@ -522,7 +529,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      "Personal Informations",
+                      "Edit Profile",
                       style: TextStyle(
                         fontSize: 21,
                         fontWeight: FontWeight.bold,
@@ -704,11 +711,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     setState(() => savingPrefs = true);
     try {
       print('Saving cuisinePreferences: $selectedCategories');
-      print('Saving dietaryRestrictions: $dietaryRestrictions');
       await ProfileService.updatePreferences(
         jwt!,
         cuisinePreferences: selectedCategories,
-        dietaryRestrictions: dietaryRestrictions,
       );
       setState(() => savingPrefs = false);
       ScaffoldMessenger.of(context).showSnackBar(
