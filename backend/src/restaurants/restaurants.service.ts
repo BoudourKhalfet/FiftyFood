@@ -14,7 +14,10 @@ export type PublicReview = {
 };
 
 export type RawReviewResult = {
-  reviewer: { email: string };
+  reviewer: {
+    email: string;
+    clientProfile: { fullName: string | null } | null;
+  };
   rating: number;
   comment: string;
   createdAt: Date;
@@ -394,14 +397,19 @@ export class RestaurantsService {
       where: { restaurantId },
       orderBy: { createdAt: 'desc' },
       select: {
-        reviewer: { select: { email: true } },
+        reviewer: {
+          select: {
+            email: true,
+            clientProfile: { select: { fullName: true } },
+          },
+        },
         rating: true,
         comment: true,
         createdAt: true,
       },
     })) as RawReviewResult[];
     return reviews.map((r) => ({
-      user: r.reviewer.email,
+      user: r.reviewer.clientProfile?.fullName?.trim() ?? r.reviewer.email,
       rating: r.rating,
       comment: r.comment,
       date: r.createdAt,
@@ -437,10 +445,12 @@ export class RestaurantsService {
       _sum: { total: true },
     });
 
-    // Get meals saved (sum of quantities from all offers)
-    const offerData = await this.prisma.offer.aggregate({
-      where: { restaurantId: userId },
-      _sum: { quantity: true },
+    // Meals saved metric is the number of completed orders
+    const completedOrdersCount = await this.prisma.order.count({
+      where: {
+        restaurantId: userId,
+        status: { in: ['PICKED_UP', 'DELIVERED'] },
+      },
     });
 
     // Get count of active offers
@@ -454,7 +464,7 @@ export class RestaurantsService {
 
     return {
       totalSales: orderData._sum?.total || 0,
-      mealsSaved: offerData._sum?.quantity || 0,
+      mealsSaved: completedOrdersCount,
       avgRating: profile.avgRating || 0,
       activeOffers: activeOffersCount,
     };

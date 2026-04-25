@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
+import 'partner/signup_step1.dart';
+import 'deliverer/signup_step1.dart';
 
 class PartnerSubmissionPage extends StatelessWidget {
-  const PartnerSubmissionPage({Key? key}) : super(key: key);
+  final String role;
 
-  void _backToHome(BuildContext context) {
+  const PartnerSubmissionPage({Key? key, this.role = 'restaurant'})
+    : super(key: key);
+
+  void _backToSignupStart(BuildContext context) {
+    final normalizedRole = role.toLowerCase();
+
+    final destination =
+        normalizedRole == 'livreur' || normalizedRole == 'deliverer'
+        ? const DelivererSignupStep1()
+        : const PartnerSignupStep1();
+
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => destination),
       (route) => false,
     );
-  }
-
-  void _signIn(BuildContext context) {
-    // Navigate to partner sign-in page
-    Navigator.pushNamed(context, '/signin/partner');
   }
 
   @override
@@ -24,7 +30,7 @@ class PartnerSubmissionPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).maybePop(),
+          onPressed: () => _backToSignupStart(context),
         ),
       ),
       body: SafeArea(
@@ -61,7 +67,7 @@ class PartnerSubmissionPage extends StatelessWidget {
               const SizedBox(height: 8),
               const Center(
                 child: Text(
-                  'Your restaurant registration is now',
+                  'Your registration is now',
                   style: TextStyle(color: Color(0xFF6B7280)),
                 ),
               ),
@@ -111,7 +117,7 @@ class PartnerSubmissionPage extends StatelessWidget {
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'An administrator will review your legal documents and validate your account.',
+                            'An administrator will review your documents and validate your account.',
                           ),
                         ),
                       ],
@@ -168,7 +174,7 @@ class PartnerSubmissionPage extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => _backToHome(context),
+                      onPressed: () => _backToSignupStart(context),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(
                           color: Color(0xFF2D8066),
@@ -179,22 +185,7 @@ class PartnerSubmissionPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('← Back to Home'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _signIn(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1F9D7A),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16.0),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('Sign In'),
+                      child: const Text('← Back to Sign Up'),
                     ),
                   ),
                 ],

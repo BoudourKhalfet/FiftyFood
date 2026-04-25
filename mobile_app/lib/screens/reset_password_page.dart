@@ -15,6 +15,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   String? _error;
   bool _submitting = false;
 
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _reset() async {
     final token = widget.token;
     final newPassword = _passwordController.text.trim();

@@ -21,37 +21,50 @@ class _SignupStep2State extends State<SignupStep2> {
   final _addressController = TextEditingController();
 
   final List<String> _foodTypes = [
-    'ITALIAN',
-    'JAPANESE',
-    'HEALTHY',
-    'BURGERS',
     'BAKERY',
-    'CAFE',
+    'GRILL',
+    'FAST_FOOD',
+    'VEGETARIAN',
+    'HALAL',
+    'SEAFOOD',
+    'SUSHI',
+    'PIZZA',
+    'BURGER',
+    'BBQ',
+    'HEALTHY',
+    'DESSERT',
+    'STREET_FOOD',
     'SANDWICHES',
-    'VEGAN',
+    'SALAD',
+    'PASTA',
+    'BREAKFAST',
+    'FINE_DINING',
+    'BRUNCH',
   ];
 
   final Map<String, String> _foodEmoji = {
-    'ITALIAN': '🍕',
-    'JAPANESE': '🍣',
-    'HEALTHY': '🥗',
-    'BURGERS': '🍔',
     'BAKERY': '🥖',
-    'CAFE': '☕',
+    'GRILL': '🔥',
+    'FAST_FOOD': '🍟',
+    'VEGETARIAN': '🥬',
+    'HALAL': '🕌',
+    'SEAFOOD': '🐟',
+    'SUSHI': '🍣',
+    'PIZZA': '🍕',
+    'BURGER': '🍔',
+    'BBQ': '🍖',
+    'HEALTHY': '🥗',
+    'DESSERT': '🍰',
+    'STREET_FOOD': '🌮',
     'SANDWICHES': '🥪',
-    'VEGAN': '🌱',
+    'SALAD': '🥗',
+    'PASTA': '🍝',
+    'BREAKFAST': '🍳',
+    'FINE_DINING': '🍽',
+    'BRUNCH': '🥞',
   };
 
   final Set<String> _selectedFood = {};
-  final Map<String, bool> _restrictions = {
-    'NO_RESTRICTIONS': false,
-    'VEGETARIAN': false,
-    'VEGAN': false,
-    'GLUTEN_FREE': false,
-    'DAIRY_FREE': false,
-    'NUT_FREE': false,
-    'HALAL': false,
-  };
 
   void _toggleFood(String type) {
     setState(() {
@@ -69,16 +82,18 @@ class _SignupStep2State extends State<SignupStep2> {
 
   void _onComplete() async {
     if (_formKey.currentState?.validate() == true) {
+      if (_selectedFood.isEmpty) {
+        setState(() {
+          _error = 'Select at least one food preference.';
+        });
+        return;
+      }
+
       setState(() {
         _loading = true;
         _error = null;
       });
       try {
-        final restrictions = _restrictions.entries
-            .where((e) => e.value)
-            .map((e) => e.key.replaceAll('-', '_').toUpperCase())
-            .toList();
-
         final prefs = await SharedPreferences.getInstance();
         final jwtToken = prefs.getString('jwt');
         if (jwtToken == null) {
@@ -92,7 +107,6 @@ class _SignupStep2State extends State<SignupStep2> {
             'phone': _phoneController.text.trim(),
             'defaultAddress': _addressController.text.trim(),
             'cuisinePreferences': _selectedFood.toList(),
-            'dietaryRestrictions': restrictions,
           },
           headers: {'Authorization': 'Bearer $jwtToken'},
         );
@@ -109,7 +123,11 @@ class _SignupStep2State extends State<SignupStep2> {
           Navigator.pushReplacementNamed(context, '/offers');
         }
       } catch (e) {
-        setState(() => _error = "Profile completion failed: $e");
+        debugPrint('Profile completion failed: $e');
+        setState(() {
+          _error =
+              'Unable to complete your profile right now. Please try again.';
+        });
       } finally {
         setState(() => _loading = false);
       }
@@ -285,7 +303,7 @@ class _SignupStep2State extends State<SignupStep2> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'What types of food do you enjoy?',
+                  'What are your food and meals preferences?',
                   style: theme.textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 16),
@@ -331,28 +349,17 @@ class _SignupStep2State extends State<SignupStep2> {
                   }).toList(),
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  'Any dietary restrictions?',
-                  style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 0,
-                  children: _restrictions.keys.map((key) {
-                    return SizedBox(
-                      width: (MediaQuery.of(context).size.width - 48) / 2 - 6,
-                      child: CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(key),
-                        value: _restrictions[key],
-                        onChanged: (v) =>
-                            setState(() => _restrictions[key] = v ?? false),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 24),
+                if (_error != null) ...[
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFDC2626),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Row(
                   children: [
                     Expanded(
@@ -364,29 +371,35 @@ class _SignupStep2State extends State<SignupStep2> {
                             width: 2,
                           ),
                           foregroundColor: const Color(0xFF2D8066),
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
                         ),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16.0),
-                          child: Text('← Back'),
-                        ),
+                        child: const Text('← Back'),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: _onComplete,
+                        onPressed: _loading ? null : _onComplete,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1F9D7A),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          minimumSize: const Size.fromHeight(48),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
                           ),
                         ),
-                        child: const Text(
-                          'Complete Signup',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
+                        child: const Text('Complete Signup'),
                       ),
                     ),
                   ],

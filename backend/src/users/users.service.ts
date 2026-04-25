@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { CuisinePreference, DietaryRestriction } from '@prisma/client';
+import { CuisinePreference } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -24,16 +24,6 @@ export class UsersService {
     console.log('[UsersService] Starting completeProfile for User ID:', userId);
     console.log('[UsersService] Received DTO:', dto);
 
-    const hasNoRestrictions = dto.dietaryRestrictions.includes(
-      DietaryRestriction.NO_RESTRICTIONS,
-    );
-    if (hasNoRestrictions && dto.dietaryRestrictions.length > 1) {
-      console.warn('[UsersService] Validation failed: NO_RESTRICTIONS mixed with other restrictions');
-      throw new BadRequestException(
-        'If NO_RESTRICTIONS is selected, it must be the only dietary restriction.',
-      );
-    }
-
     try {
       // Update client profile and set submittedAt
       console.log('[UsersService] Updating clientProfile in DB...');
@@ -44,7 +34,6 @@ export class UsersService {
           phone: dto.phone,
           defaultAddress: dto.defaultAddress,
           cuisinePreferences: dto.cuisinePreferences,
-          dietaryRestrictions: dto.dietaryRestrictions,
           submittedAt: new Date(),
           // Do NOT set joinedAt here
         },
@@ -53,12 +42,14 @@ export class UsersService {
           phone: true,
           defaultAddress: true,
           cuisinePreferences: true,
-          dietaryRestrictions: true,
           submittedAt: true,
           joinedAt: true,
         },
       });
-      console.log('[UsersService] clientProfile updated successfully:', profile);
+      console.log(
+        '[UsersService] clientProfile updated successfully:',
+        profile,
+      );
 
       // Check if email is verified, and if so, set joinedAt if profile is completed
       console.log('[UsersService] Finding user...');
@@ -76,7 +67,9 @@ export class UsersService {
 
       // Set joinedAt ONLY if email is verified and profile is completed
       if (user?.emailVerifiedAt && profile?.submittedAt && !profile?.joinedAt) {
-        console.log('[UsersService] Email verified and profile submitted. Setting joinedAt...');
+        console.log(
+          '[UsersService] Email verified and profile submitted. Setting joinedAt...',
+        );
         await this.prisma.clientProfile.update({
           where: { userId },
           data: { joinedAt: new Date() },
@@ -138,12 +131,14 @@ export class UsersService {
             phone: true,
             defaultAddress: true,
             cuisinePreferences: true,
-            dietaryRestrictions: true,
             submittedAt: true,
             joinedAt: true,
             notificationPreferences: true,
             locationConsentGiven: true,
             locationConsentGivenAt: true,
+            lastLatitude: true,
+            lastLongitude: true,
+            lastLocationAt: true,
           },
         },
         accountHistory: {
@@ -200,16 +195,13 @@ export class UsersService {
     return updatedProfile;
   }
 
-  // 3️⃣ Update preferences (cuisinePreferences, dietaryRestrictions)
+  // 3️⃣ Update preferences (cuisinePreferences)
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
     const updated = await this.prisma.clientProfile.update({
       where: { userId },
       data: {
         cuisinePreferences: dto.cuisinePreferences?.map(
           (c) => c as CuisinePreference,
-        ),
-        dietaryRestrictions: dto.dietaryRestrictions?.map(
-          (d) => d as DietaryRestriction,
         ),
       },
     });
@@ -345,7 +337,11 @@ export class UsersService {
     });
   }
 
-  async updateClientLocation(userId: string, latitude: number, longitude: number) {
+  async updateClientLocation(
+    userId: string,
+    latitude: number,
+    longitude: number,
+  ) {
     const profile = await this.prisma.clientProfile.findUnique({
       where: { userId },
       select: { id: true, locationConsentGiven: true },

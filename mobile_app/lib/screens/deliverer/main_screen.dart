@@ -8,6 +8,7 @@ import 'active_order_detail.dart';
 import 'history_page.dart';
 import 'profile_page.dart';
 import '../../api/api_service.dart';
+import '../../api/auth_storage.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -20,14 +21,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedTab = 0;
   String? selectedActiveOrderId;
   Timer? _onlinePingTimer;
+  double _earnings = 0;
+  int _deliveriesCount = 0;
+  double _rating = 0;
+  int _activeCount = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _pingOnline();
+    _loadHeaderStats();
     _onlinePingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _pingOnline();
+      _loadHeaderStats();
     });
   }
 
@@ -35,6 +42,68 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _pingOnline();
+      _loadHeaderStats();
+    }
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _loadHeaderStats() async {
+    try {
+      final jwt = await getJwt();
+      if (jwt == null) return;
+
+      final headers = {'Authorization': 'Bearer $jwt'};
+
+      final responses = await Future.wait([
+        ApiService.get('livreur/onboarding/me', headers: headers),
+        ApiService.get('orders/deliverer/history', headers: headers),
+        ApiService.get('orders/deliverer/active', headers: headers),
+      ]);
+
+      final profile = responses[0] is Map
+          ? Map<String, dynamic>.from(responses[0] as Map)
+          : <String, dynamic>{};
+
+      final history = responses[1] is List
+          ? (responses[1] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : <Map<String, dynamic>>[];
+
+      final activeResponse = responses[2];
+      final active = activeResponse is Map && activeResponse['data'] is List
+          ? (activeResponse['data'] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : activeResponse is List
+          ? activeResponse
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : <Map<String, dynamic>>[];
+
+      final earnings = history.fold<double>(0, (sum, order) {
+        return sum +
+            _toDouble(
+              order['amount'] ?? order['deliveryFee'] ?? order['total'],
+            );
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _earnings = earnings;
+        _deliveriesCount = history.length;
+        _rating = _toDouble(profile['avgRating']);
+        _activeCount = active.length;
+      });
+    } catch (_) {
+      // Keep current values on transient network/backend errors.
     }
   }
 
@@ -149,10 +218,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     ),
                     child: Row(
                       children: [
-                        _buildStatItem('0.0 DT', "Earnings"),
-                        _buildStatItem('0', "Deliveries"),
-                        _buildStatItem('0.0', "Rating"),
-                        _buildStatItem('0h', "Active"),
+                        _buildStatItem(
+                          '${_earnings.toStringAsFixed(1)} DT',
+                          "Earnings",
+                        ),
+                        _buildStatItem('$_deliveriesCount', "Deliveries"),
+                        _buildStatItem(_rating.toStringAsFixed(1), "Rating"),
+                        _buildStatItem('$_activeCount', "Active"),
                       ],
                     ),
                   ),

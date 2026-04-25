@@ -23,6 +23,8 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
   String? businessRegistrationUrl;
   String? hygieneCertificateUrl;
   String? ownershipProofUrl;
+  List<Map<String, dynamic>> receivedReviews = [];
+  List<Map<String, dynamic>> receivedComplaints = [];
   bool loading = false;
 
   @override
@@ -39,6 +41,35 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         'auth/me',
         headers: {'Authorization': 'Bearer $token'},
       );
+      List<Map<String, dynamic>> reviews = [];
+      List<Map<String, dynamic>> complaints = [];
+
+      try {
+        final reviewResp = await ApiService.get(
+          'feedback/received/reviews?limit=5',
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (reviewResp is List) {
+          reviews = reviewResp
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
+        }
+      } catch (_) {}
+
+      try {
+        final complaintResp = await ApiService.get(
+          'feedback/received/complaints?limit=5',
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (complaintResp is List) {
+          complaints = complaintResp
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
+        }
+      } catch (_) {}
+
       final rest = profileResp['restaurantProfile'] ?? {};
       setState(() {
         restaurantName = rest['restaurantName'] ?? '';
@@ -51,6 +82,8 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         businessRegistrationUrl = rest['businessRegistrationDocumentUrl'];
         hygieneCertificateUrl = rest['hygieneCertificateUrl'];
         ownershipProofUrl = rest['proofOfOwnershipOrLeaseUrl'];
+        receivedReviews = reviews;
+        receivedComplaints = complaints;
       });
     } catch (e) {
       ScaffoldMessenger.of(
@@ -110,6 +143,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         return StatefulBuilder(
           builder: (context, setLocalState) {
             return AlertDialog(
+              backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -212,6 +246,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('Delete account?'),
         content: const Text(
@@ -277,6 +312,123 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
       'url': ownershipProofUrl,
     },
   ];
+
+  Widget _reviewsContent() {
+    if (receivedReviews.isEmpty) {
+      return const Text(
+        'No reviews yet.',
+        style: TextStyle(color: Color(0xFF6B7280)),
+      );
+    }
+
+    return Column(
+      children: receivedReviews.map((review) {
+        final rating = review['rating']?.toString() ?? '0';
+        final comment = (review['comment'] ?? '').toString();
+        final reviewer =
+            (review['reviewerName'] ?? review['reviewerEmail'] ?? '')
+                .toString();
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F7F5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.star, size: 16, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 6),
+                  Text(
+                    rating,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  Text(
+                    reviewer,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+              if (comment.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(comment),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _complaintsContent() {
+    if (receivedComplaints.isEmpty) {
+      return const Text(
+        'No complaints yet.',
+        style: TextStyle(color: Color(0xFF6B7280)),
+      );
+    }
+
+    return Column(
+      children: receivedComplaints.map((complaint) {
+        final reason = (complaint['reason'] ?? '').toString();
+        final description = (complaint['description'] ?? '').toString();
+        final reporter =
+            (complaint['complainantName'] ??
+                    complaint['complainantEmail'] ??
+                    '')
+                .toString();
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF1F1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.report_gmailerrorred,
+                    size: 16,
+                    color: Color(0xFFDC2626),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      reason,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    reporter,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(description),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -523,6 +675,22 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
           const SizedBox(height: 24),
 
           _ProfileCard(
+            icon: Icons.reviews,
+            iconColor: const Color(0xFF2D8066),
+            title: 'Recent Reviews',
+            content: _reviewsContent(),
+          ),
+          const SizedBox(height: 24),
+
+          _ProfileCard(
+            icon: Icons.report_problem_outlined,
+            iconColor: const Color(0xFFDC2626),
+            title: 'Recent Complaints',
+            content: _complaintsContent(),
+          ),
+          const SizedBox(height: 24),
+
+          _ProfileCard(
             icon: Icons.lock_outline_rounded,
             iconColor: Colors.teal,
             title: "Account",
@@ -582,146 +750,180 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
       context: context,
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text("Edit Profile"),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Restaurant Name",
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: emailCtrl,
-                  decoration: const InputDecoration(labelText: "Email"),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                if (pendingEmail != null) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Pending verification: $pendingEmail',
-                      style: const TextStyle(color: Colors.orange, fontSize: 13),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                TextField(
-                  controller: phoneCtrl,
-                  decoration: const InputDecoration(labelText: "Phone"),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: addressCtrl,
-                  decoration: const InputDecoration(labelText: "Address"),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              onPressed: saving
-                  ? null
-                  : () async {
-                      final name = nameCtrl.text.trim();
-                      final newEmail = emailCtrl.text.trim();
-                      final phone = phoneCtrl.text.trim();
-                      final address = addressCtrl.text.trim();
-                      if (
-                        name.isEmpty ||
-                        newEmail.isEmpty ||
-                        !newEmail.contains('@') ||
-                        phone.isEmpty ||
-                        address.isEmpty
-                      ) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Please fill all fields with valid values."),
-                          ),
-                        );
-                        return;
-                      }
-                      setStateDialog(() => saving = true);
-                      try {
-                        final token = await getJwt();
-                        await ApiService.patch(
-                          'restaurants/me/profile',
-                          {
-                            'restaurantName': name,
-                            'phone': phone,
-                            'address': address,
-                          },
-                          headers: {'Authorization': 'Bearer $token'},
-                        );
+        builder: (context, setStateDialog) {
+          InputDecoration fieldDecoration(String label) => InputDecoration(
+            labelText: label,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            isDense: true,
+          );
 
-                        var emailChangeRequested = false;
-                        if (newEmail.toLowerCase() != email.toLowerCase()) {
-                          await ApiService.post('auth/request-email-change', {
-                            'email': newEmail,
-                          });
-                          emailChangeRequested = true;
-                        }
-
-                        setState(() {
-                          restaurantName = name;
-                          this.phone = phone;
-                          this.address = address;
-                          if (emailChangeRequested) {
-                            pendingEmail = newEmail;
-                          }
-                        });
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              emailChangeRequested
-                                  ? "Profile updated. Verification email sent for the new address."
-                                  : "Profile updated!",
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Edit Profile',
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        );
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Profile update failed: $e")),
-                        );
-                      } finally {
-                        setStateDialog(() => saving = false);
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF26C281),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: fieldDecoration("Restaurant Name"),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: emailCtrl,
+                      decoration: fieldDecoration("Email"),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    if (pendingEmail != null) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Pending verification: $pendingEmail',
+                          style: const TextStyle(
+                            color: Colors.orange,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: phoneCtrl,
+                      decoration: fieldDecoration("Phone"),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: addressCtrl,
+                      decoration: fieldDecoration("Address"),
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                final name = nameCtrl.text.trim();
+                                final newEmail = emailCtrl.text.trim();
+                                final phone = phoneCtrl.text.trim();
+                                final address = addressCtrl.text.trim();
+                                if (name.isEmpty ||
+                                    newEmail.isEmpty ||
+                                    !newEmail.contains('@') ||
+                                    phone.isEmpty ||
+                                    address.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        "Please fill all fields with valid values.",
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setStateDialog(() => saving = true);
+                                try {
+                                  final token = await getJwt();
+                                  await ApiService.patch(
+                                    'restaurants/me/profile',
+                                    {
+                                      'restaurantName': name,
+                                      'phone': phone,
+                                      'address': address,
+                                    },
+                                    headers: {'Authorization': 'Bearer $token'},
+                                  );
+
+                                  var emailChangeRequested = false;
+                                  if (newEmail.toLowerCase() !=
+                                      email.toLowerCase()) {
+                                    await ApiService.post(
+                                      'auth/request-email-change',
+                                      {'email': newEmail},
+                                    );
+                                    emailChangeRequested = true;
+                                  }
+
+                                  setState(() {
+                                    restaurantName = name;
+                                    this.phone = phone;
+                                    this.address = address;
+                                    if (emailChangeRequested) {
+                                      pendingEmail = newEmail;
+                                    }
+                                  });
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        emailChangeRequested
+                                            ? "Profile updated. Verification email sent for the new address."
+                                            : "Profile updated!",
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        "Profile update failed: $e",
+                                      ),
+                                    ),
+                                  );
+                                } finally {
+                                  setStateDialog(() => saving = false);
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16807A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                        ),
+                        child: saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Save Changes'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text(
-                      'Save Changes',
-                      style: TextStyle(color: Colors.white),
-                    ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -739,6 +941,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

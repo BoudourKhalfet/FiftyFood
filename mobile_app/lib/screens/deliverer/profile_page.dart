@@ -17,6 +17,8 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
   Map<String, dynamic>? _authUser;
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _history = [];
+  List<Map<String, dynamic>> _receivedReviews = [];
+  List<Map<String, dynamic>> _receivedComplaints = [];
   bool _loading = true;
   bool _savingSettings = false;
   String? _error;
@@ -54,12 +56,32 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
           'orders/deliverer/history',
           headers: {'Authorization': 'Bearer $jwt'},
         ),
+        ApiService.get(
+          'feedback/received/reviews?limit=5',
+          headers: {'Authorization': 'Bearer $jwt'},
+        ),
+        ApiService.get(
+          'feedback/received/complaints?limit=5',
+          headers: {'Authorization': 'Bearer $jwt'},
+        ),
       ]);
 
       final authUser = results[0] as Map<String, dynamic>;
       final profile = results[1] as Map<String, dynamic>;
       final history = results[2] is List
           ? (results[2] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : <Map<String, dynamic>>[];
+      final reviews = results[3] is List
+          ? (results[3] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : <Map<String, dynamic>>[];
+      final complaints = results[4] is List
+          ? (results[4] as List)
                 .whereType<Map>()
                 .map((item) => Map<String, dynamic>.from(item))
                 .toList()
@@ -73,6 +95,8 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
         _authUser = authUser;
         _profile = profile;
         _history = history;
+        _receivedReviews = reviews;
+        _receivedComplaints = complaints;
         _newOffers = notifications?['newOffers'] != false;
         _orderUpdates = notifications?['orderUpdates'] != false;
         _loading = false;
@@ -302,6 +326,128 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
     );
   }
 
+  Widget _reviewsSection() {
+    if (_receivedReviews.isEmpty) {
+      return const Text(
+        'No reviews yet.',
+        style: TextStyle(color: Color(0xFF6B7280)),
+      );
+    }
+
+    return Column(
+      children: _receivedReviews.map((review) {
+        final rating = review['rating']?.toString() ?? '0';
+        final comment = (review['comment'] ?? '').toString();
+        final reviewer =
+            (review['reviewerName'] ?? review['reviewerEmail'] ?? '')
+                .toString();
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFCFBF8),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE4DDCF)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.star_rounded,
+                    color: Color(0xFFF59E0B),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    rating,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  Text(
+                    reviewer,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+              if (comment.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(comment),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _complaintsSection() {
+    if (_receivedComplaints.isEmpty) {
+      return const Text(
+        'No complaints yet.',
+        style: TextStyle(color: Color(0xFF6B7280)),
+      );
+    }
+
+    return Column(
+      children: _receivedComplaints.map((complaint) {
+        final reason = (complaint['reason'] ?? '').toString();
+        final description = (complaint['description'] ?? '').toString();
+        final reporter =
+            (complaint['complainantName'] ??
+                    complaint['complainantEmail'] ??
+                    '')
+                .toString();
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF1F1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.report_gmailerrorred,
+                    color: Color(0xFFDC2626),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      reason,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    reporter,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(description),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Future<void> _openProfileDialog() async {
     final currentEmail = _authUser?['email']?.toString() ?? '';
     final emailController = TextEditingController(text: currentEmail);
@@ -320,135 +466,189 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
 
     await showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
         bool saving = false;
         return StatefulBuilder(
           builder: (context, setLocalState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+            InputDecoration fieldDecoration(String label) => InputDecoration(
+              labelText: label,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
               ),
-              title: const Text('Edit Profile'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                    ),
-                    if ((_authUser?['pendingEmail']?.toString().isNotEmpty ?? false)) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Pending verification: ${_authUser?['pendingEmail']}',
-                          style: const TextStyle(
-                            color: Colors.orange,
-                            fontSize: 13,
+              isDense: true,
+            );
+
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Edit Profile',
+                              style: TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: fieldDecoration('Email'),
+                      ),
+                      if ((_authUser?['pendingEmail']?.toString().isNotEmpty ??
+                          false)) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Pending verification: ${_authUser?['pendingEmail']}',
+                            style: const TextStyle(
+                              color: Colors.orange,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: nameController,
+                        decoration: fieldDecoration('Full Name'),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: phoneController,
+                        decoration: fieldDecoration('Phone'),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: vehicleController,
+                        decoration: fieldDecoration('Vehicle Type'),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: zoneController,
+                        decoration: fieldDecoration('Zone'),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: saving
+                              ? null
+                              : () async {
+                                  final newEmail = emailController.text.trim();
+                                  if (newEmail.isEmpty ||
+                                      !newEmail.contains('@')) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Enter a valid email address.',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  setLocalState(() => saving = true);
+                                  try {
+                                    await ApiService.patch(
+                                      'livreur/onboarding/me/profile',
+                                      {
+                                        'fullName': nameController.text.trim(),
+                                        'phone': phoneController.text.trim(),
+                                        'vehicleType': vehicleController.text
+                                            .trim(),
+                                        'zone': zoneController.text.trim(),
+                                      },
+                                    );
+
+                                    var emailChangeRequested = false;
+                                    if (newEmail.toLowerCase() !=
+                                        currentEmail.toLowerCase()) {
+                                      await ApiService.post(
+                                        'auth/request-email-change',
+                                        {'email': newEmail},
+                                      );
+                                      emailChangeRequested = true;
+                                    }
+
+                                    if (emailChangeRequested && mounted) {
+                                      setState(() {
+                                        _authUser = {
+                                          ...?_authUser,
+                                          'pendingEmail': newEmail,
+                                        };
+                                      });
+                                    }
+
+                                    if (!mounted) return;
+                                    Navigator.of(dialogContext).pop();
+                                    await _loadProfile();
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          emailChangeRequested
+                                              ? 'Profile updated. Verification email sent for your new address.'
+                                              : 'Profile updated',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    setLocalState(() => saving = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Profile update failed: $e',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF16807A),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                          ),
+                          child: saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Save Changes'),
                         ),
                       ),
                     ],
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Full Name'),
-                    ),
-                    TextField(
-                      controller: phoneController,
-                      decoration: const InputDecoration(labelText: 'Phone'),
-                    ),
-                    TextField(
-                      controller: vehicleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Vehicle Type',
-                      ),
-                    ),
-                    TextField(
-                      controller: zoneController,
-                      decoration: const InputDecoration(labelText: 'Zone'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          final newEmail = emailController.text.trim();
-                          if (newEmail.isEmpty || !newEmail.contains('@')) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Enter a valid email address.'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          setLocalState(() => saving = true);
-                          try {
-                            await ApiService.patch(
-                              'livreur/onboarding/me/profile',
-                              {
-                                'fullName': nameController.text.trim(),
-                                'phone': phoneController.text.trim(),
-                                'vehicleType': vehicleController.text.trim(),
-                                'zone': zoneController.text.trim(),
-                              },
-                            );
-
-                            var emailChangeRequested = false;
-                            if (newEmail.toLowerCase() !=
-                                currentEmail.toLowerCase()) {
-                              await ApiService.post('auth/request-email-change', {
-                                'email': newEmail,
-                              });
-                              emailChangeRequested = true;
-                            }
-
-                            if (emailChangeRequested && mounted) {
-                              setState(() {
-                                _authUser = {
-                                  ...?_authUser,
-                                  'pendingEmail': newEmail,
-                                };
-                              });
-                            }
-
-                            if (!mounted) return;
-                            Navigator.of(dialogContext).pop();
-                            await _loadProfile();
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  emailChangeRequested
-                                      ? 'Profile updated. Verification email sent for your new address.'
-                                      : 'Profile updated',
-                                ),
-                              ),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            setLocalState(() => saving = false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Profile update failed: $e'),
-                              ),
-                            );
-                          }
-                        },
-                  child: Text(saving ? 'Saving...' : 'Save'),
-                ),
-              ],
             );
           },
         );
@@ -469,6 +669,7 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
         return StatefulBuilder(
           builder: (context, setLocalState) {
             return AlertDialog(
+              backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -706,15 +907,20 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
                             if (!mounted) return;
                             Navigator.of(dialogContext).pop();
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Password changed!')),
+                              const SnackBar(
+                                content: Text('Password changed!'),
+                              ),
                             );
                           } catch (e) {
                             if (!mounted) return;
                             setLocalState(() => saving = false);
                             final errMsg = extractBackendMessage(e);
-                            if (errMsg.contains('Current password is incorrect')) {
+                            if (errMsg.contains(
+                              'Current password is incorrect',
+                            )) {
                               setLocalState(() {
-                                errorMsg = 'Your current password is incorrect.';
+                                errorMsg =
+                                    'Your current password is incorrect.';
                               });
                             } else {
                               setLocalState(() => errorMsg = errMsg);
@@ -787,6 +993,15 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
     }
   }
 
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('jwt');
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/signin/deliverer', (route) => false);
+  }
+
   Widget _buildContent() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
@@ -811,7 +1026,8 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
           ),
           children: [
             _infoField('Email', _authUser?['email']?.toString() ?? '-'),
-            if ((_authUser?['pendingEmail']?.toString().isNotEmpty ?? false)) ...[
+            if ((_authUser?['pendingEmail']?.toString().isNotEmpty ??
+                false)) ...[
               const SizedBox(height: 16),
               _infoField(
                 'Pending Email',
@@ -839,6 +1055,13 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
             const SizedBox(height: 16),
             _infoField('Payment Details', _payoutDetailsLabel()),
           ],
+        ),
+        const SizedBox(height: 16),
+        _sectionCard(title: 'Recent Reviews', children: [_reviewsSection()]),
+        const SizedBox(height: 16),
+        _sectionCard(
+          title: 'Recent Complaints',
+          children: [_complaintsSection()],
         ),
         const SizedBox(height: 16),
         _sectionCard(
@@ -877,6 +1100,15 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
         _sectionCard(
           title: 'Account',
           children: [
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _savingSettings ? null : _logout,
+                icon: const Icon(Icons.logout),
+                label: const Text('Logout'),
+              ),
+            ),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(

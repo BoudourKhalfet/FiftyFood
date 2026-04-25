@@ -33,6 +33,19 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    (function () {
+      var hash = window.location.hash || '';
+      if (hash.indexOf('#/reset-password') === 0) {
+        var tokenMatch = hash.match(/[?&]token=([^&]+)/);
+        var token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : '';
+        var nextUrl = '/reset-password' + (token ? '?token=' + encodeURIComponent(token) : '');
+        if (window.location.pathname !== '/reset-password' || window.location.search !== (token ? '?token=' + encodeURIComponent(token) : '')) {
+          window.location.replace(nextUrl);
+        }
+      }
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

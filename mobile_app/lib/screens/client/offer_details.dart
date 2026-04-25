@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import '../../widgets/main_scaffold.dart';
 import 'restaurant_details.dart';
@@ -8,6 +9,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../constants/api.dart';
+import '../../api/client_profile_service.dart';
+import '../../models/client_profile.dart';
+import 'package:location/location.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   // Remove data prefix if needed
@@ -36,6 +40,128 @@ class _OfferDetailsPageState extends State<OfferDetails> {
   String? deliveryAddress;
   String? phoneNumber;
   String paymentMethod = 'card';
+  ClientProfile? _clientProfile;
+  double? _currentLatitude;
+  double? _currentLongitude;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClientProfile();
+    _loadCurrentLocation();
+  }
+
+  Future<void> _loadClientProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+
+      final profile = await ProfileService.getProfile(jwt);
+      if (!mounted) return;
+      setState(() {
+        _clientProfile = profile;
+      });
+    } catch (_) {
+      // Best-effort only; distance falls back to unavailable when no coords exist.
+    }
+  }
+
+  Future<void> _loadCurrentLocation() async {
+    try {
+      final location = Location();
+      final serviceEnabled = await location.serviceEnabled() ||
+          await location.requestService();
+      if (!serviceEnabled) return;
+
+      var permission = await location.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await location.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) {
+        return;
+      }
+
+      final current = await location.getLocation();
+      if (current.latitude == null || current.longitude == null) return;
+
+      if (!mounted) return;
+      setState(() {
+        _currentLatitude = current.latitude;
+        _currentLongitude = current.longitude;
+      });
+    } catch (_) {
+      // Best-effort only.
+    }
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  String _pickupTimeText(dynamic offer) {
+    final direct = (offer['_pickupTimeText'] ?? offer['pickupTime'] ?? '')
+        .toString()
+        .trim();
+    if (direct.isNotEmpty) return direct;
+
+    final pickupDateTimeRaw = offer['pickupDateTime']?.toString();
+    if (pickupDateTimeRaw == null || pickupDateTimeRaw.isEmpty) {
+      return 'Time unavailable';
+    }
+
+    final parsed = DateTime.tryParse(pickupDateTimeRaw)?.toLocal();
+    if (parsed == null) return 'Time unavailable';
+
+    final hh = parsed.hour.toString().padLeft(2, '0');
+    final mm = parsed.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _distanceText(dynamic offer, dynamic restProfile) {
+    final fromList = (offer['_distanceText'] ?? '').toString().trim();
+    if (fromList.isNotEmpty && fromList != 'Distance unavailable') {
+      return fromList;
+    }
+
+    for (final key in const [
+      'distanceKm',
+      'distance',
+      'distanceToRestaurantKm',
+    ]) {
+      final km = _asDouble(offer[key]);
+      if (km != null && km >= 0) {
+        return '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+      }
+    }
+
+    final clientLat = _currentLatitude ?? _clientProfile?.lastLatitude;
+    final clientLng = _currentLongitude ?? _clientProfile?.lastLongitude;
+    final restaurantLat = _asDouble(restProfile?['latitude']);
+    final restaurantLng = _asDouble(restProfile?['longitude']);
+
+    if (clientLat != null &&
+        clientLng != null &&
+        restaurantLat != null &&
+        restaurantLng != null) {
+      const earthRadiusKm = 6371.0;
+      final dLat = (restaurantLat - clientLat) * (3.141592653589793 / 180.0);
+      final dLon = (restaurantLng - clientLng) * (3.141592653589793 / 180.0);
+      final a =
+          (sin(dLat / 2) * sin(dLat / 2)) +
+          cos(clientLat * (3.141592653589793 / 180.0)) *
+              cos(restaurantLat * (3.141592653589793 / 180.0)) *
+              (sin(dLon / 2) * sin(dLon / 2));
+      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+      final km = earthRadiusKm * c;
+      return '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+    }
+
+    return fromList.isNotEmpty ? fromList : 'Distance unavailable';
+  }
 
   Future<bool> _checkDeliveryAvailable(String restaurantId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -112,7 +238,8 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     final rating = restProfile?['avgRating'] ?? 4.5;
     final discounted = (offer['discountedPrice'] as num?)?.toDouble() ?? 0.0;
     final original = (offer['originalPrice'] as num?)?.toDouble() ?? 0.0;
-    final pickup = offer['pickupTime'] ?? '';
+    final pickupDisplay = _pickupTimeText(offer);
+    final distanceDisplay = _distanceText(offer, restProfile);
     final left = offer['quantity'] ?? 1;
     final save = original - discounted;
     final isAnonymous = offer['visibility'] == 'ANONYMOUS';
@@ -145,6 +272,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (_clientProfile == null) const SizedBox.shrink(),
                     Stack(
                       children: [
                         ClipRRect(
@@ -176,145 +304,76 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        // Eco & distance badges
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Color(0xFFEAF9F4),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Column(
-                                  children: [
-                                    Icon(
-                                      Icons.eco,
-                                      size: 21,
-                                      color: Color(0xFF3D9176),
-                                    ),
-                                    SizedBox(height: 3),
-                                    Text(
-                                      'Eco-Friendly',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF3D9176),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Reducing food waste',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Color(0xFFF5EDF7),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Column(
-                                  children: [
-                                    Icon(
-                                      Icons.place_outlined,
-                                      size: 21,
-                                      color: Color(0xFF9A65A6),
-                                    ),
-                                    SizedBox(height: 3),
-                                    Text(
-                                      'Distance',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF9A65A6),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    Text(
-                                      '0.5 km', // TODO: Dynamically calculate using user and restaurant addresses
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    Row(children: []),
                     const SizedBox(height: 18),
                     Row(
                       children: [
-                        if (isAnonymous)
-                          Text(
-                            displayName,
-                            style: const TextStyle(
-                              color: Color(0xFF3D9176),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          )
-                        else
-                          MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            child: GestureDetector(
-                              onTap: () {
-                                final restaurantUserId =
-                                    offer['restaurant']?['id'];
-                                if (restaurantUserId == null ||
-                                    restaurantUserId.isEmpty) {
-                                  return;
-                                }
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => RestaurantDetailsPage(
-                                      restaurantId: restaurantUserId,
-                                    ),
+                        Expanded(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  displayName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: const Color(0xFF3D9176),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    fontStyle: isAnonymous
+                                        ? FontStyle.italic
+                                        : FontStyle.normal,
                                   ),
-                                );
-                              },
-                              child: Tooltip(
-                                message: "See restaurant details",
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      displayName,
-                                      style: const TextStyle(
-                                        color: Color(0xFF3D9176),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 18,
-                                      color: Color(0xFF3D9176),
-                                    ),
-                                  ],
                                 ),
                               ),
-                            ),
+                              if (!isAnonymous) ...[
+                                const SizedBox(width: 6),
+                                Tooltip(
+                                  message: 'See restaurant details',
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      final restaurantUserId =
+                                          offer['restaurant']?['id'];
+                                      if (restaurantUserId == null ||
+                                          restaurantUserId.isEmpty) {
+                                        return;
+                                      }
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => RestaurantDetailsPage(
+                                            restaurantId: restaurantUserId,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.info_outline,
+                                      size: 14,
+                                    ),
+                                    label: const Text(
+                                      'Details',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      minimumSize: const Size(0, 28),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      side: const BorderSide(
+                                        color: Color(0xFF3D9176),
+                                      ),
+                                      foregroundColor: const Color(0xFF3D9176),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                        ),
                         const SizedBox(width: 6),
                         const Icon(Icons.star, color: Colors.amber, size: 18),
                         Text(
@@ -401,7 +460,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   ),
                                 ),
                                 Text(
-                                  '13:00 - 14:00',
+                                  pickupDisplay,
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Colors.black,
@@ -439,7 +498,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   ),
                                 ),
                                 Text(
-                                  '0.5 km',
+                                  distanceDisplay,
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.black,
@@ -539,7 +598,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                           onPressed: () {
                             showCollectionMethodDialog(
                               discounted: discounted,
-                              pickup: pickup,
+                              pickup: pickupDisplay,
                               address: address,
                             );
                           },
@@ -910,10 +969,10 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                padding: EdgeInsets.symmetric(vertical: 13),
+                                padding: EdgeInsets.symmetric(vertical: 11),
                                 textStyle: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 15.5,
+                                  fontSize: 13.5,
                                 ),
                               ),
                               onPressed: () {
@@ -950,7 +1009,14 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   address: address,
                                 );
                               },
-                              child: Text('Continue to Payment'),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'Continue to Payment',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                ),
+                              ),
                             ),
                           ),
                         ],

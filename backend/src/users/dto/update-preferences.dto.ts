@@ -5,9 +5,4 @@ export class UpdatePreferencesDto {
   @IsString({ each: true })
   @IsOptional()
   cuisinePreferences?: string[];
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  dietaryRestrictions?: string[];
 }

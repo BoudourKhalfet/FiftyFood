@@ -37,13 +37,28 @@ export async function requireChangesRestaurant(id: string, reason: string) {
 }
 
 export async function fetchAllOrders() {
-  const res = await fetch("http://192.168.245.51:3000/orders", {
-    headers: {
-      Authorization: "Bearer " + localStorage.getItem("access_token"),
-      // add others like Content-Type if needed
-    },
-  });
-  const data = await res.json();
-  console.log("Fetched orders:", data); // <--- add this!
-  return data;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch("/orders", {
+      headers: {
+        Authorization: "Bearer " + localStorage.getItem("access_token"),
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch orders (${res.status})`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Request timed out while fetching orders.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }

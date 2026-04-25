@@ -88,123 +88,140 @@ class MyAppState extends State<MyApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('en'),
-        Locale('fr'),
-        Locale('ar'),
-      ],
+      supportedLocales: const [Locale('en'), Locale('fr'), Locale('ar')],
       locale: _locale,
       initialRoute: '/',
       onGenerateRoute: (settings) {
-        // Reset password (extract token from query for web, or arguments for mobile)
-        if (settings.name != null &&
-            settings.name!.startsWith('/reset-password')) {
-          String? token;
+        print("ROUTE CALLED: ${settings.name}");
 
-          // Extract token from URL query string (web)
-          final uri = Uri.parse(settings.name!);
-          token = uri.queryParameters['token'];
+        final uri = Uri.base;
 
-          // Use argument if it came from Navigator.pushNamed (mobile/deep link)
-          if (settings.arguments != null && settings.arguments is String) {
-            token = settings.arguments as String;
-          }
+        // ✅ Handle reset password FIRST
+        if (uri.path == '/reset-password') {
+          String? token = uri.queryParameters['token'];
+
+          print("DETECTED RESET ROUTE");
+          print("TOKEN: $token");
+
           return MaterialPageRoute(
             builder: (_) => ResetPasswordPage(token: token),
-            settings: settings,
           );
         }
 
-        if (settings.name == '/' || settings.name == null) {
-          // Your root page, probably a splash screen or onboarding
-          return MaterialPageRoute(
-            builder: (_) => const SplashScreen(),
-            settings: settings,
-          );
-        }
-
+        // ✅ Normal routing
         switch (settings.name) {
+          case '/':
+            return MaterialPageRoute(builder: (_) => const SplashScreen());
+
           case '/home':
             return MaterialPageRoute(builder: (_) => const HomeScreen());
+
           case '/signup1':
             return MaterialPageRoute(builder: (_) => const SignupStep1());
+
           case '/client/signup2':
             return MaterialPageRoute(
               builder: (_) => const client.SignupStep2(),
             );
+
           case '/partner/signup1':
             return MaterialPageRoute(
               builder: (_) => const partner1.PartnerSignupStep1(),
             );
+
           case '/partner/signup2':
             return MaterialPageRoute(
               builder: (_) => const partner.PartnerSignupStep2(),
             );
+
           case '/partner/signup3':
             return MaterialPageRoute(
               builder: (_) => const partner3.PartnerSignupStep3(),
             );
+
           case '/partner/signup4':
             return MaterialPageRoute(
               builder: (_) => const partner4.PartnerSignupStep4(),
             );
+
           case '/deliverer/signup2':
             return MaterialPageRoute(
               builder: (_) => const deliverer2.DelivererSignupStep2(),
             );
+
           case '/deliverer/signup4':
             return MaterialPageRoute(
               builder: (_) => const deliverer4.DelivererSignupStep4(),
             );
+
           case '/submitted':
+            final submittedRole = settings.arguments is String
+                ? settings.arguments as String
+                : 'restaurant';
             return MaterialPageRoute(
-              builder: (_) => const Submitted.PartnerSubmissionPage(),
+              builder: (_) =>
+                  Submitted.PartnerSubmissionPage(role: submittedRole),
             );
+
           case '/partner/dashboard':
             return MaterialPageRoute(
               builder: (_) => const partnerDashboard.PartnerDashboardPage(),
             );
+
           case '/pending_approval':
+            final pendingRole = settings.arguments is String
+                ? settings.arguments as String
+                : 'restaurant';
             return MaterialPageRoute(
-              builder: (_) => const PendingApprovalPage(),
+              builder: (_) => PendingApprovalPage(role: pendingRole),
             );
+
           case '/offers':
             return MaterialPageRoute(
               builder: (_) => const AvailableOffersPage(),
             );
+
           case '/signin/client':
             return MaterialPageRoute(
               builder: (_) => const clientSignin.ClientSignInPage(),
             );
+
           case '/signin/deliverer':
             return MaterialPageRoute(
               builder: (_) => const SignInPage(role: 'Deliverer'),
             );
+
           case '/signin/partner':
             return MaterialPageRoute(
               builder: (_) => const partnerSignin.PartnerSignInPage(),
             );
+
           case '/verify_email_reminder':
+            final role = settings.arguments is String
+                ? settings.arguments as String
+                : 'client';
             return MaterialPageRoute(
-              builder: (_) => const VerifyEmailReminderPage(),
+              builder: (_) => VerifyEmailReminderPage(role: role),
             );
+
           case '/forgot-password':
             return MaterialPageRoute(
               builder: (_) => const ForgotPasswordPage(),
             );
+
           case '/profile':
             return MaterialPageRoute(
               builder: (_) => const ClientProfileScreen(),
-              settings: settings,
             );
+
           case '/deliverer/dashboard':
             return MaterialPageRoute(builder: (_) => MainScreen());
-          default:
-            return MaterialPageRoute(
-              builder: (_) =>
-                  Scaffold(body: Center(child: Text('Page not found'))),
-            );
         }
+
+        // ✅ SINGLE fallback
+        return MaterialPageRoute(
+          builder: (_) => Scaffold(body: Center(child: Text('Page not found'))),
+        );
       },
     );
   }

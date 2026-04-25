@@ -75,6 +75,14 @@ class _DelivererSignupStep2State extends State<DelivererSignupStep2> {
     // Add/edit as needed!
   ];
 
+  String _toDisplayLabel(String raw) {
+    return raw
+        .split('_')
+        .where((part) => part.isNotEmpty)
+        .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
+        .join(' ');
+  }
+
   Future<void> _pickPhoto() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -348,8 +356,15 @@ class _DelivererSignupStep2State extends State<DelivererSignupStep2> {
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
                     value: _selectedVehicle,
+                    menuMaxHeight: 260,
+                    borderRadius: BorderRadius.circular(12),
                     items: _vehicles
-                        .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                        .map(
+                          (v) => DropdownMenuItem(
+                            value: v,
+                            child: Text(_toDisplayLabel(v)),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) => setState(() => _selectedVehicle = v),
                     decoration: const InputDecoration(
@@ -363,8 +378,15 @@ class _DelivererSignupStep2State extends State<DelivererSignupStep2> {
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
                     value: _selectedZone,
+                    menuMaxHeight: 260,
+                    borderRadius: BorderRadius.circular(12),
                     items: _zones
-                        .map((z) => DropdownMenuItem(value: z, child: Text(z)))
+                        .map(
+                          (z) => DropdownMenuItem(
+                            value: z,
+                            child: Text(_toDisplayLabel(z)),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) => setState(() => _selectedZone = v),
                     decoration: const InputDecoration(

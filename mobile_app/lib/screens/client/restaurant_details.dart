@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../constants/api.dart';
+import '../../api/auth_storage.dart';
 
 class RestaurantDetailsPage extends StatefulWidget {
   final String restaurantId;
@@ -15,11 +16,100 @@ class RestaurantDetailsPage extends StatefulWidget {
 
 class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
   late Future<Map<String, dynamic>> _dataFuture;
+  final TextEditingController _reviewController = TextEditingController();
+  int _selectedRating = 0;
+  bool _submittingReview = false;
 
   @override
   void initState() {
     super.initState();
     _dataFuture = fetchRestaurantData(widget.restaurantId);
+  }
+
+  @override
+  void dispose() {
+    _reviewController.dispose();
+    super.dispose();
+  }
+
+  String _formatDate(dynamic raw) {
+    final parsed = DateTime.tryParse((raw ?? '').toString());
+    if (parsed == null) return '';
+    final dd = parsed.day.toString().padLeft(2, '0');
+    final mm = parsed.month.toString().padLeft(2, '0');
+    final yy = (parsed.year % 100).toString().padLeft(2, '0');
+    return '$dd/$mm/$yy';
+  }
+
+  String _formatEstablishmentType(dynamic raw) {
+    final value = (raw ?? '').toString().trim();
+    if (value.isEmpty) return 'Not specified';
+    return value
+        .split('_')
+        .where((part) => part.isNotEmpty)
+        .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
+        .join(' ');
+  }
+
+  Future<void> _submitRestaurantReview() async {
+    if (_selectedRating < 1 || _selectedRating > 5) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a rating.')));
+      return;
+    }
+
+    final token = await getJwt();
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in as client to submit a review.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _submittingReview = true);
+    try {
+      final url = Uri.parse(apiUrl('feedback/reviews/restaurant'));
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'restaurantId': widget.restaurantId,
+          'rating': _selectedRating,
+          'comment': _reviewController.text.trim(),
+        }),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (!mounted) return;
+        setState(() {
+          _selectedRating = 0;
+          _reviewController.clear();
+          _dataFuture = fetchRestaurantData(widget.restaurantId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Review submitted successfully.')),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to submit review.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to submit review.')));
+    } finally {
+      if (mounted) setState(() => _submittingReview = false);
+    }
   }
 
   Future<Map<String, dynamic>> fetchRestaurantData(String id) async {
@@ -156,6 +246,45 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
                             ],
                           ),
                           const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(11),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 5,
+                                  offset: const Offset(0, 1.2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.storefront_outlined,
+                                  color: Color(0xFF3D9176),
+                                  size: 19,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Type: ${_formatEstablishmentType(data['establishmentType'])}',
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF232323),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
                           // Address & phone row card
                           Container(
                             padding: const EdgeInsets.all(12),
@@ -237,30 +366,79 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    const Text('Your rating:'),
-                                    const SizedBox(width: 8),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: List.generate(5, (index) {
-                                        return Icon(
-                                          Icons.star_border,
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final starButtons = List.generate(5, (
+                                      index,
+                                    ) {
+                                      final star = index + 1;
+                                      return IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        iconSize: 22,
+                                        splashRadius: 18,
+                                        onPressed: () {
+                                          setState(() {
+                                            _selectedRating = star;
+                                          });
+                                        },
+                                        icon: Icon(
+                                          star <= _selectedRating
+                                              ? Icons.star
+                                              : Icons.star_border,
                                           color: Colors.amber[600],
-                                        );
-                                      }),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      '0/5',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
+                                        ),
+                                      );
+                                    });
+
+                                    if (constraints.maxWidth < 390) {
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('Your rating:'),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Wrap(
+                                                  spacing: 2,
+                                                  runSpacing: 2,
+                                                  children: starButtons,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '$_selectedRating/5',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      );
+                                    }
+
+                                    return Row(
+                                      children: [
+                                        const Text('Your rating:'),
+                                        const SizedBox(width: 8),
+                                        Wrap(spacing: 2, children: starButtons),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '$_selectedRating/5',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
                                 const SizedBox(height: 9),
                                 TextField(
+                                  controller: _reviewController,
                                   minLines: 2,
                                   maxLines: 4,
                                   decoration: InputDecoration(
@@ -292,13 +470,25 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),
-                                    onPressed: () {},
-                                    child: const Text(
-                                      'Submit Review',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
+                                    onPressed: _submittingReview
+                                        ? null
+                                        : _submitRestaurantReview,
+                                    child: _submittingReview
+                                        ? const SizedBox(
+                                            height: 18,
+                                            width: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Text(
+                                            'Submit Review',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                   ),
                                 ),
                               ],
@@ -359,9 +549,10 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
                                                 ),
                                                 const Spacer(),
                                                 Text(
-                                                  review['date'] ??
-                                                      review['createdAt'] ??
-                                                      "",
+                                                  _formatDate(
+                                                    review['date'] ??
+                                                        review['createdAt'],
+                                                  ),
                                                   style: const TextStyle(
                                                     fontSize: 11,
                                                     color: Colors.grey,

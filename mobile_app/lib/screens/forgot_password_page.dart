@@ -13,6 +13,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _sent = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
   Future<void> _requestReset() async {
     setState(() {
       _error = null;

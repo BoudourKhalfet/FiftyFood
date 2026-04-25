@@ -14,15 +14,14 @@ class ApiService {
     Map<String, String>? headers,
   }) async {
     final url = Uri.parse('$apiBaseUrl$endpoint');
-    // --- NEW JWT LOGIC ---
+    final isAuthEndpoint = endpoint.startsWith('auth/');
     final prefs = await SharedPreferences.getInstance();
     final jwt = prefs.getString('jwt');
     final defaultHeaders = {
       'Content-Type': 'application/json',
-      if (jwt != null) 'Authorization': 'Bearer $jwt',
+      if (!isAuthEndpoint && jwt != null) 'Authorization': 'Bearer $jwt',
     };
     final mergedHeaders = {...defaultHeaders, ...?headers};
-    // ----------------------
 
     print('POST $url\n  Headers: $mergedHeaders\n  Body: $data');
     try {
@@ -37,6 +36,9 @@ class ApiService {
       print('POST RESPONSE: ${res.statusCode} ${res.body}');
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (res.body.trim().isEmpty) {
+          return <String, dynamic>{};
+        }
         return jsonDecode(res.body) as Map<String, dynamic>;
       } else {
         print('POST ERROR: ${res.statusCode} ${res.body}');

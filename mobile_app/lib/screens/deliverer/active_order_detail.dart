@@ -432,16 +432,6 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
                             ),
                             OutlinedButton.icon(
                               onPressed: () async {
-                                bool consentGiven =
-                                    order['locationConsentGiven'] == true;
-                                if (!consentGiven) {
-                                  bool accepted =
-                                      await showLocationConsentDialog(context);
-                                  if (!accepted) return;
-                                  setState(() {
-                                    order['locationConsentGiven'] = true;
-                                  });
-                                }
                                 openMapsToAddress(
                                   context,
                                   order['restaurantAddress'] ?? '',
@@ -536,16 +526,6 @@ class _ActiveOrderDetailState extends State<ActiveOrderDetail> {
                             ),
                             OutlinedButton.icon(
                               onPressed: () async {
-                                bool consentGiven =
-                                    order['locationConsentGiven'] == true;
-                                if (!consentGiven) {
-                                  final accepted =
-                                      await showLocationConsentDialog(context);
-                                  if (!accepted) return;
-                                  setState(() {
-                                    order['locationConsentGiven'] = true;
-                                  });
-                                }
                                 openMapsToAddress(
                                   context,
                                   order['deliveryAddress'] ?? '',

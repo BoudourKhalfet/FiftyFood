@@ -16,6 +16,7 @@ import { Role } from '@prisma/client';
 
 import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
+import { UpdateOfferDto } from './dto/update-offer.dto';
 import { GenerateDescriptionDto } from './dto/generate-description.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -89,6 +90,20 @@ export class OffersController {
   }
 
   /**
+   * PATCH /offers/:id
+   * Update editable offer fields (except photo).
+   */
+  @Patch(':id')
+  async updateOffer(
+    @Req() req: ReqWithUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateOfferDto,
+  ) {
+    this.ensureRestaurant(req);
+    return this.offers.updateOffer(req.user.sub, id, dto);
+  }
+
+  /**
    * PATCH /offers/:id/visibility
    * Toggle visibility between IDENTIFIED and ANONYMOUS.
    */
@@ -145,10 +160,21 @@ export class OffersController {
       },
     }),
   )
-  uploadOfferImage(@UploadedFile() file: Express.Multer.File) {
+  uploadOfferImage(
+    @Req() req: Request,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     try {
       if (!file) throw new ForbiddenException('No file uploaded');
-      const baseUrl = process.env.BASE_URL || 'http://192.168.245.51:3000';
+      const configuredBaseUrl =
+        process.env.PUBLIC_BACKEND_URL || process.env.BASE_URL;
+      const protocol =
+        (req.headers['x-forwarded-proto'] as string | undefined) ||
+        req.protocol;
+      const host = req.get('host');
+      const requestBaseUrl = host ? `${protocol}://${host}` : undefined;
+      const baseUrl =
+        configuredBaseUrl || requestBaseUrl || 'http://localhost:3000';
       return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
     } catch (error) {
       console.error('Upload error:', error);

@@ -3,6 +3,7 @@ import '../../models/client_order.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../api/auth_storage.dart';
 import '../../constants/api.dart';
 
@@ -36,6 +37,49 @@ String getEtaText(LatLng? a, LatLng? b) {
   return "$etaMinutes min";
 }
 
+Future<void> openLiveMap(BuildContext context, ClientOrder order) async {
+  final clientLatLng = parseLatLng(order.clientLocation);
+  final driverLatLng = parseLatLng(order.delivererLocation);
+
+  String? url;
+  if (clientLatLng != null && driverLatLng != null) {
+    url =
+        'https://www.google.com/maps/dir/?api=1'
+        '&origin=${driverLatLng.lat},${driverLatLng.lng}'
+        '&destination=${clientLatLng.lat},${clientLatLng.lng}'
+        '&travelmode=driving';
+  } else if (order.deliveryAddress.isNotEmpty) {
+    url =
+        'https://www.google.com/maps/search/?api=1&query='
+        '${Uri.encodeComponent(order.deliveryAddress)}';
+  }
+
+  if (url == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Map data is not available yet.')),
+    );
+    return;
+  }
+
+  final uri = Uri.parse(url);
+  final launchedExternal = await launchUrl(
+    uri,
+    mode: LaunchMode.externalApplication,
+  );
+
+  if (!launchedExternal) {
+    final launchedFallback = await launchUrl(
+      uri,
+      mode: LaunchMode.platformDefault,
+    );
+    if (!launchedFallback) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open Maps.')));
+    }
+  }
+}
+
 class OrderTrackingScreen extends StatelessWidget {
   final String orderId;
   const OrderTrackingScreen({required this.orderId, Key? key})
@@ -43,17 +87,19 @@ class OrderTrackingScreen extends StatelessWidget {
 
   // Status mapping
   int statusIndexFor(String status) {
-    switch (status) {
-      case 'ORDER_ACCEPTED':
+    switch (status.toUpperCase()) {
+      case 'ORDER_CONFIRMED':
+      case 'CONFIRMED':
+      case 'ASSIGNED':
+      case 'READY':
         return 0;
       case 'PICKED_UP':
-        return 1;
       case 'ON_THE_WAY':
-        return 2;
+        return 1;
       case 'ARRIVED':
-        return 3;
+        return 2;
       case 'DELIVERED':
-        return 4;
+        return 3;
       default:
         return 0;
     }
@@ -96,12 +142,18 @@ class OrderTrackingScreen extends StatelessWidget {
         LatLng? driverLatLng = parseLatLng(order.delivererLocation);
         final driverDistanceText = getDistanceText(clientLatLng, driverLatLng);
         final driverEtaText = getEtaText(clientLatLng, driverLatLng);
+        final etaSummary = driverEtaText.isNotEmpty
+            ? driverEtaText
+            : (order.timeSlot.isNotEmpty
+                  ? order.timeSlot
+                  : 'Not available yet');
 
         return OrderTrackingPage(
           order: order,
           statusIndex: statusIndexFor(order.status),
           driverEtaText: driverEtaText,
           driverDistanceText: driverDistanceText,
+          etaSummary: etaSummary,
         );
       },
     );
@@ -113,6 +165,7 @@ class OrderTrackingPage extends StatelessWidget {
   final int statusIndex;
   final String driverEtaText;
   final String driverDistanceText;
+  final String etaSummary;
 
   const OrderTrackingPage({
     Key? key,
@@ -120,24 +173,18 @@ class OrderTrackingPage extends StatelessWidget {
     this.statusIndex = 0,
     this.driverEtaText = "",
     this.driverDistanceText = "",
+    this.etaSummary = "",
   }) : super(key: key);
 
   static const Color primary = Color(0xFF199060);
   static const Color primaryGradientLeft = Color(0xFF22AE6B);
   static const Color greyBg = Color(0xFFF6FAF7);
 
-  static const steps = [
-    "Order Accepted",
-    "Picked Up",
-    "On the Way",
-    "Arrived",
-    "Delivered",
-  ];
+  static const steps = ["Order Confirmed", "Picked Up", "Arrived", "Delivered"];
 
   static const stepIcons = [
     Icons.check,
     Icons.inventory_2,
-    Icons.local_shipping,
     Icons.location_on,
     Icons.check_circle,
   ];
@@ -209,7 +256,7 @@ class OrderTrackingPage extends StatelessWidget {
                     ),
                     SizedBox(width: 6),
                     Text(
-                      order.timeSlot,
+                      etaSummary,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 17,
@@ -302,7 +349,10 @@ class OrderTrackingPage extends StatelessWidget {
                             SizedBox(height: 2),
                             Text(
                               statusIndex < steps.length - 1
-                                  ? "Deliverer is ${driverDistanceText.isNotEmpty ? driverDistanceText : '...'} • ETA ${driverEtaText.isNotEmpty ? driverEtaText : '...'}"
+                                  ? (driverDistanceText.isNotEmpty ||
+                                            driverEtaText.isNotEmpty
+                                        ? "Deliverer is ${driverDistanceText.isNotEmpty ? driverDistanceText : 'location unavailable'} • ETA ${driverEtaText.isNotEmpty ? driverEtaText : 'not available yet'}"
+                                        : "Deliverer location unavailable • ETA not available yet")
                                   : "Deliverer has arrived at your location",
                               style: TextStyle(
                                 fontSize: 14,
@@ -336,7 +386,7 @@ class OrderTrackingPage extends StatelessWidget {
                             color: Colors.white,
                           ),
                         ),
-                        onPressed: () {},
+                        onPressed: () => openLiveMap(context, order),
                       ),
                     ],
                   ),
@@ -450,7 +500,7 @@ class OrderTrackingPage extends StatelessWidget {
                           Icon(Icons.access_time, color: primary, size: 20),
                           SizedBox(width: 9),
                           Text(
-                            "ETA: ${driverEtaText.isNotEmpty ? driverEtaText : '...'}",
+                            "ETA: ${driverEtaText.isNotEmpty ? driverEtaText : (etaSummary.isNotEmpty ? etaSummary : 'Not available yet')}",
                             style: TextStyle(
                               fontWeight: FontWeight.w500,
                               fontSize: 15,
@@ -597,51 +647,6 @@ class OrderTrackingPage extends StatelessWidget {
                       ),
                       SizedBox(height: 11),
                     ],
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {},
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primary,
-                              side: BorderSide(color: primary, width: 2),
-                              minimumSize: Size.fromHeight(47),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: Text(
-                              "Browse More",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: 13),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {},
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primary,
-                              side: BorderSide(color: primary, width: 2),
-                              minimumSize: Size.fromHeight(47),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: Text(
-                              "Contact Deliverer",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),

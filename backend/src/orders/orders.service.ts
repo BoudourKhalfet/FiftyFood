@@ -2,14 +2,17 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderSummary } from './order-summary.interface';
 import { customAlphabet } from 'nanoid';
 import * as crypto from 'crypto';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 8);
 
@@ -52,8 +55,27 @@ function getMainItem(raw: unknown): OfferItem | undefined {
 }
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(OrdersService.name);
+  private expirationTimer?: NodeJS.Timeout;
+
   constructor(private prisma: PrismaService) {}
+
+  async onModuleInit() {
+    await this.expirePendingOrdersPastPickupTime();
+    this.expirationTimer = setInterval(() => {
+      void this.expirePendingOrdersPastPickupTime().catch((error: unknown) => {
+        this.logger.error('Failed to expire pending orders', error as Error);
+      });
+    }, 60_000);
+  }
+
+  onModuleDestroy() {
+    if (this.expirationTimer) {
+      clearInterval(this.expirationTimer);
+      this.expirationTimer = undefined;
+    }
+  }
 
   private getQrSecret(): string {
     return process.env.QR_SECRET || process.env.JWT_SECRET || 'dev_qr_secret';
@@ -192,7 +214,110 @@ export class OrdersService {
     if (order.pickupQrStatus === 'EXPIRED') {
       return false;
     }
-    return !['DELIVERED', 'CANCELLED'].includes(order.status);
+    return !['DELIVERED', 'CANCELLED', 'EXPIRED'].includes(order.status);
+  }
+
+  private getPickupDeadline(
+    pickupDateTime: Date | null,
+    pickupTime?: string | null,
+  ): Date | null {
+    if (!pickupDateTime) return null;
+
+    const source = (pickupTime ?? '').trim();
+    if (!source) return pickupDateTime;
+
+    const timePart = source.includes('-')
+      ? (source.split('-').pop()?.trim() ?? '')
+      : source;
+    const match = timePart.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return pickupDateTime;
+
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return pickupDateTime;
+    }
+
+    const deadline = new Date(pickupDateTime);
+    deadline.setHours(hour, minute, 0, 0);
+    return deadline;
+  }
+
+  private async expirePendingOrdersPastPickupTime() {
+    await this.prisma.order.updateMany({
+      where: {
+        status: 'PENDING',
+      },
+      data: {
+        status: 'CONFIRMED',
+      },
+    });
+
+    const pendingOrders = await this.prisma.order.findMany({
+      where: {
+        status: {
+          in: ['CONFIRMED', 'READY'],
+        },
+        pickupQrUsedAt: null,
+        pickupQrStatus: {
+          not: 'USED',
+        },
+      },
+      select: {
+        id: true,
+        offerId: true,
+      },
+    });
+
+    if (!pendingOrders.length) {
+      return;
+    }
+
+    const offers = await this.prisma.offer.findMany({
+      where: {
+        id: {
+          in: pendingOrders.map((order) => order.offerId),
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        pickupTime: true,
+        pickupDateTime: true,
+      },
+    });
+
+    const offerById = new Map(offers.map((offer) => [offer.id, offer]));
+
+    const expiredOrderIds = pendingOrders
+      .filter((order) => {
+        const offer = offerById.get(order.offerId);
+        if (!offer) {
+          return false;
+        }
+
+        if (offer.status === 'EXPIRED') {
+          return true;
+        }
+
+        const deadline = this.getPickupDeadline(
+          offer.pickupDateTime,
+          offer.pickupTime,
+        );
+        return deadline != null && deadline.getTime() <= Date.now();
+      })
+      .map((order) => order.id);
+
+    if (!expiredOrderIds.length) {
+      return;
+    }
+
+    await this.prisma.$executeRaw`
+      UPDATE "Order"
+      SET "status" = 'EXPIRED'::"OrderStatus",
+          "updatedAt" = NOW()
+      WHERE "id" IN (${Prisma.join(expiredOrderIds)})
+    `;
   }
 
   private normalizeText(value?: string | null): string {
@@ -303,6 +428,7 @@ export class OrdersService {
         reference,
         offerId,
         orderCode: generatedOrderCode,
+        status: 'CONFIRMED',
       },
     });
     const pickupQrToken = await this.issuePickupQrToken(order);
@@ -353,6 +479,8 @@ export class OrdersService {
   }
 
   async findByClient(clientId: string) {
+    await this.expirePendingOrdersPastPickupTime();
+
     const orders = await this.prisma.order.findMany({
       where: { clientId },
       include: {
@@ -409,6 +537,8 @@ export class OrdersService {
   }
 
   async findAllOrders() {
+    await this.expirePendingOrdersPastPickupTime();
+
     return this.prisma.order
       .findMany({
         include: {
@@ -456,6 +586,8 @@ export class OrdersService {
     orderId: string,
     requester: { id: string; role: Role },
   ) {
+    await this.expirePendingOrdersPastPickupTime();
+
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -473,7 +605,15 @@ export class OrdersService {
         },
         client: {
           select: {
-            clientProfile: { select: { fullName: true, phone: true } },
+            clientProfile: {
+              select: {
+                fullName: true,
+                phone: true,
+                locationConsentGiven: true,
+                lastLatitude: true,
+                lastLongitude: true,
+              },
+            },
           },
         },
         livreur: {
@@ -485,6 +625,8 @@ export class OrdersService {
                 vehicleType: true,
                 locationConsentGiven: true,
                 phone: true,
+                lastLatitude: true,
+                lastLongitude: true,
               },
             },
           },
@@ -557,6 +699,18 @@ export class OrdersService {
       restaurantPhone: order.restaurant?.restaurantProfile?.phone ?? '',
       clientName: order.client?.clientProfile?.fullName ?? '',
       clientPhone: order.client?.clientProfile?.phone ?? '',
+      clientLocation:
+        order.client?.clientProfile?.locationConsentGiven &&
+        typeof order.client?.clientProfile?.lastLatitude === 'number' &&
+        typeof order.client?.clientProfile?.lastLongitude === 'number'
+          ? `${order.client.clientProfile.lastLatitude},${order.client.clientProfile.lastLongitude}`
+          : '',
+      delivererLocation:
+        order.livreur?.livreurProfile?.locationConsentGiven &&
+        typeof order.livreur?.livreurProfile?.lastLatitude === 'number' &&
+        typeof order.livreur?.livreurProfile?.lastLongitude === 'number'
+          ? `${order.livreur.livreurProfile.lastLatitude},${order.livreur.livreurProfile.lastLongitude}`
+          : '',
       pickupQrFor,
       pickupQrData,
       pickupQrDisplay: this.getQrDisplayCode(
@@ -648,6 +802,8 @@ export class OrdersService {
   }
 
   async acceptOrder(orderId: string, delivererId: string) {
+    await this.expirePendingOrdersPastPickupTime();
+
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });
@@ -664,7 +820,7 @@ export class OrdersService {
 
     if (!order) throw new Error('Order not found');
     if (order.livreurId) throw new Error('Order already assigned');
-    if (!['CONFIRMED', 'PENDING'].includes(order.status))
+    if (!['CONFIRMED'].includes(order.status))
       throw new Error('Order not available for assignment');
 
     return this.prisma.order.update({
@@ -702,6 +858,8 @@ export class OrdersService {
   }
 
   async findByRestaurant(restaurantId: string) {
+    await this.expirePendingOrdersPastPickupTime();
+
     return this.prisma.order
       .findMany({
         where: { restaurantId },
@@ -748,6 +906,8 @@ export class OrdersService {
     orderId: string,
     actor: { id: string; role: Role },
   ) {
+    await this.expirePendingOrdersPastPickupTime();
+
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });
@@ -759,13 +919,9 @@ export class OrdersService {
     if (actor.role === Role.RESTAURANT && order.restaurantId !== actor.id) {
       throw new ForbiddenException('You can only confirm your own orders');
     }
-    if (order.status !== 'PENDING')
-      throw new Error('Order must be pending to be confirmed');
 
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: 'CONFIRMED' },
-    });
+    // Orders are now auto-confirmed when payment succeeds.
+    return order;
   }
 
   async validatePickupQrScan(
@@ -778,6 +934,8 @@ export class OrdersService {
     orderStatus?: string;
     collectionMethod?: string | null;
   }> {
+    await this.expirePendingOrdersPastPickupTime();
+
     const parsed = this.parseAndVerifyQrToken(token);
     const tokenHash = this.sha256(token);
 
@@ -952,6 +1110,8 @@ export class OrdersService {
   }
 
   async markOrderReady(orderId: string, actor: { id: string; role: Role }) {
+    await this.expirePendingOrdersPastPickupTime();
+
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
     });

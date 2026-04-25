@@ -204,6 +204,7 @@ export class PublicRestaurantsController {
     return {
       id: profile.id,
       restaurantName: profile.restaurantName,
+      establishmentType: profile.establishmentType,
       avgRating: profile.avgRating,
       address: profile.address,
       phone: profile.phone,

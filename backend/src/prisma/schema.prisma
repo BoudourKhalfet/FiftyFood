@@ -24,25 +24,27 @@ enum AccountStatus {
   PROFILE_EDIT
 }
 
-enum DietaryRestriction {
-  NO_RESTRICTIONS
-  VEGETARIAN
-  VEGAN
-  GLUTEN_FREE
-  DAIRY_FREE
-  NUT_FREE
-  HALAL
-}
-
 enum CuisinePreference {
-  ITALIAN
-  JAPANESE
-  HEALTHY
-  BURGERS
   BAKERY
   CAFE
+  GRILL
+  FAST_FOOD
+  VEGETARIAN
+  HALAL
+  SEAFOOD
+  SUSHI
+  PIZZA
+  BURGER
+  BBQ
+  HEALTHY
+  DESSERT
+  STREET_FOOD
   SANDWICHES
-  VEGAN
+  SALAD
+  PASTA
+  BREAKFAST
+  FINE_DINING
+  BRUNCH
 }
 
 model User {
@@ -81,6 +83,9 @@ model User {
   reviewsGiven Review[]     @relation("Reviewer") 
   restaurantReviews Review[] @relation("RestaurantReview") 
   delivererReviews Review[] @relation("DelivererReview")
+  complaintsGiven Complaint[] @relation("Complainant")
+  restaurantComplaints Complaint[] @relation("RestaurantComplaint")
+  delivererComplaints Complaint[] @relation("DelivererComplaint")
 
   // Role-specific profiles (1-1)
   clientProfile ClientProfile?
@@ -107,7 +112,6 @@ model ClientProfile {
   notificationPreferences Json? @default("{}")
 
   cuisinePreferences  CuisinePreference[]
-  dietaryRestrictions DietaryRestriction[]
 
   termsAcceptedAt   DateTime?
 
@@ -299,6 +303,7 @@ model Order {
   pickupQrStatus    QrStatus @default(NOT_SCANNED)
 
   reviews Review[]
+  complaints Complaint[]
 }
 
 enum CollectionMethod {
@@ -320,6 +325,7 @@ enum OrderStatus {
   PICKED_UP
   DELIVERED
   CANCELLED
+  EXPIRED
 }
 
 enum QrStatus {
@@ -414,4 +420,28 @@ model Review {
   @@index([orderId])
   @@index([restaurantId])
   @@index([delivererId])
+}
+
+model Complaint {
+  id           String          @id @default(cuid())
+  orderId      String?
+  order        Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  complainantId String
+  complainant   User           @relation("Complainant", fields: [complainantId], references: [id], onDelete: Cascade)
+
+  restaurantId String?
+  restaurant   User?           @relation("RestaurantComplaint", fields: [restaurantId], references: [id], onDelete: SetNull)
+
+  delivererId  String?
+  deliverer    User?           @relation("DelivererComplaint", fields: [delivererId], references: [id], onDelete: SetNull)
+
+  reason       String
+  description  String?
+  createdAt    DateTime        @default(now())
+
+  @@index([orderId])
+  @@index([restaurantId])
+  @@index([delivererId])
+  @@index([complainantId])
 }

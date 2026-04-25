@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       "^/auth": "http://localhost:3000",
       "^/admin": "http://localhost:3000",
+      "^/orders": "http://localhost:3000",
     },
     // Vite v4+ SPA fallback is ON by default; no need for extra config usually
   },

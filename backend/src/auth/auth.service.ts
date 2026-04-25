@@ -162,7 +162,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.46.51:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
 
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
@@ -332,7 +332,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.46.51:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}&changeEmail=1`;
 
     try {
@@ -357,7 +357,6 @@ export class AuthService {
       phone?: string | null;
       defaultAddress?: string | null;
       cuisinePreferences?: unknown[] | null;
-      dietaryRestrictions?: unknown[] | null;
     } | null;
   }) {
     const profile = user.clientProfile;
@@ -365,8 +364,7 @@ export class AuthService {
       !!profile?.fullName &&
       !!profile?.phone &&
       !!profile?.defaultAddress &&
-      (profile?.cuisinePreferences?.length ?? 0) > 0 &&
-      (profile?.dietaryRestrictions?.length ?? 0) > 0
+      (profile?.cuisinePreferences?.length ?? 0) > 0
     );
   }
 
@@ -412,7 +410,6 @@ export class AuthService {
       phone?: string | null;
       defaultAddress?: string | null;
       cuisinePreferences?: unknown[] | null;
-      dietaryRestrictions?: unknown[] | null;
     } | null;
   }): number | null {
     return this.isClientProfileComplete(user) ? null : 2;
@@ -500,7 +497,6 @@ export class AuthService {
       phone?: string | null;
       defaultAddress?: string | null;
       cuisinePreferences?: unknown[] | null;
-      dietaryRestrictions?: unknown[] | null;
     } | null;
     restaurantProfile?: {
       restaurantName?: string | null;
@@ -657,7 +653,12 @@ export class AuthService {
 
   async requestPasswordReset(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) return;
+    if (!user) {
+      return {
+        message:
+          'If an account exists for this email, a reset link has been sent.',
+      };
+    }
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = sha256(rawToken);
@@ -673,7 +674,7 @@ export class AuthService {
 
     const resetUrl =
       (process.env.PASSWORD_RESET_URL ||
-        'http://192.168.245.51:52530/#/reset-password') + `?token=${rawToken}`;
+        'http://192.168.46.51:52530/reset-password') + `?token=${rawToken}`;
     try {
       await this.mailService.sendMail(
         user.email,
@@ -682,8 +683,12 @@ export class AuthService {
       );
     } catch (error) {
       console.error('Failed to send password reset email:', error);
-      // Don't throw - allow password reset request to succeed even if email fails
     }
+
+    return {
+      message:
+        'If an account exists for this email, a reset link has been sent.',
+    };
   }
 
   async resetPassword(token: string, newPassword: string) {
@@ -728,7 +733,6 @@ export class AuthService {
             phone: true,
             defaultAddress: true,
             cuisinePreferences: true,
-            dietaryRestrictions: true,
           },
         },
         restaurantProfile: {
@@ -766,8 +770,7 @@ export class AuthService {
         : !!clientProfile?.fullName &&
           !!clientProfile?.phone &&
           !!clientProfile?.defaultAddress &&
-          (clientProfile?.cuisinePreferences?.length ?? 0) > 0 &&
-          (clientProfile?.dietaryRestrictions?.length ?? 0) > 0;
+          (clientProfile?.cuisinePreferences?.length ?? 0) > 0;
 
     return {
       ...user,
@@ -783,7 +786,7 @@ export class AuthService {
     if (user.emailVerifiedAt) throw new ForbiddenException('Already verified');
     const token = await this.generateEmailVerificationToken(user);
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.46.51:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${token}`;
     try {
       await this.mailService.sendMail(

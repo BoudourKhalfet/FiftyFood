@@ -678,7 +678,7 @@ export class AdminService {
 
     // Send welcome email
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.245.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.46.51:3000';
     const roleLabel =
       role === Role.CLIENT
         ? 'Client'

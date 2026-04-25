@@ -1,11 +1,51 @@
 import 'package:flutter/material.dart';
+import 'client/signin.dart' as client_signin;
+import 'partner/signin.dart' as partner_signin;
+import 'signin_page.dart';
 
 class PendingApprovalPage extends StatelessWidget {
-  const PendingApprovalPage({Key? key}) : super(key: key);
+  final String role;
+
+  const PendingApprovalPage({Key? key, this.role = 'restaurant'})
+    : super(key: key);
+
+  void _backToSignIn(BuildContext context) {
+    final normalizedRole = role.toLowerCase();
+
+    Widget destination;
+    switch (normalizedRole) {
+      case 'client':
+        destination = const client_signin.ClientSignInPage();
+        break;
+      case 'livreur':
+      case 'deliverer':
+        destination = const SignInPage(role: 'Deliverer');
+        break;
+      case 'restaurant':
+      case 'commercant':
+      case 'partner':
+      default:
+        destination = const partner_signin.PartnerSignInPage();
+        break;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => destination),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => _backToSignIn(context),
+        ),
+      ),
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
@@ -61,9 +101,7 @@ class PendingApprovalPage extends StatelessWidget {
                 width: double.infinity,
                 child: OutlinedButton(
                   onPressed: () {
-                    Navigator.of(
-                      context,
-                    ).pushNamedAndRemoveUntil('/home', (route) => false);
+                    _backToSignIn(context);
                   },
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFF1F9D7A), width: 2),
@@ -73,7 +111,7 @@ class PendingApprovalPage extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'Back to Home',
+                    'Back to Sign In',
                     style: TextStyle(
                       color: Color(0xFF1F9D7A),
                       fontSize: 16,
