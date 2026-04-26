@@ -1,17 +1,28 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import Stripe from 'stripe';
 
 @Injectable()
 export class StripeService {
   private readonly logger = new Logger(StripeService.name);
-  private stripeSecretKey: string;
+  private stripe: InstanceType<typeof Stripe>;
   private stripePk: string;
 
   constructor() {
-    this.stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
+    const secretKey = process.env.STRIPE_SECRET_KEY || '';
     this.stripePk = process.env.STRIPE_PUBLISHABLE_KEY || '';
 
-    if (!this.stripeSecretKey) {
+    if (!secretKey) {
       this.logger.warn('STRIPE_SECRET_KEY not configured');
+    }
+
+    this.stripe = new Stripe(secretKey, {
+      apiVersion: '2026-03-25.dahlia',
+    });
+  }
+
+  private ensureStripe() {
+    if (!this.stripe) {
+      throw new BadRequestException('Stripe is not configured');
     }
   }
 
@@ -21,53 +32,35 @@ export class StripeService {
     email?: string;
     description?: string;
   }) {
-    if (!this.stripeSecretKey) {
-      throw new BadRequestException('Stripe is not configured');
-    }
+    this.ensureStripe();
 
-    try {
-      // Using dynamic import to avoid requiring stripe at module load
-      const Stripe = require('stripe');
-      const stripe = new Stripe(this.stripeSecretKey);
+    const paymentIntent = await this.stripe.paymentIntents.create({
+      amount: Math.round(params.amount * 100),
+      currency: 'eur',
+      metadata: {
+        orderId: params.orderId,
+        email: params.email || 'unknown',
+      },
+      description: params.description || `FiftyFood Order ${params.orderId}`,
+    });
 
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(params.amount * 100), // Convert to cents
-        currency: 'eur',
-        metadata: {
-          orderId: params.orderId,
-          email: params.email || 'unknown',
-        },
-        description: params.description || `FiftyFood Order ${params.orderId}`,
-      });
-
-      return {
-        clientSecret: paymentIntent.client_secret,
-        publishableKey: this.stripePk,
-      };
-    } catch (error) {
-      this.logger.error('Stripe payment intent error:', error);
-      throw new BadRequestException('Failed to create Stripe payment intent');
-    }
+    return {
+      clientSecret: paymentIntent.client_secret,
+      publishableKey: this.stripePk,
+    };
   }
 
   async confirmPayment(paymentIntentId: string) {
-    try {
-      const Stripe = require('stripe');
-      const stripe = new Stripe(this.stripeSecretKey);
+    this.ensureStripe();
 
-      const paymentIntent = await stripe.paymentIntents.retrieve(
-        paymentIntentId,
-      );
+    const paymentIntent =
+      await this.stripe.paymentIntents.retrieve(paymentIntentId);
 
-      return {
-        status: paymentIntent.status,
-        amount: paymentIntent.amount / 100,
-        orderId: paymentIntent.metadata?.orderId,
-      };
-    } catch (error) {
-      this.logger.error('Stripe confirmation error:', error);
-      throw new BadRequestException('Failed to confirm Stripe payment');
-    }
+    return {
+      status: paymentIntent.status,
+      amount: paymentIntent.amount / 100,
+      orderId: paymentIntent.metadata?.orderId,
+    };
   }
 
   async createCheckoutSession(params: {
@@ -77,68 +70,55 @@ export class StripeService {
     successUrl?: string;
     cancelUrl?: string;
   }) {
-    if (!this.stripeSecretKey) {
-      throw new BadRequestException('Stripe is not configured');
-    }
+    this.ensureStripe();
 
-    try {
-      const Stripe = require('stripe');
-      const stripe = new Stripe(this.stripeSecretKey);
+    const baseUrl =
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
 
-      const baseUrl =
-        process.env.PUBLIC_BACKEND_URL || 'http://192.168.61.154:3000';
-      const successUrl =
-        params.successUrl || `${baseUrl}/payments/stripe/checkout/success`;
-      const cancelUrl =
-        params.cancelUrl || `${baseUrl}/payments/stripe/checkout/cancel`;
+    const successUrl =
+      params.successUrl || `${baseUrl}/payments/stripe/checkout/success`;
 
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'eur',
-              unit_amount: Math.round(params.amount * 100),
-              product_data: {
-                name: `FiftyFood Order ${params.orderId}`,
-              },
+    const cancelUrl =
+      params.cancelUrl || `${baseUrl}/payments/stripe/checkout/cancel`;
+
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            unit_amount: Math.round(params.amount * 100),
+            product_data: {
+              name: `FiftyFood Order ${params.orderId}`,
             },
-            quantity: 1,
           },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        customer_email: params.email || undefined,
-        metadata: {
-          orderId: params.orderId,
+          quantity: 1,
         },
-      });
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      customer_email: params.email,
+      metadata: {
+        orderId: params.orderId,
+      },
+    });
 
-      return {
-        sessionId: session.id,
-        sessionUrl: session.url,
-      };
-    } catch (error) {
-      this.logger.error('Stripe checkout session error:', error);
-      throw new BadRequestException('Failed to create Stripe checkout session');
-    }
+    return {
+      sessionId: session.id,
+      sessionUrl: session.url,
+    };
   }
 
   async confirmCheckoutSession(sessionId: string) {
-    try {
-      const Stripe = require('stripe');
-      const stripe = new Stripe(this.stripeSecretKey);
+    this.ensureStripe();
 
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
-      return {
-        status: session.payment_status,
-        orderId: session.metadata?.orderId,
-        paymentIntentId: session.payment_intent,
-      };
-    } catch (error) {
-      this.logger.error('Stripe checkout confirm error:', error);
-      throw new BadRequestException('Failed to confirm Stripe checkout session');
-    }
+    const session = await this.stripe.checkout.sessions.retrieve(sessionId);
+
+    return {
+      status: session.payment_status,
+      orderId: session.metadata?.orderId,
+      paymentIntentId: session.payment_intent,
+    };
   }
 }

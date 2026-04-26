@@ -23,20 +23,19 @@ type ReqWithUser = Request & { user: JwtPayload };
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private paymentsService: PaymentsService) {}
+  constructor(private readonly paymentsService: PaymentsService) {}
 
-  /**
-   * Create Stripe payment intent
-   * POST /payments/create-intent
-   */
+  // =========================
+  // STRIPE INTENT
+  // =========================
   @Post('create-intent')
   @UseGuards(JwtAuthGuard)
   async createStripeIntent(
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeIntentDto,
   ) {
-    if (!dto.orderId || !dto.amount || dto.amount <= 0) {
-      throw new BadRequestException('Invalid order or amount');
+    if (!dto.orderId) {
+      throw new BadRequestException('Order ID is required');
     }
 
     return this.paymentsService.createStripeIntent({
@@ -47,10 +46,9 @@ export class PaymentsController {
     });
   }
 
-  /**
-   * Create Stripe Checkout session (web)
-   * POST /payments/stripe/checkout
-   */
+  // =========================
+  // STRIPE CHECKOUT
+  // =========================
   @Post('stripe/checkout')
   @UseGuards(JwtAuthGuard)
   async createStripeCheckout(
@@ -70,10 +68,9 @@ export class PaymentsController {
     });
   }
 
-  /**
-   * Create Konnect (E-Dinar) payment
-   * POST /payments/konnect
-   */
+  // =========================
+  // KONNECT PAYMENT
+  // =========================
   @Post('konnect')
   @UseGuards(JwtAuthGuard)
   async createKonnectPayment(
@@ -94,10 +91,9 @@ export class PaymentsController {
     });
   }
 
-  /**
-   * Create PayPal payment
-   * POST /payments/paypal
-   */
+  // =========================
+  // PAYPAL PAYMENT
+  // =========================
   @Post('paypal')
   @UseGuards(JwtAuthGuard)
   async createPayPalPayment(
@@ -117,10 +113,9 @@ export class PaymentsController {
     });
   }
 
-  /**
-   * Verify Konnect payment status
-   * GET /payments/konnect/:paymentId/verify/:orderId
-   */
+  // =========================
+  // KONNECT VERIFY
+  // =========================
   @Get('konnect/:paymentId/verify/:orderId')
   async verifyKonnectPayment(
     @Param('paymentId') paymentId: string,
@@ -129,10 +124,9 @@ export class PaymentsController {
     return this.paymentsService.verifyKonnectPayment(paymentId, orderId);
   }
 
-  /**
-   * Capture PayPal payment
-   * POST /payments/paypal/:paypalOrderId/capture/:orderId
-   */
+  // =========================
+  // PAYPAL CAPTURE
+  // =========================
   @Post('paypal/:paypalOrderId/capture/:orderId')
   @UseGuards(JwtAuthGuard)
   async capturePayPalPayment(
@@ -147,27 +141,31 @@ export class PaymentsController {
     );
   }
 
-  /**
-   * Confirm Stripe payment
-   * POST /payments/confirm-stripe/:orderId/:paymentIntentId
-   */
+  // =========================
+  // STRIPE CONFIRM INTENT
+  // =========================
   @Post('confirm-stripe/:orderId/:paymentIntentId')
   async confirmStripePayment(
     @Param('orderId') orderId: string,
     @Param('paymentIntentId') paymentIntentId: string,
   ) {
-    return this.paymentsService.confirmStripePayment(orderId, paymentIntentId);
+    return this.paymentsService.confirmStripePayment(
+      orderId,
+      paymentIntentId,
+    );
   }
 
-  /**
-   * Confirm Stripe Checkout session (web)
-   * GET /payments/stripe/checkout/:sessionId/confirm/:orderId
-   */
+  // =========================
+  // STRIPE CHECKOUT CONFIRM
+  // =========================
   @Get('stripe/checkout/:sessionId/confirm/:orderId')
   async confirmStripeCheckout(
     @Param('sessionId') sessionId: string,
     @Param('orderId') orderId: string,
   ) {
-    return this.paymentsService.confirmStripeCheckoutSession(sessionId, orderId);
+    return this.paymentsService.confirmStripeCheckoutSession(
+      sessionId,
+      orderId,
+    );
   }
 }

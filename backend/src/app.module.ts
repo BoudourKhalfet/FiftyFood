@@ -13,6 +13,7 @@ import { LivreurModule } from './livreur/livreur.module';
 import { OffersModule } from './offers/offers.module';
 import { OrdersModule } from './orders/orders.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     OffersModule,
     OrdersModule,
     FeedbackModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

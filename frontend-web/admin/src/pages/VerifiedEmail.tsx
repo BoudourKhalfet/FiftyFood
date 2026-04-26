@@ -22,7 +22,7 @@ export default function VerifiedEmail() {
 
       try {
         const backendUrl =
-          import.meta.env.VITE_BACKEND_URL || "http://172.16.50.169:3000";
+          import.meta.env.VITE_BACKEND_URL || "http://192.168.1.15:3000";
         const response = await fetch(
           `${backendUrl}/auth/verify-email?token=${token}`,
         );

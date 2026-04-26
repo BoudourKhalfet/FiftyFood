@@ -15,9 +15,9 @@ export class PaymentsService {
     private paypalService: PayPalService,
   ) {}
 
-  /**
-   * Create Stripe payment intent
-   */
+  // =========================
+  // STRIPE PAYMENT INTENT
+  // =========================
   async createStripeIntent(params: {
     orderId: string;
     userId: string;
@@ -28,34 +28,27 @@ export class PaymentsService {
       where: { id: params.orderId },
     });
 
-    if (!order) {
-      throw new BadRequestException('Order not found');
-    }
+    if (!order) throw new BadRequestException('Order not found');
 
     if (order.clientId !== params.userId && order.restaurantId !== params.userId) {
       throw new BadRequestException('Unauthorized');
     }
 
-    // ✅ FIX: use DB amount instead of frontend amount
     const intent = await this.stripeService.createPaymentIntent({
       orderId: params.orderId,
       amount: order.total,
       email: params.email,
     });
 
-    await this.prisma.order.update({
-      where: { id: params.orderId },
-      data: {
-        status: 'PENDING' as any,
-      },
-    });
+    // ❌ DO NOT change order status here
+    // payment is not confirmed yet
 
     return intent;
   }
 
-  /**
-   * Create Konnect (E-Dinar) payment
-   */
+  // =========================
+  // KONNECT PAYMENT
+  // =========================
   async createKonnectPayment(params: {
     orderId: string;
     userId: string;
@@ -68,9 +61,7 @@ export class PaymentsService {
       where: { id: params.orderId },
     });
 
-    if (!order) {
-      throw new BadRequestException('Order not found');
-    }
+    if (!order) throw new BadRequestException('Order not found');
 
     if (order.clientId !== params.userId && order.restaurantId !== params.userId) {
       throw new BadRequestException('Unauthorized');
@@ -85,10 +76,11 @@ export class PaymentsService {
       phone: params.phone,
     });
 
+    // optional tracking only (NOT order status)
     await this.prisma.order.update({
       where: { id: params.orderId },
       data: {
-        status: 'PENDING' as any,
+        paymentMethod: 'KONNECT',
       },
     });
 
@@ -98,9 +90,9 @@ export class PaymentsService {
     };
   }
 
-  /**
-   * Create PayPal payment
-   */
+  // =========================
+  // PAYPAL PAYMENT
+  // =========================
   async createPayPalPayment(params: {
     orderId: string;
     userId: string;
@@ -112,9 +104,7 @@ export class PaymentsService {
       where: { id: params.orderId },
     });
 
-    if (!order) {
-      throw new BadRequestException('Order not found');
-    }
+    if (!order) throw new BadRequestException('Order not found');
 
     if (order.clientId !== params.userId && order.restaurantId !== params.userId) {
       throw new BadRequestException('Unauthorized');
@@ -130,7 +120,6 @@ export class PaymentsService {
     await this.prisma.order.update({
       where: { id: params.orderId },
       data: {
-        status: 'PENDING' as any,
         paymentMethod: 'PAYPAL',
         paymentDetails: {
           provider: 'paypal',
@@ -147,6 +136,70 @@ export class PaymentsService {
     };
   }
 
+  // =========================
+  // STRIPE CONFIRM (PAYMENT INTENT)
+  // =========================
+  async confirmStripePayment(orderId: string, paymentIntentId: string) {
+    const confirmation = await this.stripeService.confirmPayment(paymentIntentId);
+
+    if (confirmation.status === 'succeeded') {
+      await this.updateOrderStatus(orderId, 'PAID');
+    } else if (confirmation.status === 'requires_payment_method') {
+      await this.updateOrderStatus(orderId, 'FAILED');
+    }
+
+    return confirmation;
+  }
+
+  // =========================
+  // STRIPE CHECKOUT SESSION
+  // =========================
+  async createStripeCheckoutSession(params: {
+    orderId: string;
+    userId: string;
+    email?: string;
+    successUrl?: string;
+    cancelUrl?: string;
+  }) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: params.orderId },
+    });
+
+    if (!order) throw new BadRequestException('Order not found');
+
+    if (order.clientId !== params.userId && order.restaurantId !== params.userId) {
+      throw new BadRequestException('Unauthorized');
+    }
+
+    const session = await this.stripeService.createCheckoutSession({
+      orderId: params.orderId,
+      amount: order.total,
+      email: params.email,
+      successUrl: params.successUrl,
+      cancelUrl: params.cancelUrl,
+    });
+
+    return session;
+  }
+
+  // =========================
+  // STRIPE CHECKOUT CONFIRM
+  // =========================
+  async confirmStripeCheckoutSession(sessionId: string, orderId: string) {
+    const confirmation = await this.stripeService.confirmCheckoutSession(sessionId);
+
+    if (confirmation.status === 'paid') {
+      await this.updateOrderStatus(orderId, 'PAID');
+    } else if (confirmation.status === 'unpaid') {
+      await this.updateOrderStatus(orderId, 'FAILED');
+    }
+
+    return confirmation;
+  }
+
+  // =========================
+  // KONNECT VERIFY
+  // =========================
   async verifyKonnectPayment(paymentId: string, orderId: string) {
     const verification = await this.konnectService.verifyPayment(paymentId);
 
@@ -159,6 +212,9 @@ export class PaymentsService {
     return verification;
   }
 
+  // =========================
+  // PAYPAL CAPTURE
+  // =========================
   async capturePayPalPayment(
     paypalOrderId: string,
     orderId: string,
@@ -168,12 +224,10 @@ export class PaymentsService {
       where: { id: orderId },
     });
 
-    if (!order) {
-      throw new BadRequestException('Order not found');
-    }
+    if (!order) throw new BadRequestException('Order not found');
 
     if (
-      userId != null &&
+      userId &&
       order.clientId !== userId &&
       order.restaurantId !== userId
     ) {
@@ -204,71 +258,9 @@ export class PaymentsService {
     return capture;
   }
 
-  async confirmStripePayment(orderId: string, paymentIntentId: string) {
-    const confirmation = await this.stripeService.confirmPayment(paymentIntentId);
-
-    if (confirmation.status === 'succeeded') {
-      await this.updateOrderStatus(orderId, 'PAID');
-    } else if (confirmation.status === 'requires_payment_method') {
-      // keep pending
-    } else {
-      await this.updateOrderStatus(orderId, 'FAILED');
-    }
-
-    return confirmation;
-  }
-
-  async createStripeCheckoutSession(params: {
-    orderId: string;
-    userId: string;
-    email?: string;
-    successUrl?: string;
-    cancelUrl?: string;
-  }) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: params.orderId },
-    });
-
-    if (!order) {
-      throw new BadRequestException('Order not found');
-    }
-
-    if (order.clientId !== params.userId && order.restaurantId !== params.userId) {
-      throw new BadRequestException('Unauthorized');
-    }
-
-    const session = await this.stripeService.createCheckoutSession({
-      orderId: params.orderId,
-      amount: order.total,
-      email: params.email,
-      successUrl: params.successUrl,
-      cancelUrl: params.cancelUrl,
-    });
-
-    await this.prisma.order.update({
-      where: { id: params.orderId },
-      data: {
-        status: 'PENDING' as any,
-      },
-    });
-
-    return session;
-  }
-
-  async confirmStripeCheckoutSession(sessionId: string, orderId: string) {
-    const confirmation = await this.stripeService.confirmCheckoutSession(
-      sessionId,
-    );
-
-    if (confirmation.status === 'paid') {
-      await this.updateOrderStatus(orderId, 'PAID');
-    } else if (confirmation.status === 'unpaid') {
-      await this.updateOrderStatus(orderId, 'FAILED');
-    }
-
-    return confirmation;
-  }
-
+  // =========================
+  // CORE STATUS UPDATE
+  // =========================
   private async updateOrderStatus(orderId: string, paymentStatus: string) {
     let orderStatus = 'PENDING';
 
@@ -278,75 +270,11 @@ export class PaymentsService {
       orderStatus = 'CANCELLED';
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: {
-          id: true,
-          status: true,
-          offerId: true,
-          items: true,
-        },
-      });
-
-      if (!order) {
-        throw new BadRequestException('Order not found');
-      }
-
-      if (paymentStatus === 'PAID' && order.status !== 'CONFIRMED') {
-        const quantityOrdered = this.extractOrderedQuantity(order.items);
-
-        await tx.offer.update({
-          where: { id: order.offerId },
-          data: { quantity: { decrement: quantityOrdered } },
-        });
-
-        const updatedOffer = await tx.offer.findUnique({
-          where: { id: order.offerId },
-          select: { quantity: true },
-        });
-
-        if (updatedOffer && updatedOffer.quantity <= 0) {
-          await tx.offer.update({
-            where: { id: order.offerId },
-            data: { status: 'SOLD_OUT' as any },
-          });
-        }
-      }
-
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: orderStatus as any,
-        },
-      });
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: orderStatus as any,
+      },
     });
-  }
-
-  private extractOrderedQuantity(items: unknown): number {
-    try {
-      if (items == null) return 1;
-
-      if (typeof items === 'string') {
-        const parsed = JSON.parse(items) as unknown;
-        return this.extractOrderedQuantity(parsed);
-      }
-
-      if (Array.isArray(items)) {
-        const first = items[0] as { quantity?: unknown } | undefined;
-        const qty = Number(first?.quantity ?? 1);
-        return Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
-      }
-
-      if (typeof items === 'object') {
-        const obj = items as { quantity?: unknown };
-        const qty = Number(obj.quantity ?? 1);
-        return Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
-      }
-    } catch {
-      return 1;
-    }
-
-    return 1;
   }
 }
