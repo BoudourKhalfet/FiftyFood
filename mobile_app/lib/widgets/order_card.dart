@@ -203,6 +203,7 @@ class OrderCard extends StatelessWidget {
   final String restaurantName;
   final String timeSlot;
   final String date;
+  final int itemsCount;
   final String imageUrl;
   final double price;
   final VoidCallback? onViewQR;
@@ -229,6 +230,7 @@ class OrderCard extends StatelessWidget {
     required this.restaurantName,
     required this.timeSlot,
     required this.date,
+    this.itemsCount = 1,
     required this.imageUrl,
     required this.price,
     this.onViewQR,
@@ -360,6 +362,17 @@ class OrderCard extends StatelessWidget {
                     ),
                     SizedBox(width: 3),
                     Text(date, style: TextStyle(fontSize: 14)),
+                    SizedBox(width: 12),
+                    Icon(
+                      Icons.shopping_bag_outlined,
+                      size: 16,
+                      color: Colors.grey[600],
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      '${itemsCount < 1 ? 1 : itemsCount} item${(itemsCount < 1 ? 1 : itemsCount) > 1 ? 's' : ''}',
+                      style: TextStyle(fontSize: 14),
+                    ),
                   ],
                 ),
                 SizedBox(height: 12),

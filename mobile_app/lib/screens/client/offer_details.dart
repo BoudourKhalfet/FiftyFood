@@ -40,6 +40,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
   String? deliveryAddress;
   String? phoneNumber;
   String paymentMethod = 'card';
+  bool _checkingReserveAvailability = false;
   ClientProfile? _clientProfile;
   double? _currentLatitude;
   double? _currentLongitude;
@@ -70,8 +71,8 @@ class _OfferDetailsPageState extends State<OfferDetails> {
   Future<void> _loadCurrentLocation() async {
     try {
       final location = Location();
-      final serviceEnabled = await location.serviceEnabled() ||
-          await location.requestService();
+      final serviceEnabled =
+          await location.serviceEnabled() || await location.requestService();
       if (!serviceEnabled) return;
 
       var permission = await location.hasPermission();
@@ -194,6 +195,43 @@ class _OfferDetailsPageState extends State<OfferDetails> {
       debugPrint('[DELIVERY DEBUG][CLIENT] request failed: $e');
     }
     return false;
+  }
+
+  Future<bool> _isOfferStillAvailable(dynamic offer) async {
+    final offerId = (offer['id'] ?? '').toString();
+    if (offerId.isEmpty) return false;
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl('offers')));
+      if (response.statusCode != 200) {
+        return (offer['quantity'] ?? 0) is num && (offer['quantity'] ?? 0) > 0;
+      }
+
+      final rows = jsonDecode(response.body);
+      if (rows is! List) return false;
+
+      final match = rows.cast<dynamic>().firstWhere(
+        (row) => (row is Map && (row['id']?.toString() ?? '') == offerId),
+        orElse: () => null,
+      );
+
+      if (match is! Map) {
+        return false;
+      }
+
+      final latestQty = (match['quantity'] is num)
+          ? (match['quantity'] as num).toInt()
+          : int.tryParse(match['quantity']?.toString() ?? '') ?? 0;
+      offer['quantity'] = latestQty;
+
+      if (quantity > latestQty && latestQty > 0 && mounted) {
+        setState(() => quantity = latestQty);
+      }
+
+      return latestQty > 0;
+    } catch (_) {
+      return (offer['quantity'] ?? 0) is num && (offer['quantity'] ?? 0) > 0;
+    }
   }
 
   Widget buildOfferImage(String? imgUrl) {
@@ -595,21 +633,52 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                               vertical: 13,
                             ),
                           ),
-                          onPressed: () {
-                            showCollectionMethodDialog(
-                              discounted: discounted,
-                              pickup: pickupDisplay,
-                              address: address,
-                            );
-                          },
-                          child: const Text(
-                            'Reserve Now',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                          onPressed: _checkingReserveAvailability
+                              ? null
+                              : () async {
+                                  setState(() {
+                                    _checkingReserveAvailability = true;
+                                  });
+
+                                  final stillAvailable =
+                                      await _isOfferStillAvailable(offer);
+
+                                  if (!mounted) return;
+
+                                  setState(() {
+                                    _checkingReserveAvailability = false;
+                                  });
+
+                                  if (!stillAvailable) {
+                                    Navigator.of(context).pop('sold_out');
+                                    return;
+                                  }
+
+                                  showCollectionMethodDialog(
+                                    discounted: discounted,
+                                    pickup: pickupDisplay,
+                                    address: address,
+                                  );
+                                },
+                          child: _checkingReserveAvailability
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Text(
+                                  'Reserve Now',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                         ),
                       ],
                     ),

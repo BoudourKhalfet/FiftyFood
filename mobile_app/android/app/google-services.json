@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "307580063185",
+    "project_id": "fiftyfood-98b18",
+    "storage_bucket": "fiftyfood-98b18.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307580063185:android:af6725bfd5211482ebe4f0",
+        "android_client_info": {
+          "package_name": "com.fiftyfood.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDaQ4PDa8zX2f2DpQ_58hNvHdpbp4V41f4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

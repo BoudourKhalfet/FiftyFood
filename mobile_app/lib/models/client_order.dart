@@ -20,6 +20,7 @@ class ClientOrder {
   final String clientLocation;
   final String delivererLocation;
   final String restaurantAddress;
+  final String restaurantPhone;
   final String delivererPhone;
 
   ClientOrder({
@@ -44,6 +45,7 @@ class ClientOrder {
     required this.clientLocation,
     required this.delivererLocation,
     required this.restaurantAddress,
+    required this.restaurantPhone,
     required this.delivererPhone,
   });
 
@@ -70,6 +72,7 @@ class ClientOrder {
       clientLocation: json['clientLocation'] ?? '',
       delivererLocation: json['delivererLocation'] ?? '',
       restaurantAddress: json['restaurantAddress'] ?? '',
+      restaurantPhone: json['restaurantPhone'] ?? '',
       delivererPhone: json['delivererPhone'] ?? '',
     );
   }

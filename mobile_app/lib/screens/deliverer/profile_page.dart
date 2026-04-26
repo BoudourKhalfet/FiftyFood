@@ -18,7 +18,6 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _history = [];
   List<Map<String, dynamic>> _receivedReviews = [];
-  List<Map<String, dynamic>> _receivedComplaints = [];
   bool _loading = true;
   bool _savingSettings = false;
   String? _error;
@@ -60,10 +59,6 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
           'feedback/received/reviews?limit=5',
           headers: {'Authorization': 'Bearer $jwt'},
         ),
-        ApiService.get(
-          'feedback/received/complaints?limit=5',
-          headers: {'Authorization': 'Bearer $jwt'},
-        ),
       ]);
 
       final authUser = results[0] as Map<String, dynamic>;
@@ -80,12 +75,6 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
                 .map((item) => Map<String, dynamic>.from(item))
                 .toList()
           : <Map<String, dynamic>>[];
-      final complaints = results[4] is List
-          ? (results[4] as List)
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList()
-          : <Map<String, dynamic>>[];
 
       final notifications =
           profile['notificationPreferences'] as Map<String, dynamic>?;
@@ -96,7 +85,6 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
         _profile = profile;
         _history = history;
         _receivedReviews = reviews;
-        _receivedComplaints = complaints;
         _newOffers = notifications?['newOffers'] != false;
         _orderUpdates = notifications?['orderUpdates'] != false;
         _loading = false;
@@ -378,68 +366,6 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
               if (comment.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(comment),
-              ],
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _complaintsSection() {
-    if (_receivedComplaints.isEmpty) {
-      return const Text(
-        'No complaints yet.',
-        style: TextStyle(color: Color(0xFF6B7280)),
-      );
-    }
-
-    return Column(
-      children: _receivedComplaints.map((complaint) {
-        final reason = (complaint['reason'] ?? '').toString();
-        final description = (complaint['description'] ?? '').toString();
-        final reporter =
-            (complaint['complainantName'] ??
-                    complaint['complainantEmail'] ??
-                    '')
-                .toString();
-        return Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF1F1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.report_gmailerrorred,
-                    color: Color(0xFFDC2626),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      reason,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    reporter,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-              if (description.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(description),
               ],
             ],
           ),
@@ -995,7 +921,26 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
 
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Revoke device token before logout (best-effort)
+    final token = prefs.getString('fcmRegisteredToken');
+    if (token != null && token.isNotEmpty) {
+      try {
+        final jwt = await getJwt();
+        if (jwt != null && jwt.isNotEmpty) {
+          await ApiService.delete(
+            'notifications/me/device-tokens?token=$token',
+            headers: {'Authorization': 'Bearer $jwt'},
+          );
+        }
+      } catch (_) {
+        // Best-effort token revocation; don't block logout if it fails
+      }
+    }
+
     await prefs.remove('jwt');
+    await prefs.remove('fcmRegisteredToken');
+    await prefs.remove('fcmRegisteredPlatform');
     if (!mounted) return;
     Navigator.of(
       context,
@@ -1058,11 +1003,6 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
         ),
         const SizedBox(height: 16),
         _sectionCard(title: 'Recent Reviews', children: [_reviewsSection()]),
-        const SizedBox(height: 16),
-        _sectionCard(
-          title: 'Recent Complaints',
-          children: [_complaintsSection()],
-        ),
         const SizedBox(height: 16),
         _sectionCard(
           title: 'Settings',

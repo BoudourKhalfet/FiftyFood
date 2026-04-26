@@ -488,6 +488,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                       (status == 'ASSIGNED' ||
                           status == 'READY' ||
                           status == 'PICKED_UP');
+                  final parsedItemsCount = (o['itemsCount'] is num)
+                      ? (o['itemsCount'] as num).toInt()
+                      : int.tryParse(o['itemsCount']?.toString() ?? '') ?? 1;
 
                   return OrderCard(
                     key: ValueKey(o['reference']),
@@ -498,6 +501,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                     restaurantName: o['restaurantName'] ?? '',
                     timeSlot: o['timeSlot'] ?? '',
                     date: (o['date'] ?? '').toString(),
+                    itemsCount: parsedItemsCount < 1 ? 1 : parsedItemsCount,
                     imageUrl: o['imageUrl'] ?? '',
                     price: (o['price'] is num)
                         ? o['price'].toDouble()

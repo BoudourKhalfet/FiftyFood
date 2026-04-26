@@ -407,7 +407,7 @@ class OrderTrackingPage extends StatelessWidget {
                 ),
               ),
 
-              // Order Details Card
+              // Restaurant contact
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 17,
@@ -423,15 +423,7 @@ class OrderTrackingPage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        "Order Details",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                        ),
-                      ),
-                      SizedBox(height: 14),
-                      // From (restaurant and address)
+                      // Restaurant address
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -442,39 +434,9 @@ class OrderTrackingPage extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  "From: ${order.restaurantName}",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                                if (order.restaurantAddress.isNotEmpty)
-                                  Text(
-                                    order.restaurantAddress,
-                                    style: TextStyle(
-                                      color: Colors.black54,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 12),
-                      // To (destination and address)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.place_outlined, color: primary, size: 20),
-                          SizedBox(width: 9),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "To: Your Home",
+                                  order.restaurantName.isNotEmpty
+                                      ? order.restaurantName
+                                      : 'Restaurant',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
@@ -482,7 +444,9 @@ class OrderTrackingPage extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  order.deliveryAddress,
+                                  order.restaurantAddress.isNotEmpty
+                                      ? order.restaurantAddress
+                                      : 'Address not available',
                                   style: TextStyle(
                                     color: Colors.black54,
                                     fontSize: 14,
@@ -493,71 +457,19 @@ class OrderTrackingPage extends StatelessWidget {
                           ),
                         ],
                       ),
-                      SizedBox(height: 12),
-                      // ETA
+                      SizedBox(height: 10),
                       Row(
                         children: [
-                          Icon(Icons.access_time, color: primary, size: 20),
+                          Icon(Icons.phone, color: primary, size: 20),
                           SizedBox(width: 9),
                           Text(
-                            "ETA: ${driverEtaText.isNotEmpty ? driverEtaText : (etaSummary.isNotEmpty ? etaSummary : 'Not available yet')}",
+                            order.restaurantPhone.isNotEmpty
+                                ? order.restaurantPhone
+                                : 'Phone not available',
                             style: TextStyle(
                               fontWeight: FontWeight.w500,
                               fontSize: 15,
                               color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Divider(height: 28, thickness: 0.9),
-                      // Product details
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Meal image
-                          if (order.imageUrl.isNotEmpty)
-                            Container(
-                              width: 54,
-                              height: 54,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                image: DecorationImage(
-                                  image: NetworkImage(order.imageUrl),
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          SizedBox(width: 13),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  order.mealName,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15.5,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                                if (order.restaurantName.isNotEmpty)
-                                  Text(
-                                    order.restaurantName,
-                                    style: TextStyle(
-                                      fontSize: 13.5,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                SizedBox(height: 2),
-                                Text(
-                                  "€${order.price.toStringAsFixed(2)} x ${order.quantity}",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                    color: primary,
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
                         ],

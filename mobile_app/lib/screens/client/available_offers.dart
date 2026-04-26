@@ -10,6 +10,7 @@ import 'package:location/location.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/client_profile_service.dart';
+import '../../api/push_token_service.dart';
 
 class _GeoPoint {
   final double lat;
@@ -275,6 +276,7 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(PushTokenService.syncCurrentDevice());
     fetchOffers();
     _syncClientLocation();
     _locationTimer = Timer.periodic(const Duration(minutes: 5), (_) {
@@ -644,8 +646,8 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                 final distance = _distanceTextForOffer(offerMap);
 
                 return GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).push(
+                  onTap: () async {
+                    final result = await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => OfferDetails(
                           offer: {
@@ -656,6 +658,17 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                         ),
                       ),
                     );
+
+                    if (!mounted) return;
+
+                    if (result == 'sold_out') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('This offer is sold out.'),
+                        ),
+                      );
+                      await fetchOffers();
+                    }
                   },
                   child: Card(
                     margin: const EdgeInsets.only(bottom: 18),

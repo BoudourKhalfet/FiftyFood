@@ -9,6 +9,8 @@ import 'history_page.dart';
 import 'profile_page.dart';
 import '../../api/api_service.dart';
 import '../../api/auth_storage.dart';
+import '../../api/push_token_service.dart';
+import '../notifications/notifications_page.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -25,6 +27,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _deliveriesCount = 0;
   double _rating = 0;
   int _activeCount = 0;
+  int _unreadCount = 0;
 
   @override
   void initState() {
@@ -32,9 +35,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _pingOnline();
     _loadHeaderStats();
+    unawaited(PushTokenService.syncCurrentDevice());
+    _refreshUnreadCount();
     _onlinePingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _pingOnline();
       _loadHeaderStats();
+      _refreshUnreadCount();
     });
   }
 
@@ -43,7 +49,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _pingOnline();
       _loadHeaderStats();
+      _refreshUnreadCount();
     }
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    try {
+      final jwt = await getJwt();
+      if (jwt == null || jwt.isEmpty) return;
+
+      final data = await ApiService.get(
+        'notifications/me/unread-count',
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      final count = (data is Map && data['count'] is num)
+          ? (data['count'] as num).toInt()
+          : int.tryParse(data?['count']?.toString() ?? '') ?? 0;
+
+      if (!mounted) return;
+      setState(() => _unreadCount = count < 0 ? 0 : count);
+    } catch (_) {
+      // Best-effort refresh.
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+    _refreshUnreadCount();
   }
 
   double _toDouble(dynamic value) {
@@ -205,7 +240,51 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     child: Row(
                       children: [
                         Image.asset("assets/images/logo.png", height: 56),
-                        SizedBox(width: 12),
+                        const SizedBox(width: 12),
+                        const Spacer(),
+                        IconButton(
+                          onPressed: _openNotifications,
+                          icon: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Icon(
+                                Icons.notifications_none,
+                                color: Color(0xFF1A1A1A),
+                                size: 30,
+                              ),
+                              if (_unreadCount > 0)
+                                Positioned(
+                                  right: -6,
+                                  top: -6,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 18,
+                                      minHeight: 16,
+                                    ),
+                                    child: Text(
+                                      _unreadCount > 99
+                                          ? '99+'
+                                          : _unreadCount.toString(),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),

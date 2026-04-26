@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_app/api/client_profile_service.dart';
 import '../api/api_service.dart';
+import '../api/push_token_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/client/LocationConsentPage.dart' as client_consent;
 import '../screens/deliverer/LocationConsentPage.dart' as deliverer_consent;
@@ -215,6 +217,7 @@ class _SignInPageState extends State<SignInPage> {
         }
 
         if (user['role'] == 'CLIENT') {
+          unawaited(PushTokenService.syncCurrentDevice());
           try {
             final profile = await ProfileService.getProfile(realToken);
             if (profile.fullName.isNotEmpty) {
@@ -252,6 +255,7 @@ class _SignInPageState extends State<SignInPage> {
           }
         } else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
           if (user['status'] == 'APPROVED') {
+            unawaited(PushTokenService.syncCurrentDevice());
             try {
               await ApiService.post('livreur/onboarding/ping', {});
             } catch (e) {
@@ -535,7 +539,9 @@ class _SignInPageState extends State<SignInPage> {
                                   ).pushNamed('/forgot-password');
                                 },
                                 child: Text(
-                                  AppLocalizations.of(context)!.btnForgotPassword,
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.btnForgotPassword,
                                   style: TextStyle(
                                     color: const Color(0xFF1F9D7A),
                                   ),

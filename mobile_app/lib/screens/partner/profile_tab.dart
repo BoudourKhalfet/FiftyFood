@@ -24,7 +24,6 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
   String? hygieneCertificateUrl;
   String? ownershipProofUrl;
   List<Map<String, dynamic>> receivedReviews = [];
-  List<Map<String, dynamic>> receivedComplaints = [];
   bool loading = false;
 
   @override
@@ -42,7 +41,6 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         headers: {'Authorization': 'Bearer $token'},
       );
       List<Map<String, dynamic>> reviews = [];
-      List<Map<String, dynamic>> complaints = [];
 
       try {
         final reviewResp = await ApiService.get(
@@ -51,19 +49,6 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         );
         if (reviewResp is List) {
           reviews = reviewResp
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList();
-        }
-      } catch (_) {}
-
-      try {
-        final complaintResp = await ApiService.get(
-          'feedback/received/complaints?limit=5',
-          headers: {'Authorization': 'Bearer $token'},
-        );
-        if (complaintResp is List) {
-          complaints = complaintResp
               .whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item))
               .toList();
@@ -83,7 +68,6 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         hygieneCertificateUrl = rest['hygieneCertificateUrl'];
         ownershipProofUrl = rest['proofOfOwnershipOrLeaseUrl'];
         receivedReviews = reviews;
-        receivedComplaints = complaints;
       });
     } catch (e) {
       ScaffoldMessenger.of(
@@ -368,68 +352,6 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
     );
   }
 
-  Widget _complaintsContent() {
-    if (receivedComplaints.isEmpty) {
-      return const Text(
-        'No complaints yet.',
-        style: TextStyle(color: Color(0xFF6B7280)),
-      );
-    }
-
-    return Column(
-      children: receivedComplaints.map((complaint) {
-        final reason = (complaint['reason'] ?? '').toString();
-        final description = (complaint['description'] ?? '').toString();
-        final reporter =
-            (complaint['complainantName'] ??
-                    complaint['complainantEmail'] ??
-                    '')
-                .toString();
-        return Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF1F1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.report_gmailerrorred,
-                    size: 16,
-                    color: Color(0xFFDC2626),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      reason,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    reporter,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-              if (description.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(description),
-              ],
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (loading) {
@@ -679,14 +601,6 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
             iconColor: const Color(0xFF2D8066),
             title: 'Recent Reviews',
             content: _reviewsContent(),
-          ),
-          const SizedBox(height: 24),
-
-          _ProfileCard(
-            icon: Icons.report_problem_outlined,
-            iconColor: const Color(0xFFDC2626),
-            title: 'Recent Complaints',
-            content: _complaintsContent(),
           ),
           const SizedBox(height: 24),
 

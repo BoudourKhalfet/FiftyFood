@@ -13,6 +13,7 @@ import { OrderSummary } from './order-summary.interface';
 import { customAlphabet } from 'nanoid';
 import * as crypto from 'crypto';
 import { Prisma, Role } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 8);
 
@@ -59,7 +60,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrdersService.name);
   private expirationTimer?: NodeJS.Timeout;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async onModuleInit() {
     await this.expirePendingOrdersPastPickupTime();
@@ -417,46 +421,80 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
     const generatedOrderCode = 'DEL' + newCodeNum.toString().padStart(3, '0');
 
-    const { offerId, ...orderData } = createOrderDto;
-    if (!offerId) throw new Error('offerId is required');
-
-    const order = await this.prisma.order.create({
-      data: {
-        ...orderData,
-        collectionMethod,
-        clientId,
-        reference,
-        offerId,
-        orderCode: generatedOrderCode,
-        status: 'CONFIRMED',
-      },
-    });
-    const pickupQrToken = await this.issuePickupQrToken(order);
     let quantityOrdered = 1;
     try {
-      const mainItem = getMainItem(order.items);
-      if (mainItem?.quantity) quantityOrdered = mainItem.quantity;
+      const mainItem = getMainItem(createOrderDto.items);
+      if (typeof mainItem?.quantity === 'number') {
+        quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
+      }
     } catch (err) {
       if (process.env.NODE_ENV !== 'production') {
         console.error('Failed to parse order.items or get quantity.', err);
       }
     }
 
-    await this.prisma.offer.update({
-      where: { id: offerId },
-      data: { quantity: { decrement: quantityOrdered } },
-    });
+    const { offerId, ...orderData } = createOrderDto;
+    if (!offerId) {
+      throw new BadRequestException('offerId is required');
+    }
 
-    // Optional: auto-pause when 0 (for safety, since getAvailableOffers hides qty==0)
-    const updatedOffer = await this.prisma.offer.findUnique({
-      where: { id: offerId },
-    });
-    if (updatedOffer && updatedOffer.quantity <= 0) {
-      await this.prisma.offer.update({
-        where: { id: offerId },
+    const order = await this.prisma.$transaction(async (tx) => {
+      const reserved = await tx.offer.updateMany({
+        where: {
+          id: offerId,
+          status: 'ACTIVE',
+          quantity: { gte: quantityOrdered },
+        },
+        data: { quantity: { decrement: quantityOrdered } },
+      });
+
+      if (reserved.count === 0) {
+        const currentOffer = await tx.offer.findUnique({
+          where: { id: offerId },
+          select: { id: true, status: true, quantity: true },
+        });
+
+        if (!currentOffer) {
+          throw new NotFoundException('Offer not found');
+        }
+
+        if (
+          currentOffer.status === 'SOLD_OUT' ||
+          currentOffer.status === 'EXPIRED' ||
+          currentOffer.quantity <= 0
+        ) {
+          throw new BadRequestException('Offer is sold out');
+        }
+
+        throw new BadRequestException('Not enough quantity available');
+      }
+
+      const createdOrder = await tx.order.create({
+        data: {
+          ...orderData,
+          collectionMethod,
+          clientId,
+          reference,
+          offerId,
+          orderCode: generatedOrderCode,
+          status: 'CONFIRMED',
+        },
+      });
+
+      await tx.offer.updateMany({
+        where: {
+          id: offerId,
+          quantity: { lte: 0 },
+        },
         data: { status: 'SOLD_OUT' },
       });
-    }
+
+      return createdOrder;
+    });
+
+    await this.notificationsService.notifyOrderCreated(order.id);
+
+    const pickupQrToken = await this.issuePickupQrToken(order);
 
     const restaurant = await this.prisma.restaurantProfile.findUnique({
       where: { userId: order.restaurantId },
@@ -503,6 +541,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
     const mapped = await Promise.all(
       orders.map(async (order) => {
+        const mainItem = getMainItem(order.items);
+
         const pickupQrToken = this.canIssueQrForOrder(order)
           ? await this.issuePickupQrToken({
               id: order.id,
@@ -527,6 +567,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           timeSlot: order.offer?.pickupTime ?? '',
           price: order.offer?.discountedPrice ?? '',
           createdAt: order.createdAt,
+          itemsCount:
+            typeof mainItem?.quantity === 'number' ? mainItem.quantity : 1,
           restaurantName:
             order.restaurant?.restaurantProfile?.restaurantName ?? '',
         };
@@ -729,7 +771,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     // 2. (Later: filter by  location, etc.)
     return this.prisma.order.findMany({
       where: {
-        status: 'CONFIRMED',
+        status: {
+          in: ['CONFIRMED', 'READY'],
+        },
         livreurId: null,
         collectionMethod: 'DELIVERY',
       },
@@ -818,18 +862,28 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       order?.livreurId,
     );
 
-    if (!order) throw new Error('Order not found');
-    if (order.livreurId) throw new Error('Order already assigned');
-    if (!['CONFIRMED'].includes(order.status))
-      throw new Error('Order not available for assignment');
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
 
-    return this.prisma.order.update({
+    if (order.livreurId) {
+      throw new BadRequestException('Order already assigned');
+    }
+
+    if (!['CONFIRMED', 'READY'].includes(order.status)) {
+      throw new BadRequestException('Order not available for assignment');
+    }
+
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         livreurId: delivererId,
         status: 'ASSIGNED',
       },
     });
+
+    await this.notificationsService.notifyOrderAssigned(updated.id);
+    return updated;
   }
 
   async confirmDelivery(orderId: string, clientId: string) {
@@ -851,10 +905,13 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: 'DELIVERED' },
     });
+
+    await this.notificationsService.notifyOrderDelivered(updated.id);
+    return updated;
   }
 
   async findByRestaurant(restaurantId: string) {
@@ -1053,6 +1110,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
+      await this.notificationsService.notifyOrderPickedUp(order.id);
+
       await this.prisma.$executeRaw`
         UPDATE "Order"
         SET
@@ -1092,6 +1151,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    await this.notificationsService.notifyOrderPickedUp(order.id);
+
     await this.prisma.$executeRaw`
       UPDATE "Order"
       SET
@@ -1126,10 +1187,13 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     if (order.status !== 'CONFIRMED' && order.status !== 'ASSIGNED')
       throw new Error('Order must be confirmed or assigned to be ready');
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: 'READY' },
     });
+
+    await this.notificationsService.notifyOrderReady(updated.id);
+    return updated;
   }
 
   async canDeliver(restaurantId: string) {
@@ -1138,16 +1202,16 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     const restaurantRows = await this.prisma.$queryRaw<
       Array<{
         address: string | null;
-        city: string | null;
         latitude: number | null;
         longitude: number | null;
+        lastGeocodedAt: Date | null;
       }>
     >`
       SELECT
         rp."address",
-        rp."city",
         rp."latitude",
-        rp."longitude"
+        rp."longitude",
+        rp."lastGeocodedAt"
       FROM "RestaurantProfile" rp
       WHERE rp."userId" = ${restaurantId}
       LIMIT 1
@@ -1162,23 +1226,27 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     console.log('[DELIVERY DEBUG] restaurant profile', restaurant);
 
     const restaurantAddress = this.normalizeText(restaurant.address);
-    const restaurantCity = this.normalizeText(restaurant.city);
-    if (!restaurantAddress && !restaurantCity) {
+    const hasStoredCoords =
+      typeof restaurant.latitude === 'number' &&
+      typeof restaurant.longitude === 'number';
+
+    if (!restaurantAddress && !hasStoredCoords) {
       console.log(
-        '[DELIVERY DEBUG] restaurant address and city are both empty after normalization',
+        '[DELIVERY DEBUG] restaurant address is empty and no stored coords exist',
       );
       return { available: false, eligibleCount: 0 };
     }
 
-    const maxDistanceKm = Number(process.env.DELIVERY_MAX_DISTANCE_KM ?? 10);
+    const maxDistanceKm = Number(process.env.DELIVERY_MAX_DISTANCE_KM ?? 1000);
     const restaurantCoordsMismatchKm = Number(
-      process.env.RESTAURANT_COORDS_MISMATCH_KM ?? 3,
+      process.env.RESTAURANT_COORDS_MISMATCH_KM ?? 0.5,
+    );
+    const restaurantForceRefreshMinutes = Number(
+      process.env.RESTAURANT_GEOCODE_FORCE_REFRESH_MINUTES ?? 60,
     );
     let restaurantCoords: Coordinates | null = null;
 
-    const restaurantQuery = [restaurant.address, restaurant.city]
-      .filter((v) => !!this.normalizeText(v))
-      .join(', ');
+    const restaurantQuery = (restaurant.address ?? '').trim();
 
     if (
       typeof restaurant.latitude === 'number' &&
@@ -1201,15 +1269,27 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             restaurantCoords,
             geocodedRestaurantCoords,
           );
+          const minutesSinceLastGeocode = restaurant.lastGeocodedAt
+            ? (Date.now() - new Date(restaurant.lastGeocodedAt).getTime()) /
+              60000
+            : Number.POSITIVE_INFINITY;
+          const shouldForceRefresh =
+            minutesSinceLastGeocode >= restaurantForceRefreshMinutes;
+          const shouldRefreshCoords =
+            shouldForceRefresh || mismatchKm > restaurantCoordsMismatchKm;
 
           console.log('[DELIVERY DEBUG] restaurant coords mismatch check', {
             stored: restaurantCoords,
             geocoded: geocodedRestaurantCoords,
             mismatchKm: Number(mismatchKm.toFixed(3)),
             restaurantCoordsMismatchKm,
+            minutesSinceLastGeocode: Number(minutesSinceLastGeocode.toFixed(1)),
+            restaurantForceRefreshMinutes,
+            shouldForceRefresh,
+            shouldRefreshCoords,
           });
 
-          if (mismatchKm > restaurantCoordsMismatchKm) {
+          if (shouldRefreshCoords) {
             restaurantCoords = geocodedRestaurantCoords;
             await this.prisma.$executeRaw`
               UPDATE "RestaurantProfile"
@@ -1220,13 +1300,20 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
               WHERE "userId" = ${restaurantId}
             `;
             console.log(
-              '[DELIVERY DEBUG] corrected stale restaurant coords from geocoding',
+              '[DELIVERY DEBUG] refreshed restaurant coords from geocoding',
               restaurantCoords,
             );
           }
         }
       }
     } else {
+      if (!restaurantQuery) {
+        console.log(
+          '[DELIVERY DEBUG] cannot geocode restaurant: address is empty',
+        );
+        return { available: false, eligibleCount: 0 };
+      }
+
       console.log(
         '[DELIVERY DEBUG] geocoding restaurant query',
         restaurantQuery,
