@@ -68,6 +68,7 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const token = localStorage.getItem("access_token");
+      console.log("Token exists:", !!token);
       const response = await fetch("/admin/dashboard", {
         method: "GET",
         headers: {
@@ -76,15 +77,19 @@ export default function Dashboard() {
         },
       });
 
+      console.log("Dashboard fetch status:", response.status);
       if (!response.ok) {
-        throw new Error("Failed to fetch dashboard stats");
+        const errorData = await response.json().catch(() => ({ error: "Unable to parse" }));
+        console.log("Dashboard error response:", errorData);
+        throw new Error(`Failed to fetch dashboard stats: ${response.status}`);
       }
 
       const data = await response.json();
       setStats(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      setError(errorMsg);
       console.error("Error fetching dashboard:", err);
     } finally {
       setLoading(false);

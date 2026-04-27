@@ -86,7 +86,7 @@ export default function AdminSidebar({ current, onNavigate }: SidebarProps) {
         className="mt-4 flex items-center gap-3 text-red-600 font-semibold hover:underline"
         onClick={() => {
           localStorage.removeItem("access_token");
-          window.location.href = "/admin/login";
+          window.location.href = "/";
         }}
       >
         <FaSignOutAlt /> <span>Sign Out</span>

@@ -68,16 +68,24 @@ export default function Deliverers() {
     async function fetchDeliverers() {
       setLoading(true);
       try {
+        const token = localStorage.getItem("access_token");
+        console.log("Bearer token exists:", !!token);
         const resp = await fetch("/admin/users?role=LIVREUR", {
           headers: {
-            Authorization: "Bearer " + localStorage.getItem("access_token"),
+            Authorization: "Bearer " + token,
           },
         });
-        if (!resp.ok) throw new Error("Failed to fetch deliverers");
+        console.log("Fetch response status:", resp.status);
+        if (!resp.ok) {
+          const errorData = await resp.json().catch(() => ({ error: "Unable to parse error" }));
+          console.log("Error response:", errorData);
+          throw new Error(`Failed to fetch deliverers: ${resp.status}`);
+        }
         const data = await resp.json();
         setDeliverers(data);
         console.log("Fetched deliverers from API:", data);
-      } catch {
+      } catch (error) {
+        console.error("Fetch error:", error);
         setInfoModal({
           title: "Load Error",
           message: "Failed to fetch deliverers.",
