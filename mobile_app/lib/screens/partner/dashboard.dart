@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../api/api_service.dart';
@@ -213,7 +215,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final picked = await picker.pickImage(source: ImageSource.gallery);
       if (picked == null) return;
 
-      if (picked.path.isEmpty) {
+      final pickedBytes = kIsWeb ? await picked.readAsBytes() : null;
+      if (!kIsWeb && picked.path.isEmpty) {
         throw Exception('Selected image path is not available');
       }
 
@@ -229,7 +232,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final data = await ApiService.uploadFile(
         'offers/upload-photo',
         'file',
-        picked.path,
+        kIsWeb ? '' : picked.path,
+        bytes: pickedBytes,
         fileName: picked.name,
         headers: {'Authorization': 'Bearer $jwt'},
       );
@@ -238,9 +242,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         _uploadedOfferImageUrl = data['url'];
         _offerImageUploadError = null;
       });
-
-      // Auto-generate description using Gemini
-      await _generateDescriptionForImage(data['url'], modalSetState);
     } catch (e) {
       modalSetState(
         () => _offerImageUploadError = 'Image picker/upload error: $e',
@@ -252,10 +253,16 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     }
   }
 
+  bool _generatingDescription = false;
+
   Future<void> _generateDescriptionForImage(
     String imageUrl,
     void Function(void Function()) modalSetState,
   ) async {
+    modalSetState(() {
+      _generatingDescription = true;
+    });
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
@@ -276,19 +283,46 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         final description = data['description'] as String?;
+        final error = data['error'] as String?;
 
         if (description != null && description.isNotEmpty) {
           modalSetState(() {
             _descriptionController.text = description;
             _offerDescription = description;
           });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Description generated successfully!'),
+              backgroundColor: Color(0xFF10B981),
+            ),
+          );
+        } else if (error != null) {
+          // AI failed but we can still proceed with manual entry
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        } else {
+          throw Exception('Empty description returned');
         }
       } else {
-        print('Failed to generate description: ${response.statusCode}');
-        print('Response: ${response.body}');
+        throw Exception('Server error: ${response.statusCode}');
       }
     } catch (e) {
       print('Error generating description: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to generate description: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      modalSetState(() {
+        _generatingDescription = false;
+      });
     }
   }
 
@@ -304,7 +338,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String _visibility = 'IDENTIFIED';
 
   // Image Upload
-
   bool _aiVerifying = false;
   Map<String, dynamic>? _aiResult;
 
@@ -1268,6 +1301,49 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             fontSize: 13,
                           ),
                           textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                    // Generate Description button (when photo uploaded)
+                    if (_uploadedOfferImageUrl != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _generatingDescription
+                                ? null
+                                : () => _generateDescriptionForImage(
+                                      _uploadedOfferImageUrl!,
+                                      modalSetState,
+                                    ),
+                            icon: _generatingDescription
+                                ? const SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.auto_awesome,
+                                    size: 16,
+                                  ),
+                            label: Text(
+                              _generatingDescription
+                                  ? 'Generating...'
+                                  : 'Generate Description',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1F9D7A),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
 

@@ -14,6 +14,7 @@ import '../../constants/api.dart';
 import '../../api/client_profile_service.dart';
 import '../../models/client_profile.dart';
 import 'package:location/location.dart';
+import 'package:mobile_app/services/payment_service.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   // Remove data prefix if needed
@@ -604,6 +605,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                               discounted: discounted,
                               pickup: pickupDisplay,
                               address: address,
+                              parentContext: context,
                             );
                           },
                           child: const Text(
@@ -631,6 +633,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     required double discounted,
     required String pickup,
     required String address,
+    required BuildContext parentContext,
   }) async {
     double deliveryFee = 2.5;
     final subtotal = discounted * quantity;
@@ -877,7 +880,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                         ],
                       ],
 
-                      SizedBox(height: 7),
+                      SizedBox(height: 16),
 
                       // --- Cart/price summary box
                       Container(
@@ -996,7 +999,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   errorText = null;
                                 });
                                 // ✅ FIXED: Update the class-level selectedPayment before navigating
-                                this.selectedPayment = 'card'; // or get from payment selector
+                                this.selectedPayment = paymentMethod; // use the selected payment from the UI
                                 Navigator.of(context).pop();
                                 await _createOrderAndPay(
                                   {
@@ -1013,13 +1016,13 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                         ? phoneController.text.trim()
                                         : null,
                                     "deliveryFee": deliveryFee,
-                                    "paymentMethod": "CARD",
+                                    "paymentMethod": selectedPayment.toLowerCase() == 'edinar' ? 'D17' : selectedPayment.toUpperCase(),
                                     "paymentDetails": {
                                     "status": "pending",
                                     "provider": selectedPayment.toLowerCase() // ✅ Now accessible
                                     }
                                   },
-                                  context,
+                                  parentContext,
                                 );
                               },
                               child: _isCreatingOrder
@@ -1062,7 +1065,6 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt');
     if (token == null) {
-      // Handle user not logged in
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('You are not logged in.')),
       );
@@ -1073,6 +1075,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     }
 
     try {
+      // Create order
       final response = await http.post(
         Uri.parse(apiUrl('orders')),
         headers: {
@@ -1082,49 +1085,183 @@ class _OfferDetailsPageState extends State<OfferDetails> {
         body: jsonEncode(orderDetails),
       );
 
-      if (response.statusCode == 201) {
-        final responseData = jsonDecode(response.body);
-        final orderId =
-            (responseData['order']?['id'] ?? responseData['orderId'])
-                ?.toString();
-        final clientSecret = responseData['clientSecret'];
-        final totalAmount =
-            (orderDetails['total'] is num)
-                ? (orderDetails['total'] as num).toDouble()
-                : 0.0;
-
-        if (orderId == null || orderId.isEmpty || orderId == 'null') {
-          throw Exception('Order created but no order id returned by backend');
-        }
-
-        // Navigate to a success page or show a success message
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => OrderCheckoutScreen(
-              orderDetails: orderDetails,
-              orderId: orderId,
-              totalAmount: totalAmount,
-              clientSecret: clientSecret,
-            ),
-          ),
-        );
-      } else {
+      if (response.statusCode != 200 && response.statusCode != 201) {
         final errorData = jsonDecode(response.body);
-        // Handle error
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content:
                   Text('Failed to create order: ${errorData['message']}')),
         );
+        if (mounted) {
+          setState(() => _isCreatingOrder = false);
+        }
+        return;
+      }
+
+      final responseData = jsonDecode(response.body);
+      final orderId =
+          (responseData['order']?['id'] ?? responseData['orderId'])
+              ?.toString();
+      final totalAmount =
+          (orderDetails['total'] is num)
+              ? (orderDetails['total'] as num).toDouble()
+              : 0.0;
+      final paymentMethod = orderDetails['paymentMethod']?.toString().toUpperCase() ?? 'CARD';
+
+      if (orderId == null || orderId.isEmpty || orderId == 'null') {
+        throw Exception('Order created but no order id returned');
+      }
+
+      // Decrement offer quantity
+      await _decrementOfferQuantity(
+        orderDetails['offerId'],
+        orderDetails['items']['quantity'],
+      );
+
+      // Handle payment based on method
+      if (!mounted) return;
+
+      if (paymentMethod == 'CARD') {
+        // Stripe payment
+        try {
+          final intentData = await PaymentService.createStripeIntent(
+            orderId: orderId,
+            amount: totalAmount,
+            email: _clientProfile?.email ?? prefs.getString('email') ?? '',
+          );
+
+          if (!mounted) return;
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderCheckoutScreen(
+                orderId: orderId,
+                totalAmount: totalAmount,
+                orderDetails: responseData['order'] ?? orderDetails,
+                initialMethod: AppPaymentMethod.card,
+                clientSecret: intentData['clientSecret'],
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (paymentMethod == 'D17') {
+        // Konnect (e-Dinar) payment
+        try {
+          final fullName = _clientProfile?.fullName ?? prefs.getString('fullName') ?? 'User';
+          final nameParts = fullName.split(' ');
+          final firstName = nameParts.isNotEmpty ? nameParts.first : 'User';
+          final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+          await PaymentService.createKonnectPayment(
+            orderId: orderId,
+            firstName: firstName,
+            lastName: lastName,
+            email: _clientProfile?.email ?? prefs.getString('email') ?? 'user@example.com',
+          );
+
+          if (!mounted) return;
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderCheckoutScreen(
+                orderId: orderId,
+                totalAmount: totalAmount,
+                orderDetails: responseData['order'] ?? orderDetails,
+                initialMethod: AppPaymentMethod.eDinar,
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (paymentMethod == 'PAYPAL') {
+        // PayPal payment
+        try {
+          await PaymentService.createPayPalPayment(
+            orderId: orderId,
+          );
+
+          if (!mounted) return;
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderCheckoutScreen(
+                orderId: orderId,
+                totalAmount: totalAmount,
+                orderDetails: responseData['order'] ?? orderDetails,
+                initialMethod: AppPaymentMethod.paypal,
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        // Cash payment - success
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Order created! Pay in cash at pickup/delivery.")),
+        );
+        if (!mounted) return;
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/offers',
+          (route) => false,
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('An error occurred: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('An error occurred: $e')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isCreatingOrder = false);
       }
+    }
+  }
+
+  /// Decrement the offer quantity after successful purchase
+  Future<void> _decrementOfferQuantity(String offerId, int quantityPurchased) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwt');
+      
+      final response = await http.patch(
+        Uri.parse(apiUrl('offers/$offerId/decrement-quantity')),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'quantity': quantityPurchased,
+        }),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        debugPrint('Failed to decrement quantity: ${response.statusCode} ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error decrementing offer quantity: $e');
     }
   }
 

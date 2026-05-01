@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../constants/api.dart';
 import 'package:http_parser/http_parser.dart';
 import '../models/deliverer_profile.dart';
@@ -10,10 +11,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   static Future<Map<String, dynamic>> post(
     String endpoint,
-    Map data, {
+    Map<String, dynamic> data, {
     Map<String, String>? headers,
   }) async {
-    final url = Uri.parse('$apiBaseUrl$endpoint');
+    final url = Uri.parse(apiUrl(endpoint));
     final isAuthEndpoint = endpoint.startsWith('auth/');
     final prefs = await SharedPreferences.getInstance();
     final jwt = prefs.getString('jwt');
@@ -163,7 +164,7 @@ class ApiService {
               : null,
         ),
       );
-    } else if (filePath.isNotEmpty && fileName != null) {
+    } else if (!kIsWeb && filePath.isNotEmpty && fileName != null) {
       String? contentType;
       if (fileName.toLowerCase().endsWith('.jpg') ||
           fileName.toLowerCase().endsWith('.jpeg')) {
@@ -183,6 +184,10 @@ class ApiService {
               ? MediaType.parse(contentType)
               : null,
         ),
+      );
+    } else if (kIsWeb) {
+      throw Exception(
+        'Web uploads require bytes. Pass bytes and fileName instead of filePath.',
       );
     }
 

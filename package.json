@@ -1,5 +1,8 @@
 {
   "devDependencies": {
     "@types/jest": "^30.0.0"
+  },
+  "dependencies": {
+    "tesseract.js": "^7.0.0"
   }
 }
