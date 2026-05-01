@@ -123,6 +123,18 @@ export class OffersController {
     return this.offers.toggleStatus(req.user.sub, id);
   }
 
+  /**
+   * PATCH /offers/:id/decrement-quantity
+   * Decrement offer quantity after a successful purchase.
+   */
+  @Patch(':id/decrement-quantity')
+  async decrementQuantity(
+    @Param('id') id: string,
+    @Body() body: { quantity?: number },
+  ) {
+    return this.offers.decrementQuantity(id, body?.quantity ?? 1);
+  }
+
   @Public()
   @Get()
   async getAvailableOffers() {

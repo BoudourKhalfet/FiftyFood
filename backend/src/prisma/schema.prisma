@@ -16,15 +16,15 @@ model User {
   emailVerifiedAt             DateTime?
   emailVerificationTokenHash  String?
   emailVerificationExpiresAt  DateTime?
-  emailChangeTokenHash        String?
-  emailChangeExpiresAt        DateTime?
-  pendingEmail                String?
   createdAt                   DateTime           @default(now())
   updatedAt                   DateTime           @updatedAt
   statusReason                String?
   suspendedAt                 DateTime?
   passwordResetTokenExpiresAt DateTime?
   passwordResetTokenHash      String?
+  emailChangeExpiresAt        DateTime?
+  emailChangeTokenHash        String?
+  pendingEmail                String?
   accountHistory              AccountHistory[]
   clientProfile               ClientProfile?
   legalAgreements             LegalAgreement[]
@@ -49,7 +49,6 @@ model ClientProfile {
   phone                   String?
   defaultAddress          String?
   cuisinePreferences      CuisinePreference[]
-  dietaryRestrictions     DietaryRestriction[]
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
   termsAcceptedAt         DateTime?
@@ -58,9 +57,10 @@ model ClientProfile {
   submittedAt             DateTime?
   locationConsentGiven    Boolean              @default(false)
   locationConsentGivenAt  DateTime?
-  lastLatitude             Float?
-  lastLongitude            Float?
-  lastLocationAt           DateTime?
+  lastLatitude            Float?
+  lastLocationAt          DateTime?
+  lastLongitude           Float?
+  dietaryRestrictions     DietaryRestriction[]
   user                    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -72,8 +72,6 @@ model RestaurantProfile {
   phone                           String?
   address                         String?
   city                            String?
-  latitude                        Float?
-  longitude                       Float?
   logoUrl                         String?
   coverImageUrl                   String?
   legalEntityName                 String?
@@ -93,6 +91,8 @@ model RestaurantProfile {
   termsAcceptedAt                 DateTime?
   termsAcceptedName               String?
   avgRating                       Float?             @default(0)
+  latitude                        Float?
+  longitude                       Float?
   user                            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -144,41 +144,47 @@ model LivreurProfile {
   locationConsentGivenAt DateTime?
   lastOnlineAt           DateTime?
   lastLatitude           Float?
-  lastLongitude          Float?
   lastLocationAt         DateTime?
+  lastLongitude          Float?
+  cinBackPhotoUrl        String?
+  cinFrontPhotoUrl       String?
+  cinVerificationStatus  String?       @default("PENDING")
+  cinVerifiedAt          DateTime?
+  identityVerified       Boolean       @default(false)
+  identityVerifiedAt     DateTime?
   user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Order {
-  id                    String            @id @default(uuid())
-  clientId              String
-  restaurantId          String
-  items                 Json
-  total                 Float
-  status                OrderStatus       @default(PENDING)
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  collectionMethod      CollectionMethod?
-  deliveryAddress       String?
-  deliveryFee           Float?
-  deliveryPhone         String?
-  paymentMethod         String?
-  reference             String            @unique
-  paymentDetails        Json?
-  livreurId             String?
-  clientLocation        String?
-  delivererLocation     String?
-  offerId               String
-  orderCode             String
-  pickupQrStatus        QrStatus          @default(NOT_SCANNED)
-  pickupQrTokenHash     String?
-  pickupQrExpiresAt     DateTime?
-  pickupQrUsedAt        DateTime?
-  client                User              @relation("ClientOrders", fields: [clientId], references: [id])
-  livreur               User?             @relation("LivreurOrders", fields: [livreurId], references: [id])
-  offer                 Offer             @relation(fields: [offerId], references: [id])
-  restaurant            User              @relation("RestaurantOrders", fields: [restaurantId], references: [id])
-  reviews               Review[]
+  id                String            @id @default(uuid())
+  clientId          String
+  restaurantId      String
+  items             Json
+  total             Float
+  status            OrderStatus       @default(PENDING)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  collectionMethod  CollectionMethod?
+  deliveryAddress   String?
+  deliveryFee       Float?
+  deliveryPhone     String?
+  paymentMethod     String?
+  reference         String            @unique
+  paymentDetails    Json?
+  livreurId         String?
+  clientLocation    String?
+  delivererLocation String?
+  offerId           String
+  orderCode         String
+  pickupQrExpiresAt DateTime?
+  pickupQrStatus    QrStatus          @default(NOT_SCANNED)
+  pickupQrTokenHash String?
+  pickupQrUsedAt    DateTime?
+  client            User              @relation("ClientOrders", fields: [clientId], references: [id])
+  livreur           User?             @relation("LivreurOrders", fields: [livreurId], references: [id])
+  offer             Offer             @relation(fields: [offerId], references: [id])
+  restaurant        User              @relation("RestaurantOrders", fields: [restaurantId], references: [id])
+  reviews           Review[]
 }
 
 model Offer {
@@ -317,6 +323,7 @@ enum OrderStatus {
   DELIVERED
   CANCELLED
   ASSIGNED
+  EXPIRED
 }
 
 enum OfferVisibility {

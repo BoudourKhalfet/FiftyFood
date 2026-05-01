@@ -476,8 +476,15 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
   }
 
   async generateDescription(imageUrl: string, language: string = 'en') {
+    // If no API key, return empty so frontend can use manual entry
     if (!OPENROUTER_API_KEY) {
-      throw new Error('OPENROUTER_API_KEY not configured');
+      console.warn('OPENROUTER_API_KEY not configured - using manual mode');
+      return {
+        description: '',
+        generated_at: new Date().toISOString(),
+        model: 'manual',
+        error: 'AI not configured - please enter description manually',
+      };
     }
 
     try {
@@ -522,11 +529,20 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
         );
 
         if (status === 429 || status === 402) {
-          throw new Error(
-            status === 429 ? 'Rate limit exceeded' : 'API credits exhausted',
-          );
+          return {
+            description: '',
+            generated_at: new Date().toISOString(),
+            model: 'manual',
+            error: status === 429 ? 'Rate limit exceeded' : 'API credits exhausted',
+          };
         }
-        throw new Error('Failed to generate description');
+        // Return empty for manual entry on other errors
+        return {
+          description: '',
+          generated_at: new Date().toISOString(),
+          model: 'manual',
+          error: 'AI service unavailable - please enter description manually',
+        };
       }
 
       const data = (await apiResponse.json()) as {
@@ -535,7 +551,12 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       const description = data.choices?.[0]?.message?.content?.trim();
 
       if (!description) {
-        throw new Error('No description generated');
+        return {
+          description: '',
+          generated_at: new Date().toISOString(),
+          model: 'manual',
+          error: 'No description generated - please enter manually',
+        };
       }
 
       return {
@@ -546,9 +567,13 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
       console.error('Description generation error:', err);
-      throw new BadRequestException(
-        err.message || 'Failed to generate description. Please try again.',
-      );
+      // Return empty for manual entry instead of throwing
+      return {
+        description: '',
+        generated_at: new Date().toISOString(),
+        model: 'manual',
+        error: 'AI service error - please enter description manually',
+      };
     }
   }
 
@@ -749,6 +774,27 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
             },
           },
         },
+      },
+    });
+  }
+
+  // Decrement the quantity of an offer
+  async decrementQuantity(offerId: string, quantityToDecrement: number) {
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+    });
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found');
+    }
+
+    const newQuantity = Math.max(0, offer.quantity - quantityToDecrement);
+
+    return this.prisma.offer.update({
+      where: { id: offerId },
+      data: {
+        quantity: newQuantity,
+        status: newQuantity === 0 ? 'SOLD_OUT' : offer.status,
       },
     });
   }

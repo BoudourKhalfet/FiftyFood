@@ -80,7 +80,7 @@ export class PaymentsService {
     await this.prisma.order.update({
       where: { id: params.orderId },
       data: {
-        paymentMethod: 'KONNECT',
+        paymentMethod: 'D17',
       },
     });
 
@@ -143,9 +143,9 @@ export class PaymentsService {
     const confirmation = await this.stripeService.confirmPayment(paymentIntentId);
 
     if (confirmation.status === 'succeeded') {
-      await this.updateOrderStatus(orderId, 'PAID');
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
     } else if (confirmation.status === 'requires_payment_method') {
-      await this.updateOrderStatus(orderId, 'FAILED');
+      await this.updateOrderStatus(orderId, 'CANCELLED');
     }
 
     return confirmation;
@@ -189,9 +189,9 @@ export class PaymentsService {
     const confirmation = await this.stripeService.confirmCheckoutSession(sessionId);
 
     if (confirmation.status === 'paid') {
-      await this.updateOrderStatus(orderId, 'PAID');
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
     } else if (confirmation.status === 'unpaid') {
-      await this.updateOrderStatus(orderId, 'FAILED');
+      await this.updateOrderStatus(orderId, 'CANCELLED');
     }
 
     return confirmation;
@@ -204,9 +204,9 @@ export class PaymentsService {
     const verification = await this.konnectService.verifyPayment(paymentId);
 
     if (verification.isSuccessful) {
-      await this.updateOrderStatus(orderId, 'PAID');
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
     } else {
-      await this.updateOrderStatus(orderId, 'FAILED');
+      await this.updateOrderStatus(orderId, 'CANCELLED');
     }
 
     return verification;
@@ -234,6 +234,11 @@ export class PaymentsService {
       throw new BadRequestException('Unauthorized');
     }
 
+    return this._doPayPalCapture(paypalOrderId, orderId);
+  }
+
+  // Internal capture method used by both JWT and non-JWT flows
+  private async _doPayPalCapture(paypalOrderId: string, orderId: string) {
     const capture = await this.paypalService.captureOrder(paypalOrderId);
 
     await this.prisma.order.update({
@@ -249,32 +254,57 @@ export class PaymentsService {
       },
     });
 
+    if ((capture as { needsApproval?: boolean }).needsApproval) {
+      return capture;
+    }
+
     if (capture.isSuccessful) {
-      await this.updateOrderStatus(orderId, 'PAID');
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
     } else {
-      await this.updateOrderStatus(orderId, 'FAILED');
+      await this.updateOrderStatus(orderId, 'CANCELLED');
     }
 
     return capture;
   }
 
+  // Public capture for PayPal redirect (no JWT required)
+  async capturePayPalPaymentPublic(paypalOrderId: string, orderId: string) {
+    // Verify order exists and is pending
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) throw new BadRequestException('Order not found');
+    if (order.status !== 'PENDING') {
+      // Already processed, return current status
+      return {
+        isSuccessful: order.status === 'CONFIRMED',
+        status: order.status,
+        alreadyProcessed: true,
+      };
+    }
+
+    return this._doPayPalCapture(paypalOrderId, orderId);
+  }
+
   // =========================
   // CORE STATUS UPDATE
   // =========================
-  private async updateOrderStatus(orderId: string, paymentStatus: string) {
-    let orderStatus = 'PENDING';
-
-    if (paymentStatus === 'PAID') {
-      orderStatus = 'CONFIRMED';
-    } else if (paymentStatus === 'FAILED') {
-      orderStatus = 'CANCELLED';
-    }
-
+  private async updateOrderStatus(orderId: string, orderStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING') {
     await this.prisma.order.update({
       where: { id: orderId },
       data: {
-        status: orderStatus as any,
+        status: orderStatus,
       },
+    });
+  }
+
+  // =========================
+  // ORDER LOOKUP (for controllers)
+  // =========================
+  async getOrderById(orderId: string) {
+    return this.prisma.order.findUnique({
+      where: { id: orderId },
     });
   }
 }
