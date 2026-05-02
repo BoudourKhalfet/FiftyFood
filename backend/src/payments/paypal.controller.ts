@@ -18,6 +18,13 @@ export class PayPalController {
       throw new BadRequestException('Order ID is required');
     }
 
+    // Allow temporary reference IDs (starting with 'temp_') for new payment flow
+    // These will be replaced with real order IDs after successful payment
+    if (!dto.orderId.startsWith('temp_')) {
+      // For real order IDs, we'll let the service handle validation
+      // The service will throw an error if the order is invalid
+    }
+
     return this.paymentsService.createPayPalPayment({
       orderId: dto.orderId,
       userId: req.user.sub,

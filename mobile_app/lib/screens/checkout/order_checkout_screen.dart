@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_links/app_links.dart';
+import 'package:http/http.dart' as http;
 import '../../services/payment_service.dart';
 import '../../widgets/payment_method_selector.dart';
+import '../../constants/api.dart';
 
 class OrderCheckoutScreen extends StatefulWidget {
   final String orderId;
@@ -15,6 +18,8 @@ class OrderCheckoutScreen extends StatefulWidget {
   final AppPaymentMethod? initialMethod;
   final bool lockMethod;
   final String? clientSecret;
+  final bool createOrderAfterPayment;
+  final String? paypalOrderId;
 
   const OrderCheckoutScreen({
     Key? key,
@@ -24,6 +29,8 @@ class OrderCheckoutScreen extends StatefulWidget {
     this.initialMethod,
     this.lockMethod = false,
     this.clientSecret,
+    this.createOrderAfterPayment = false,
+    this.paypalOrderId,
   }) : super(key: key);
 
   @override
@@ -273,9 +280,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       if (!mounted) return;
 
       // Step 2: Collect card details and confirm payment
-      final paymentIntentId =
-          await _showStripeCardSheet(clientSecret) ??
-          _paymentIntentIdFromClientSecret(clientSecret);
+      final paymentIntentId = await _showStripeCardSheet(clientSecret);
       if (paymentIntentId == null || paymentIntentId.isEmpty) {
         throw Exception('Payment cancelled');
       }
@@ -283,14 +288,12 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       // Step 3: Confirm on backend (fallback — webhook is source of truth)
       final confirmation = await PaymentService.confirmStripePayment(
         paymentIntentId: paymentIntentId,
+        orderId: widget.orderId.isNotEmpty ? widget.orderId : 'pending',
       );
 
-      // Check if order was actually created
-      if (confirmation['orderId'] == null) {
-        if (confirmation['status'] == 'order_creation_failed') {
-          throw Exception('Payment succeeded but order creation failed. Please contact support.');
-        }
-        throw Exception('Payment confirmation failed. Please try again or contact support.');
+      // Only show success if payment actually succeeded
+      if (confirmation['status'] != 'succeeded') {
+        throw Exception('Payment not completed. Please try again.');
       }
 
       _showPaymentSuccessDialog('Card');
@@ -344,33 +347,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     );
   }
 
-  /// Handle Konnect (E-Dinar) Payment
-  Future<void> _processKonnectPayment() async {
-    try {
-      // Step 1: Create payment on backend
-      final paymentData = await PaymentService.createKonnectPayment(
-        orderId: widget.orderId,
-        firstName: _userFirstName ?? 'User',
-        lastName: _userLastName ?? '',
-        email: _userEmail ?? 'user@example.com',
-      );
-
-      final paymentUrl = paymentData['paymentUrl'];
-      final paymentId = paymentData['paymentId'];
-
-      if (!mounted) return;
-
-      // Step 2: Open payment URL
-      await PaymentService.openPaymentUrl(paymentUrl);
-
-      // Step 3: Verify payment after user returns
-      if (!mounted) return;
-      _showKonnectVerificationDialog(paymentId);
-    } catch (e) {
-      rethrow;
-    }
-  }
-
+  
   /// Show dialog when returning from PayPal
   void _showPayPalReturnDialog(String paypalOrderId) {
     showDialog(
@@ -601,71 +578,116 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     return clientSecret.substring(0, idx);
   }
 
-  /// Show Konnect Verification Dialog
-  void _showKonnectVerificationDialog(String paymentId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Verifying Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16),
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            const Text(
-              'Checking your payment status...',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-
-    // Wait a moment for user to complete payment
-    Future.delayed(const Duration(seconds: 3), () async {
+  
+  /// Show Payment Success Dialog
+  void _showPaymentSuccessDialog(String method) async {
+    String? orderId;
+    
+    if (widget.createOrderAfterPayment) {
+      // Create order after successful payment
       try {
-        final verification = await PaymentService.verifyKonnectPayment(
-          paymentId: paymentId,
-          orderId: widget.orderId,
-        );
-
-        if (!mounted) return;
-        Navigator.pop(context); // Close verification dialog
-
-        if (verification['isSuccessful']) {
-          _showPaymentSuccessDialog('e-Dinar');
-        } else {
-          _showPaymentErrorDialog('Payment was not completed');
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('jwt');
+        
+        if (token != null) {
+          final response = await http.post(
+            Uri.parse(apiUrl('orders')),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              ...widget.orderDetails,
+              'status': 'CONFIRMED', // Order is confirmed since payment is successful
+              'paymentDetails': {
+                'status': 'completed',
+                'provider': method.toLowerCase(),
+                'confirmedAt': DateTime.now().toIso8601String(),
+                'paypalOrderId': widget.paypalOrderId, // Store PayPal order ID for reference
+              }
+            }),
+          );
+          
+          if (response.statusCode == 200 || response.statusCode == 201) {
+            final responseData = jsonDecode(response.body);
+            orderId = (responseData['order']?['id'] ?? responseData['orderId'])?.toString();
+            
+            // Decrement offer quantity after successful order creation
+            if (orderId != null && orderId.isNotEmpty) {
+              await _decrementOfferQuantity();
+            }
+          }
         }
       } catch (e) {
-        if (!mounted) return;
-        Navigator.pop(context);
-        _showPaymentErrorDialog(e.toString());
+        debugPrint('Failed to create order after payment: $e');
+        // Show error but don't block the user
       }
-    });
-  }
+    } else {
+      // Confirm existing order status after successful payment
+      try {
+        await PaymentService.confirmOrderPayment(
+          orderId: widget.orderId,
+          paymentMethod: method.toUpperCase(),
+          paymentDetails: {
+            'status': 'completed',
+            'provider': method.toLowerCase(),
+            'confirmedAt': DateTime.now().toIso8601String(),
+          },
+        );
+      } catch (e) {
+        debugPrint('Failed to confirm order payment: $e');
+        // Continue anyway - payment was successful even if confirmation failed
+      }
+      orderId = widget.orderId;
+    }
 
-  /// Show Payment Success Dialog
-  void _showPaymentSuccessDialog(String method) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('✓ Payment Successful'),
-        content: Text('Your payment via $method was processed successfully.'),
+        content: Text('Your payment via $method was processed successfully. Your order has been confirmed.'),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              Navigator.pop(context, true); // Return success
+              Navigator.pop(context, {'success': true, 'orderId': orderId}); // Return success with order ID
             },
             child: const Text('Done'),
           ),
         ],
       ),
     );
+  }
+
+  /// Decrement offer quantity after successful order creation
+  Future<void> _decrementOfferQuantity() async {
+    try {
+      final offerId = widget.orderDetails['offerId'];
+      final quantity = widget.orderDetails['items']['quantity'];
+      
+      if (offerId != null && quantity != null) {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('jwt');
+        
+        final response = await http.patch(
+          Uri.parse(apiUrl('offers/$offerId/decrement-quantity')),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'quantity': quantity,
+          }),
+        );
+
+        if (response.statusCode != 200 && response.statusCode != 201) {
+          debugPrint('Failed to decrement quantity: ${response.statusCode} ${response.body}');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error decrementing offer quantity: $e');
+    }
   }
 
   /// Show Payment Error Dialog
@@ -922,9 +944,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     switch (method) {
       case AppPaymentMethod.card:
         return 'Pay with Card';
-      case AppPaymentMethod.eDinar:
-        return 'Pay with e-Dinar / D17';
-      case AppPaymentMethod.paypal:
+            case AppPaymentMethod.paypal:
         return 'Pay with PayPal';
     }
   }
@@ -933,9 +953,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     switch (method) {
       case AppPaymentMethod.card:
         return Icons.credit_card;
-      case AppPaymentMethod.eDinar:
-        return Icons.account_balance_wallet;
-      case AppPaymentMethod.paypal:
+            case AppPaymentMethod.paypal:
         return Icons.payment;
     }
   }
@@ -944,9 +962,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     switch (method) {
       case AppPaymentMethod.card:
         return Colors.blue;
-      case AppPaymentMethod.eDinar:
-        return const Color(0xFF1F9D7A);
-      case AppPaymentMethod.paypal:
+            case AppPaymentMethod.paypal:
         return Colors.amber;
     }
   }

@@ -15,13 +15,9 @@ export class StripeService {
       this.logger.warn('STRIPE_SECRET_KEY not configured');
     }
 
-<<<<<<< HEAD
-    this.stripe = new Stripe(secretKey, {
+this.stripe = new Stripe(secretKey, {
       apiVersion: '2026-04-22.dahlia',
     });
-=======
-    this.stripe = new Stripe(secretKey);
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
   }
 
   private ensureStripe() {
@@ -34,15 +30,18 @@ export class StripeService {
     orderData: Record<string, any>;
     amount: number;
     email?: string;
+    orderId?: string;
   }) {
     this.ensureStripe();
+
+    const metadata: Record<string, string> = params.orderId
+      ? { orderId: params.orderId }
+      : { orderData: JSON.stringify(params.orderData) };
 
     const paymentIntent = await this.stripe.paymentIntents.create({
       amount: Math.round(params.amount * 100),
       currency: 'eur',
-      metadata: {
-        orderData: JSON.stringify(params.orderData),
-      },
+      metadata,
       description: 'FiftyFood Order',
       receipt_email: params.email || undefined,
     });
@@ -105,10 +104,7 @@ export class StripeService {
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
-<<<<<<< HEAD
       ...(params.email ? { customer_email: params.email } : {}),
-=======
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
       metadata: {
         orderData: JSON.stringify(params.orderData),
       },

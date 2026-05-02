@@ -17,6 +17,7 @@ class PaymentService {
     String? deliveryPhone,
     double? deliveryFee,
     String? email,
+    String? orderId,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -42,6 +43,7 @@ class PaymentService {
           if (deliveryPhone != null) 'deliveryPhone': deliveryPhone,
           if (deliveryFee != null) 'deliveryFee': deliveryFee,
           if (email != null && email.isNotEmpty) 'email': email,
+          if (orderId != null) 'orderId': orderId,
         }),
       );
 
@@ -140,27 +142,41 @@ class PaymentService {
     required String orderId,
     String? returnUrl,
     String? cancelUrl,
+    double? amount,
   }) async {
     try {
+      debugPrint('PayPal: Starting payment creation');
+      
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
 
       if (jwt == null) {
+        debugPrint('PayPal: No authentication token found');
         throw Exception('No authentication token found');
       }
 
+      final url = apiUrl('paypal/create-order');
+      final requestBody = {
+        'orderId': orderId,
+        'returnUrl': returnUrl,
+        'cancelUrl': cancelUrl,
+        'amount': amount,
+      };
+      
+      debugPrint('PayPal: Request URL: $url');
+      debugPrint('PayPal: Request body: $requestBody');
+
       final response = await http.post(
-        Uri.parse(apiUrl('paypal/create-order')),
+        Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $jwt',
         },
-        body: jsonEncode({
-          'orderId': orderId,
-          'returnUrl': returnUrl,
-          'cancelUrl': cancelUrl,
-        }),
+        body: jsonEncode(requestBody),
       );
+
+      debugPrint('PayPal: Response status: ${response.statusCode}');
+      debugPrint('PayPal: Response body: ${response.body}');
 
       if (response.statusCode != 201 && response.statusCode != 200) {
         throw Exception('Failed to create PayPal payment: ${response.body}');
@@ -168,6 +184,7 @@ class PaymentService {
 
       return jsonDecode(response.body);
     } catch (e) {
+      debugPrint('PayPal: Error occurred: $e');
       throw Exception('PayPal payment error: $e');
     }
   }
@@ -214,6 +231,7 @@ class PaymentService {
   /// Confirm Stripe payment (mobile fallback — webhook is source of truth)
   static Future<Map<String, dynamic>> confirmStripePayment({
     required String paymentIntentId,
+    String? orderId,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -223,8 +241,9 @@ class PaymentService {
         throw Exception('No authentication token found');
       }
 
+      final resolvedOrderId = orderId ?? 'pending';
       final response = await http.post(
-        Uri.parse(apiUrl('payments/confirm-stripe/$paymentIntentId')),
+        Uri.parse(apiUrl('payments/confirm-stripe/$resolvedOrderId/$paymentIntentId')),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $jwt',
@@ -238,6 +257,42 @@ class PaymentService {
       return jsonDecode(response.body);
     } catch (e) {
       throw Exception('Stripe confirmation error: $e');
+    }
+  }
+
+  /// Update order status after successful payment
+  static Future<Map<String, dynamic>> confirmOrderPayment({
+    required String orderId,
+    required String paymentMethod,
+    Map<String, dynamic>? paymentDetails,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+
+      if (jwt == null) {
+        throw Exception('No authentication token found');
+      }
+
+      final response = await http.post(
+        Uri.parse(apiUrl('orders/$orderId/confirm-payment')),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: jsonEncode({
+          'paymentMethod': paymentMethod,
+          'paymentDetails': paymentDetails ?? {},
+        }),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception('Failed to confirm order payment: ${response.body}');
+      }
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      throw Exception('Order confirmation error: $e');
     }
   }
 

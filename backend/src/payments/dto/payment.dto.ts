@@ -51,6 +51,10 @@ export class CreateStripeIntentDto {
   @IsString()
   @IsOptional()
   email?: string;
+
+  @IsString()
+  @IsOptional()
+  orderId?: string;
 }
 
 export class CreateStripeCheckoutDto {

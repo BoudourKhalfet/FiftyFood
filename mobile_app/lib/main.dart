@@ -117,6 +117,34 @@ class MyAppState extends State<MyApp> {
           );
         }
 
+        // ✅ Handle PayPal return URLs (works on both web and mobile)
+        if (uri.path.startsWith('/payment/paypal/')) {
+          print("DETECTED PAYPAL ROUTE: ${uri.path}");
+          
+          if (uri.path == '/payment/paypal/return') {
+            String? paypalOrderId = uri.queryParameters['token'];
+            String? payerId = uri.queryParameters['PayerID'];
+            
+            print("PAYPAL RETURN - Order ID: $paypalOrderId, Payer ID: $payerId");
+            
+            // TODO: Navigate to order checkout with PayPal success
+            // For now, navigate to home screen
+            return MaterialPageRoute(
+              builder: (_) => const HomeScreen(),
+            );
+          }
+          
+          if (uri.path == '/payment/paypal/cancel') {
+            print("PAYPAL CANCEL - User cancelled payment");
+            
+            // TODO: Navigate back to offers screen with cancellation message
+            // For now, navigate to home screen
+            return MaterialPageRoute(
+              builder: (_) => const HomeScreen(),
+            );
+          }
+        }
+
         // ✅ Normal routing
         switch (settings.name) {
           case '/':

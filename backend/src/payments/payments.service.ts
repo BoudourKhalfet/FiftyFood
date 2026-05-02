@@ -39,6 +39,7 @@ export class PaymentsService {
     deliveryPhone?: string;
     deliveryFee?: number;
     email?: string;
+    orderId?: string;
   }) {
     const verifiedTotal = await this.getVerifiedTotal(params.offerId, params.items, params.deliveryFee);
 
@@ -56,6 +57,7 @@ export class PaymentsService {
       },
       amount: verifiedTotal,
       email: params.email,
+      orderId: params.orderId,
     });
 
     return intent;
@@ -85,13 +87,9 @@ export class PaymentsService {
 
     await this.prisma.order.update({
       where: { id: params.orderId },
-<<<<<<< HEAD
-      data: { paymentMethod: 'D17' as any },
-=======
       data: {
         paymentMethod: 'D17',
       },
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     });
 
     return {
@@ -151,46 +149,21 @@ export class PaymentsService {
     this.logger.log(`Stripe mobile confirm status: ${confirmation.status}`);
 
     if (confirmation.status === 'succeeded') {
-<<<<<<< HEAD
-      let orderData: any;
-      try { orderData = JSON.parse(confirmation.metadata?.orderData ?? '{}'); } catch { orderData = {}; }
-      if (orderData.clientId && orderData.clientId !== userId) {
-        throw new BadRequestException('Unauthorized');
+      const orderId = confirmation.orderId;
+      if (orderId) {
+        await this.updateOrderStatus(orderId, 'CONFIRMED');
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: {
+            paymentDetails: {
+              stripePaymentIntentId: paymentIntentId,
+              provider: 'stripe',
+              confirmedAt: new Date().toISOString(),
+            } as any,
+          },
+        });
+        return { status: confirmation.status, orderId, amount: confirmation.amount };
       }
-      const existing = await this.prisma.order.findFirst({
-        where: { paymentDetails: { path: ['stripePaymentIntentId'], equals: paymentIntentId } },
-      });
-      if (existing) {
-        return {
-          status: confirmation.status,
-          orderId: existing.id,
-          orderStatus: existing.status,
-          amount: confirmation.amount,
-        };
-      }
-      const newOrder = await this.createOrderFromSessionMetadata(
-        confirmation.metadata,
-        paymentIntentId,
-        'stripePaymentIntentId',
-      );
-      if (newOrder) {
-        return {
-          status: confirmation.status,
-          orderId: newOrder.id,
-          orderStatus: 'CONFIRMED',
-          amount: confirmation.amount,
-        };
-      }
-      // Order creation failed - return error status
-      return {
-        status: 'order_creation_failed',
-        amount: confirmation.amount,
-      };
-=======
-      await this.updateOrderStatus(orderId, 'CONFIRMED');
-    } else if (confirmation.status === 'requires_payment_method') {
-      await this.updateOrderStatus(orderId, 'CANCELLED');
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return { status: confirmation.status, amount: confirmation.amount };
@@ -248,37 +221,10 @@ export class PaymentsService {
     const confirmation = await this.stripeService.confirmCheckoutSession(sessionId);
 
     if (confirmation.status === 'paid') {
-<<<<<<< HEAD
-      let orderData: any;
-      try { orderData = JSON.parse(confirmation.metadata?.orderData ?? '{}'); } catch { orderData = {}; }
-      if (orderData.clientId && orderData.clientId !== userId) {
-        throw new BadRequestException('Unauthorized');
-      }
-      const existingOrder = await this.prisma.order.findFirst({
-        where: { paymentDetails: { path: ['stripeSessionId'], equals: sessionId } },
-      });
-      if (existingOrder) {
-        return {
-          status: confirmation.status,
-          orderId: existingOrder.id,
-          orderStatus: existingOrder.status,
-        };
-      }
-      const newOrder = await this.createOrderFromSessionMetadata(confirmation.metadata, sessionId);
-      if (newOrder) {
-        return {
-          status: confirmation.status,
-          orderId: newOrder.id,
-          orderStatus: 'CONFIRMED',
-        };
-      }
-      // Order creation failed
-      return { status: 'order_creation_failed' };
-=======
-      await this.updateOrderStatus(orderId, 'CONFIRMED');
+      // For checkout session fallback, we don't have orderId, so we just return status
+      // The webhook will handle order creation
     } else if (confirmation.status === 'unpaid') {
-      await this.updateOrderStatus(orderId, 'CANCELLED');
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
+      // Cannot update order status without orderId in this flow
     }
 
     return { status: confirmation.status };
@@ -303,15 +249,9 @@ export class PaymentsService {
     }
 
     if (verification.isSuccessful) {
-<<<<<<< HEAD
-      await this.updateOrderStatus(orderId, 'PAID');
-    } else if (verification.status === 'failed') {
-      await this.updateOrderStatus(orderId, 'FAILED');
-=======
       await this.updateOrderStatus(orderId, 'CONFIRMED');
     } else {
       await this.updateOrderStatus(orderId, 'CANCELLED');
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return verification;
@@ -344,6 +284,10 @@ export class PaymentsService {
       throw new BadRequestException('PayPal order does not match');
     }
 
+    const order = await this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+    });
+
     const existingDetails = (order.paymentDetails as Record<string, unknown>) ?? {};
     await this.prisma.order.update({
       where: { id: orderId },
@@ -362,13 +306,9 @@ export class PaymentsService {
     }
 
     if (capture.isSuccessful) {
-<<<<<<< HEAD
-      await this.updateOrderStatus(orderId, 'PAID');
-=======
       await this.updateOrderStatus(orderId, 'CONFIRMED');
     } else {
       await this.updateOrderStatus(orderId, 'CANCELLED');
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return capture;
@@ -413,15 +353,29 @@ export class PaymentsService {
     switch (event.type) {
       case 'payment_intent.succeeded': {
         const intent = event.data.object;
-        const existing = await this.prisma.order.findFirst({
-          where: { paymentDetails: { path: ['stripePaymentIntentId'], equals: intent.id } },
-        });
-        if (!existing) {
-          await this.createOrderFromSessionMetadata(
-            intent.metadata,
-            intent.id,
-            'stripePaymentIntentId',
-          );
+        if (intent.metadata?.orderId) {
+          // Order was pre-created — just confirm it
+          await this.updateOrderStatus(intent.metadata.orderId, 'CONFIRMED');
+          await this.prisma.order.update({
+            where: { id: intent.metadata.orderId },
+            data: {
+              paymentDetails: {
+                stripePaymentIntentId: intent.id,
+                provider: 'stripe',
+              } as any,
+            },
+          });
+        } else {
+          const existing = await this.prisma.order.findFirst({
+            where: { paymentDetails: { path: ['stripePaymentIntentId'], equals: intent.id } },
+          });
+          if (!existing) {
+            await this.createOrderFromSessionMetadata(
+              intent.metadata,
+              intent.id,
+              'stripePaymentIntentId',
+            );
+          }
         }
         break;
       }
@@ -512,30 +466,10 @@ export class PaymentsService {
   // =========================
   // CORE STATUS UPDATE
   // =========================
-<<<<<<< HEAD
-  private async updateOrderStatus(orderId: string, paymentStatus: string) {
-    let orderStatus: OrderStatus = OrderStatus.PENDING;
-
-    if (paymentStatus === 'PAID') {
-      orderStatus = OrderStatus.CONFIRMED;
-    } else if (paymentStatus === 'FAILED') {
-      orderStatus = OrderStatus.CANCELLED;
-    }
-
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: orderStatus, // ✅ clean & type-safe
-      },
-    });
-  }
-=======
   private async updateOrderStatus(orderId: string, orderStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING') {
     await this.prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: orderStatus,
-      },
+      data: { status: orderStatus },
     });
   }
 
@@ -545,7 +479,17 @@ export class PaymentsService {
   async getOrderById(orderId: string) {
     return this.prisma.order.findUnique({
       where: { id: orderId },
+      include: {
+        client: { 
+          select: { email: true },
+          include: { clientProfile: { select: { fullName: true } } }
+        },
+        restaurant: { 
+          select: { email: true },
+          include: { restaurantProfile: { select: { restaurantName: true } } }
+        },
+        offer: { select: { description: true, photoUrl: true } },
+      },
     });
   }
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
 }

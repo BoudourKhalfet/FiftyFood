@@ -10,6 +10,7 @@ import {
   ForbiddenException,
   UseInterceptors,
   UploadedFile,
+  UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Role } from '@prisma/client';
@@ -20,6 +21,7 @@ import { UpdateOfferDto } from './dto/update-offer.dto';
 import { GenerateDescriptionDto } from './dto/generate-description.dto';
 import { RecommendationService } from '../recommendations/recommendation.service';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -128,25 +130,26 @@ export class OffersController {
   }
 
   /**
-<<<<<<< HEAD
    * GET /offers/recommended
    * Personalised offer feed for the authenticated client.
-   * Uses hybrid AI: content-based + collaborative filtering + contextual boosting.
    */
   @Get('recommended')
+  @UseGuards(JwtAuthGuard)
   async getRecommendedOffers(@Req() req: ReqWithUser) {
     return this.recommendations.getRecommendedOffers(req.user.sub);
-=======
+  }
+
+  /**
    * PATCH /offers/:id/decrement-quantity
    * Decrement offer quantity after a successful purchase.
    */
   @Patch(':id/decrement-quantity')
+  @UseGuards(JwtAuthGuard)
   async decrementQuantity(
     @Param('id') id: string,
-    @Body() body: { quantity?: number },
+    @Body() body?: { quantity?: number },
   ) {
     return this.offers.decrementQuantity(id, body?.quantity ?? 1);
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
   }
 
   @Public()

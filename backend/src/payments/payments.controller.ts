@@ -6,11 +6,8 @@ import {
   Get,
   UseGuards,
   Req,
-<<<<<<< HEAD
-  Headers,
-=======
   Res,
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
+  Headers,
   BadRequestException,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -77,6 +74,7 @@ export class PaymentsController {
       deliveryPhone: dto.deliveryPhone,
       deliveryFee: dto.deliveryFee,
       email: dto.email,
+      orderId: dto.orderId,
     });
   }
 
@@ -180,21 +178,11 @@ export class PaymentsController {
     );
   }
 
-  // =========================
-  // STRIPE CONFIRM INTENT
-  // =========================
-<<<<<<< HEAD
-  @Post('confirm-stripe/:paymentIntentId')
-  @UseGuards(JwtAuthGuard)
-  async confirmStripePayment(
-    @Req() req: ReqWithUser,
-=======
   @Post('confirm-stripe/:orderId/:paymentIntentId')
   @UseGuards(JwtAuthGuard)
   async confirmStripePayment(
     @Req() req: ReqWithUser,
     @Param('orderId') orderId: string,
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     @Param('paymentIntentId') paymentIntentId: string,
   ) {
     return this.paymentsService.confirmStripePayment(paymentIntentId, req.user.sub);
@@ -228,10 +216,6 @@ export class PaymentsController {
       req.user.sub,
     );
   }
-<<<<<<< HEAD
-}
-=======
-
   // =========================
   // PAYPAL RETURN PAGES
   // =========================
@@ -299,4 +283,3 @@ export class PaymentsController {
       );
   }
 }
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860

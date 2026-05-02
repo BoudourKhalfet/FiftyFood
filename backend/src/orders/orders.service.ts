@@ -526,8 +526,6 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       return createdOrder;
     });
 
-    await this.notificationsService.notifyOrderCreated(order.id);
-
     const pickupQrToken = await this.issuePickupQrToken(order);
 
     const restaurant = await this.prisma.restaurantProfile.findUnique({
@@ -623,7 +621,6 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       return created;
     });
 
-    await this.notificationsService.notifyOrderCreated(order.id);
     return { id: order.id };
   }
 
