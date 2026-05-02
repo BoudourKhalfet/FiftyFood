@@ -225,6 +225,7 @@ class MyAppState extends State<MyApp> {
 
           case '/deliverer/dashboard':
             return MaterialPageRoute(builder: (_) => MainScreen());
+
         }
 
         // ✅ SINGLE fallback
@@ -235,3 +236,4 @@ class MyAppState extends State<MyApp> {
     );
   }
 }
+

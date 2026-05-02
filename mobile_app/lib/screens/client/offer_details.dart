@@ -12,6 +12,7 @@ import '../../api/client_profile_service.dart';
 import '../../api/api_service.dart';
 import '../../models/client_profile.dart';
 import 'package:location/location.dart';
+import 'package:mobile_app/services/payment_service.dart';
 
 Uint8List? decodeImg(String imgUrl) {
   // Remove data prefix if needed
@@ -682,6 +683,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                     discounted: discounted,
                                     pickup: pickupDisplay,
                                     address: address,
+                                    parentContext: context,
                                   );
                                 },
                           child: _checkingReserveAvailability
@@ -696,7 +698,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   ),
                                 )
                               : const Text(
-                                  'Order Now',
+                                  'Reserve Now',
                                   style: TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.bold,
@@ -720,6 +722,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     required double discounted,
     required String pickup,
     required String address,
+    required BuildContext parentContext,
   }) async {
     double deliveryFee = 2.5;
     final subtotal = discounted * quantity;
@@ -966,7 +969,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                         ],
                       ],
 
-                      SizedBox(height: 7),
+                      SizedBox(height: 16),
 
                       // --- Cart/price summary box
                       Container(
@@ -1071,55 +1074,46 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                               onPressed: _isCreatingOrder
                                   ? null
                                   : () async {
-                                      if (selectedMethod == 'delivery' &&
-                                          (addressController.text.isEmpty ||
-                                              phoneController.text.isEmpty)) {
-                                        setState(() {
-                                          errorText =
-                                              "Enter address & phone for delivery!";
-                                        });
-                                        return;
-                                      }
-                                      // Clear errors and proceed
-                                      setState(() {
-                                        errorText = null;
-                                      });
-                                      // ✅ FIXED: Update the class-level selectedPayment before navigating
-                                      this.selectedPayment =
-                                          'card'; // or get from payment selector
-                                      final pageContext = this.context;
-                                      Navigator.of(context).pop();
-                                      await _createOrderAndPay({
-                                        "restaurantId":
-                                            widget.offer['restaurant']['id'],
-                                        "offerId": widget.offer['id']
-                                            .toString(),
-                                        "items": {
-                                          "offerId": widget.offer['id'],
-                                          "quantity": quantity,
-                                        },
+                                if (selectedMethod == 'delivery' &&
+                                    (addressController.text.isEmpty ||
+                                        phoneController.text.isEmpty)) {
+                                  setState(() {
+                                    errorText =
+                                        "Enter address & phone for delivery!";
+                                  });
+                                  return;
+                                }
+                                // Clear errors and proceed
+                                setState(() {
+                                  errorText = null;
+                                });
+                                // ✅ FIXED: Update the class-level selectedPayment before navigating
+                                this.selectedPayment = paymentMethod; // use the selected payment from the UI
+                                Navigator.of(context).pop();
+                                await _createOrderAndPay(
+                                  {
+                                    "restaurantId": widget.offer['restaurant']['id'],
+                                    "offerId": widget.offer['id'].toString(),
+                                    "items": {"offerId": widget.offer['id'], "quantity": quantity},
 
-                                        "total": (discounted * quantity)
-                                            .toDouble(), // ensure double type!
-                                        "collectionMethod": selectedMethod
-                                            .toUpperCase(),
-                                        "deliveryAddress":
-                                            selectedMethod == 'delivery'
-                                            ? addressController.text.trim()
-                                            : null,
-                                        "deliveryPhone":
-                                            selectedMethod == 'delivery'
-                                            ? phoneController.text.trim()
-                                            : null,
-                                        "deliveryFee": deliveryFee,
-                                        "paymentMethod": "CARD",
-                                        "paymentDetails": {
-                                          "status": "pending",
-                                          "provider": selectedPayment
-                                              .toLowerCase(),
-                                        },
-                                      }, pageContext);
-                                    },
+                                    "total": (discounted * quantity).toDouble(), // ensure double type!
+                                    "collectionMethod": selectedMethod.toUpperCase(),
+                                    "deliveryAddress": selectedMethod == 'delivery'
+                                        ? addressController.text.trim()
+                                        : null,
+                                    "deliveryPhone": selectedMethod == 'delivery'
+                                        ? phoneController.text.trim()
+                                        : null,
+                                    "deliveryFee": deliveryFee,
+                                    "paymentMethod": selectedPayment.toLowerCase() == 'edinar' ? 'D17' : selectedPayment.toUpperCase(),
+                                    "paymentDetails": {
+                                    "status": "pending",
+                                    "provider": selectedPayment.toLowerCase() // ✅ Now accessible
+                                    }
+                                  },
+                                  parentContext,
+                                );
+                              },
                               child: _isCreatingOrder
                                   ? const SizedBox(
                                       width: 18,
@@ -1156,17 +1150,265 @@ class _OfferDetailsPageState extends State<OfferDetails> {
         ? (orderDetails['total'] as num).toDouble()
         : 0.0;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => OrderCheckoutScreen(
-          orderDetails: orderDetails,
-          orderId: '',
-          totalAmount: totalAmount,
-          clientSecret: null,
-        ),
-      ),
-    );
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt');
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You are not logged in.')),
+      );
+      if (mounted) {
+        setState(() => _isCreatingOrder = false);
+      }
+      return;
+    }
+
+    try {
+      // Create order
+      final response = await http.post(
+        Uri.parse(apiUrl('orders')),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(orderDetails),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final errorData = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text('Failed to create order: ${errorData['message']}')),
+        );
+        if (mounted) {
+          setState(() => _isCreatingOrder = false);
+        }
+        return;
+      }
+
+      final responseData = jsonDecode(response.body);
+      final orderId =
+          (responseData['order']?['id'] ?? responseData['orderId'])
+              ?.toString();
+      final totalAmount =
+          (orderDetails['total'] is num)
+              ? (orderDetails['total'] as num).toDouble()
+              : 0.0;
+      final paymentMethod = orderDetails['paymentMethod']?.toString().toUpperCase() ?? 'CARD';
+
+      if (orderId == null || orderId.isEmpty || orderId == 'null') {
+        throw Exception('Order created but no order id returned');
+      }
+
+      // Decrement offer quantity
+      await _decrementOfferQuantity(
+        orderDetails['offerId'],
+        orderDetails['items']['quantity'],
+      );
+
+      // Handle payment based on method
+      if (!mounted) return;
+
+      if (paymentMethod == 'CARD') {
+        // Stripe payment
+        try {
+          final intentData = await PaymentService.createStripeIntent(
+            orderId: orderId,
+            amount: totalAmount,
+            email: _clientProfile?.email ?? prefs.getString('email') ?? '',
+          );
+
+          if (!mounted) return;
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderCheckoutScreen(
+                orderId: orderId,
+                totalAmount: totalAmount,
+                orderDetails: responseData['order'] ?? orderDetails,
+                initialMethod: AppPaymentMethod.card,
+                clientSecret: intentData['clientSecret'],
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (paymentMethod == 'D17') {
+        // Konnect (e-Dinar) payment
+        try {
+          final fullName = _clientProfile?.fullName ?? prefs.getString('fullName') ?? 'User';
+          final nameParts = fullName.split(' ');
+          final firstName = nameParts.isNotEmpty ? nameParts.first : 'User';
+          final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+          await PaymentService.createKonnectPayment(
+            orderId: orderId,
+            firstName: firstName,
+            lastName: lastName,
+            email: _clientProfile?.email ?? prefs.getString('email') ?? 'user@example.com',
+          );
+
+          if (!mounted) return;
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderCheckoutScreen(
+                orderId: orderId,
+                totalAmount: totalAmount,
+                orderDetails: responseData['order'] ?? orderDetails,
+                initialMethod: AppPaymentMethod.eDinar,
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (paymentMethod == 'PAYPAL') {
+        // PayPal payment
+        try {
+          await PaymentService.createPayPalPayment(
+            orderId: orderId,
+          );
+
+          if (!mounted) return;
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderCheckoutScreen(
+                orderId: orderId,
+                totalAmount: totalAmount,
+                orderDetails: responseData['order'] ?? orderDetails,
+                initialMethod: AppPaymentMethod.paypal,
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        // Cash payment - success
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Order created! Pay in cash at pickup/delivery.")),
+        );
+        if (!mounted) return;
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/offers',
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('An error occurred: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingOrder = false);
+      }
+    }
   }
 
-}
+  /// Decrement the offer quantity after successful purchase
+  Future<void> _decrementOfferQuantity(String offerId, int quantityPurchased) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwt');
+      
+      final response = await http.patch(
+        Uri.parse(apiUrl('offers/$offerId/decrement-quantity')),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'quantity': quantityPurchased,
+        }),
+      );
 
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        debugPrint('Failed to decrement quantity: ${response.statusCode} ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error decrementing offer quantity: $e');
+    }
+  }
+
+  // Helpers to render summary/info
+
+  Widget _summaryRow(String left, String right, [bool strong = false]) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              left,
+              style: TextStyle(
+                fontWeight: strong ? FontWeight.bold : FontWeight.w500,
+                fontSize: 15,
+              ),
+            ),
+            Text(
+              right,
+              style: TextStyle(
+                fontWeight: strong ? FontWeight.bold : FontWeight.w500,
+                fontSize: 15.4,
+              ),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      );
+
+  Widget _infoRow(String left, String right, {bool strong = false}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3.5),
+    child: Row(
+      crossAxisAlignment:
+          CrossAxisAlignment.start, // handles long multiline addresses
+      children: [
+        SizedBox(
+          width: 95,
+          child: Text(
+            left,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            right,
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.bold : FontWeight.normal,
+              color: Color(0xFF445566),
+              fontSize: 15,
+            ),
+            textAlign: TextAlign.right,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    ),
+  );
+}

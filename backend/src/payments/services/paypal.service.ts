@@ -7,6 +7,7 @@ export class PayPalService {
   private paypalClientId: string;
   private paypalClientSecret: string;
   private mode: 'sandbox' | 'live';
+  private currencyCode: string;
   private client: paypal.core.PayPalHttpClient | null;
 
   constructor() {
@@ -15,6 +16,7 @@ export class PayPalService {
       process.env.PAYPAL_CLIENT_SECRET || process.env.PAYPAL_SECRET || '';
     this.mode =
       process.env.PAYPAL_MODE?.toLowerCase() === 'live' ? 'live' : 'sandbox';
+    this.currencyCode = (process.env.PAYPAL_CURRENCY || 'USD').toUpperCase();
     this.client = null;
 
     if (!this.paypalClientId || !this.paypalClientSecret) {
@@ -34,6 +36,52 @@ export class PayPalService {
           );
 
     this.client = new paypal.core.PayPalHttpClient(environment);
+    this.logger.log(
+      `PayPal client initialized (mode=${this.mode}, currency=${this.currencyCode})`,
+    );
+  }
+
+  private formatPayPalError(error: unknown): {
+    message: string;
+    issue?: string;
+    debugId?: string;
+    statusCode?: number;
+  } {
+    const fallback = { message: 'PayPal request failed' };
+
+    if (!error || typeof error !== 'object') {
+      return fallback;
+    }
+
+    const err = error as {
+      statusCode?: number;
+      headers?: Record<string, string>;
+      _originalError?: { text?: string };
+      message?: string;
+    };
+
+    let parsed: any;
+    const rawText = err._originalError?.text;
+    if (rawText) {
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        parsed = undefined;
+      }
+    }
+
+    const issue = parsed?.details?.[0]?.issue as string | undefined;
+    const description = parsed?.details?.[0]?.description as string | undefined;
+    const debugId =
+      (parsed?.debug_id as string | undefined) ||
+      err.headers?.['paypal-debug-id'];
+
+    return {
+      message: description || parsed?.message || err.message || fallback.message,
+      issue,
+      debugId,
+      statusCode: err.statusCode,
+    };
   }
 
   private ensureClient(): paypal.core.PayPalHttpClient {
@@ -59,22 +107,22 @@ export class PayPalService {
           {
             reference_id: params.orderId,
             amount: {
-              currency_code: 'EUR',
-              value: params.amount.toFixed(2),
+              currency_code: this.currencyCode,
+              value: Number(params.amount).toFixed(2),
             },
             description:
               params.description || `FiftyFood Order ${params.orderId}`,
           },
         ],
-        application_context: {
-          return_url:
-            params.returnUrl ||
-            `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-success`,
-          cancel_url:
-            params.cancelUrl ||
-            `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-cancel`,
-          user_action: 'PAY_NOW',
-        },
+          application_context: {
+    return_url: params.returnUrl?.startsWith('fiftyfood://')
+      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?returnUrl=${encodeURIComponent(params.returnUrl)}`
+      : (params.returnUrl || `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success`),
+    cancel_url: params.cancelUrl?.startsWith('fiftyfood://')
+      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?cancelUrl=${encodeURIComponent(params.cancelUrl)}`
+      : (params.cancelUrl || `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel`),
+    user_action: 'PAY_NOW',
+  },
       });
 
       const response = await this.ensureClient().execute(request);
@@ -84,9 +132,9 @@ export class PayPalService {
       };
 
       // Find the approval link
-      const approvalLink = data.links?.find(
-        (link) => link.rel === 'approve',
-      );
+const approvalLink =
+  data.links?.find((link) => link.rel === 'approve') ||
+  data.links?.find((link) => link.href?.includes('checkoutnow'));
 
       return {
         paypalOrderId: data.id,
@@ -94,15 +142,23 @@ export class PayPalService {
         mode: this.mode,
       };
     } catch (error) {
-      this.logger.error('PayPal order error:', error);
-      throw new BadRequestException('Failed to create PayPal order');
+      const details = this.formatPayPalError(error);
+      this.logger.error(
+        `PayPal order error: status=${details.statusCode ?? 'unknown'} issue=${details.issue ?? 'unknown'} debugId=${details.debugId ?? 'n/a'} message=${details.message}`,
+      );
+
+      throw new BadRequestException({
+        message: 'Failed to create PayPal order',
+        paypalIssue: details.issue,
+        paypalMessage: details.message,
+        paypalDebugId: details.debugId,
+      });
     }
   }
 
   async captureOrder(paypalOrderId: string) {
     try {
       const request = new paypal.orders.OrdersCaptureRequest(paypalOrderId);
-      request.requestBody({} as any);
 
       const response = await this.ensureClient().execute(request);
       const data = response.result as {
@@ -129,8 +185,34 @@ export class PayPalService {
         mode: this.mode,
       };
     } catch (error) {
-      this.logger.error('PayPal capture error:', error);
-      throw new BadRequestException('Failed to capture PayPal payment');
+      const details = this.formatPayPalError(error);
+
+      if (details.issue === 'ORDER_NOT_APPROVED') {
+        this.logger.warn(
+          `PayPal capture skipped because the order is not approved yet: paypalOrderId=${paypalOrderId} debugId=${details.debugId ?? 'n/a'}`,
+        );
+
+        return {
+          status: 'ORDER_NOT_APPROVED',
+          isSuccessful: false,
+          amount: 0,
+          orderId: undefined,
+          paypalOrderId,
+          mode: this.mode,
+          needsApproval: true,
+        };
+      }
+
+      this.logger.error(
+        `PayPal capture error: status=${details.statusCode ?? 'unknown'} issue=${details.issue ?? 'unknown'} debugId=${details.debugId ?? 'n/a'} message=${details.message}`,
+      );
+
+      throw new BadRequestException({
+        message: 'Failed to capture PayPal payment',
+        paypalIssue: details.issue,
+        paypalMessage: details.message,
+        paypalDebugId: details.debugId,
+      });
     }
   }
 }

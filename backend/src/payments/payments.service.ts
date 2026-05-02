@@ -85,7 +85,13 @@ export class PaymentsService {
 
     await this.prisma.order.update({
       where: { id: params.orderId },
+<<<<<<< HEAD
       data: { paymentMethod: 'D17' as any },
+=======
+      data: {
+        paymentMethod: 'D17',
+      },
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     });
 
     return {
@@ -145,6 +151,7 @@ export class PaymentsService {
     this.logger.log(`Stripe mobile confirm status: ${confirmation.status}`);
 
     if (confirmation.status === 'succeeded') {
+<<<<<<< HEAD
       let orderData: any;
       try { orderData = JSON.parse(confirmation.metadata?.orderData ?? '{}'); } catch { orderData = {}; }
       if (orderData.clientId && orderData.clientId !== userId) {
@@ -179,6 +186,11 @@ export class PaymentsService {
         status: 'order_creation_failed',
         amount: confirmation.amount,
       };
+=======
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
+    } else if (confirmation.status === 'requires_payment_method') {
+      await this.updateOrderStatus(orderId, 'CANCELLED');
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return { status: confirmation.status, amount: confirmation.amount };
@@ -236,6 +248,7 @@ export class PaymentsService {
     const confirmation = await this.stripeService.confirmCheckoutSession(sessionId);
 
     if (confirmation.status === 'paid') {
+<<<<<<< HEAD
       let orderData: any;
       try { orderData = JSON.parse(confirmation.metadata?.orderData ?? '{}'); } catch { orderData = {}; }
       if (orderData.clientId && orderData.clientId !== userId) {
@@ -261,6 +274,11 @@ export class PaymentsService {
       }
       // Order creation failed
       return { status: 'order_creation_failed' };
+=======
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
+    } else if (confirmation.status === 'unpaid') {
+      await this.updateOrderStatus(orderId, 'CANCELLED');
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return { status: confirmation.status };
@@ -285,9 +303,15 @@ export class PaymentsService {
     }
 
     if (verification.isSuccessful) {
+<<<<<<< HEAD
       await this.updateOrderStatus(orderId, 'PAID');
     } else if (verification.status === 'failed') {
       await this.updateOrderStatus(orderId, 'FAILED');
+=======
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
+    } else {
+      await this.updateOrderStatus(orderId, 'CANCELLED');
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return verification;
@@ -309,6 +333,11 @@ export class PaymentsService {
       return { status: 'already_processed', orderStatus: order.status };
     }
 
+    return this._doPayPalCapture(paypalOrderId, orderId);
+  }
+
+  // Internal capture method used by both JWT and non-JWT flows
+  private async _doPayPalCapture(paypalOrderId: string, orderId: string) {
     const capture = await this.paypalService.captureOrder(paypalOrderId);
 
     if (capture.orderId && capture.orderId !== orderId) {
@@ -328,11 +357,41 @@ export class PaymentsService {
       },
     });
 
+    if ((capture as { needsApproval?: boolean }).needsApproval) {
+      return capture;
+    }
+
     if (capture.isSuccessful) {
+<<<<<<< HEAD
       await this.updateOrderStatus(orderId, 'PAID');
+=======
+      await this.updateOrderStatus(orderId, 'CONFIRMED');
+    } else {
+      await this.updateOrderStatus(orderId, 'CANCELLED');
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
     }
 
     return capture;
+  }
+
+  // Public capture for PayPal redirect (no JWT required)
+  async capturePayPalPaymentPublic(paypalOrderId: string, orderId: string) {
+    // Verify order exists and is pending
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) throw new BadRequestException('Order not found');
+    if (order.status !== 'PENDING') {
+      // Already processed, return current status
+      return {
+        isSuccessful: order.status === 'CONFIRMED',
+        status: order.status,
+        alreadyProcessed: true,
+      };
+    }
+
+    return this._doPayPalCapture(paypalOrderId, orderId);
   }
 
   // =========================
@@ -453,6 +512,7 @@ export class PaymentsService {
   // =========================
   // CORE STATUS UPDATE
   // =========================
+<<<<<<< HEAD
   private async updateOrderStatus(orderId: string, paymentStatus: string) {
     let orderStatus: OrderStatus = OrderStatus.PENDING;
 
@@ -469,4 +529,23 @@ export class PaymentsService {
       },
     });
   }
+=======
+  private async updateOrderStatus(orderId: string, orderStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING') {
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: orderStatus,
+      },
+    });
+  }
+
+  // =========================
+  // ORDER LOOKUP (for controllers)
+  // =========================
+  async getOrderById(orderId: string) {
+    return this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+  }
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
 }

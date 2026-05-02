@@ -4,6 +4,7 @@ export enum PaymentMethod {
   CARD = 'CARD',
   EDINAR = 'EDINAR',
   PAYPAL = 'PAYPAL',
+  D17 = 'D17',
 }
 
 export class CreatePaymentIntentDto {

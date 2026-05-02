@@ -15,9 +15,13 @@ export class StripeService {
       this.logger.warn('STRIPE_SECRET_KEY not configured');
     }
 
+<<<<<<< HEAD
     this.stripe = new Stripe(secretKey, {
       apiVersion: '2026-04-22.dahlia',
     });
+=======
+    this.stripe = new Stripe(secretKey);
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
   }
 
   private ensureStripe() {
@@ -83,7 +87,8 @@ export class StripeService {
     const cancelUrl =
       params.cancelUrl || `${baseUrl}/payments/stripe/checkout/cancel`;
 
-    const session = await this.stripe.checkout.sessions.create({
+    // Only set customer_email if valid
+    const sessionConfig: any = {
       mode: 'payment',
       payment_method_types: ['card'],
       line_items: [
@@ -100,11 +105,21 @@ export class StripeService {
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
+<<<<<<< HEAD
       ...(params.email ? { customer_email: params.email } : {}),
+=======
+>>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
       metadata: {
         orderData: JSON.stringify(params.orderData),
       },
-    });
+    };
+
+    // Only add customer_email if it's a valid non-empty string
+    if (params.email && params.email.trim().length > 0 && params.email.includes('@')) {
+      sessionConfig.customer_email = params.email.trim();
+    }
+
+    const session = await this.stripe.checkout.sessions.create(sessionConfig);
 
     return {
       sessionId: session.id,

@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/api.dart';
-
+import 'package:flutter/foundation.dart';
 class PaymentService {
 
   /// Create Stripe payment intent (no order created yet)
@@ -257,6 +257,10 @@ class PaymentService {
           'orderId': orderId,
         }),
       );
+        if (response.statusCode == 401) {
+          throw Exception('Unauthorized: your session expired. Please sign in again.');
+        }
+
 
       if (response.statusCode != 200 && response.statusCode != 201) {
         throw Exception('Failed to capture PayPal payment: ${response.body}');
@@ -300,17 +304,22 @@ class PaymentService {
 
   /// Open URL (for Konnect and PayPal redirects)
   static Future<void> openPaymentUrl(String url) async {
-    try {
-      if (await canLaunchUrl(Uri.parse(url))) {
-        await launchUrl(
-          Uri.parse(url),
-          mode: LaunchMode.externalApplication,
-        );
-      } else {
-        throw Exception('Could not launch payment URL');
-      }
-    } catch (e) {
-      throw Exception('URL launch error: $e');
+  try {
+    final uri = Uri.parse(url);
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(
+        uri,
+        mode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+        webOnlyWindowName: '_self',
+      );
+    } else {
+      throw Exception('Could not launch payment URL');
     }
+  } catch (e) {
+    throw Exception('URL launch error: $e');
   }
+}
 }

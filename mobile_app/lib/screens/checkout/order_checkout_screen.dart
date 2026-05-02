@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app_links/app_links.dart';
 import '../../services/payment_service.dart';
 import '../../widgets/payment_method_selector.dart';
 
@@ -35,12 +38,120 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   String? _userFirstName;
   String? _userLastName;
   CardFieldInputDetails? _cardDetails;
+  
+  // Deep link handling for PayPal
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSubscription;
+  bool _isWaitingForPayPal = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _selectedMethod = widget.initialMethod;
+    _initDeepLinks();
+    _checkForPendingPayment();
+  }
+  
+  void _initDeepLinks() {
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    }, onError: (err) {
+      print('Deep link error: $err');
+    });
+  }
+  
+  void _handleDeepLink(Uri uri) async {
+    print('Checkout received deep link: $uri');
+    final host = uri.host;
+    final orderId = uri.queryParameters['orderId'];
+    
+    if (orderId != widget.orderId) return; // Not our order
+    
+    if (host == 'payment-success') {
+      _verifyPayPalPayment();
+    } else if (host == 'payment-error') {
+      setState(() {
+        _isWaitingForPayPal = false;
+        _isProcessing = false;
+        _error = 'Payment was cancelled or failed.';
+      });
+    }
+  }
+  
+  Future<void> _checkForPendingPayment() async {
+    // Check if we were redirected back from PayPal
+    try {
+      final uri = await _appLinks.getInitialLink();
+      if (uri != null) {
+        _handleDeepLink(uri);
+      }
+    } catch (e) {
+      print('Error checking initial link: $e');
+    }
+  }
+  
+  Future<void> _verifyPayPalPayment() async {
+    setState(() {
+      _isWaitingForPayPal = false;
+      _isProcessing = true;
+    });
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final paypalOrderId = prefs.getString('pendingPayPalOrderId');
+      
+      if (paypalOrderId != null) {
+        final capture = await PaymentService.capturePayPalPayment(
+          paypalOrderId: paypalOrderId,
+          orderId: widget.orderId,
+        );
+        
+        if (capture['success'] == true || capture['status'] == 'COMPLETED') {
+          await prefs.remove('pendingPayPalOrderId');
+          await prefs.remove('pendingOrderId');
+          _showPaymentSuccess();
+        } else {
+          setState(() {
+            _isProcessing = false;
+            _error = 'Payment verification failed.';
+          });
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isProcessing = false;
+        _error = 'Error: $e';
+      });
+    }
+  }
+  
+  void _showPaymentSuccess() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        icon: const Icon(Icons.check_circle, color: Colors.green, size: 64),
+        title: const Text('Payment Successful!'),
+        content: const Text('Your order has been confirmed.'),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              Navigator.of(context).pop(true); // Return to previous screen with success
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3D9176)),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadUserData() async {
@@ -263,71 +374,128 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     }
   }
 
-  /// Handle PayPal Payment
+  /// Show dialog when returning from PayPal
+  void _showPayPalReturnDialog(String paypalOrderId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.payment, color: Color(0xFF0070BA)),
+              SizedBox(width: 8),
+              Text('PayPal'),
+            ],
+          ),
+          content: const Text(
+            'Did you complete the payment in PayPal?',
+            textAlign: TextAlign.center,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('No, Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await _capturePayPalAndShowResult(paypalOrderId);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0070BA),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Yes, Verify Payment'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Capture PayPal and show result
+  Future<void> _capturePayPalAndShowResult(String paypalOrderId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Verifying payment...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final capture = await PaymentService.capturePayPalPayment(
+        paypalOrderId: paypalOrderId,
+        orderId: widget.orderId,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Close loading dialog
+
+      if (capture['isSuccessful'] == true) {
+        _showPaymentSuccessDialog('PayPal');
+      } else if (capture['needsApproval'] == true) {
+        _showPaymentErrorDialog('Payment not yet approved. Please complete payment in PayPal first.');
+      } else {
+        _showPaymentErrorDialog('PayPal payment could not be completed.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Close loading dialog
+
+      final errorText = e.toString();
+      if (errorText.contains('Unauthorized') || errorText.contains('session expired')) {
+        _showSessionExpiredDialog();
+      } else {
+        _showPaymentErrorDialog('Payment verification failed: $errorText');
+      }
+    }
+  }
+
+  /// Handle PayPal Payment with deep links
   Future<void> _processPayPalPayment() async {
     try {
-      // Step 1: Create PayPal order on backend
       final paymentData = await PaymentService.createPayPalPayment(
         orderId: widget.orderId,
+        returnUrl: 'fiftyfood://payment-success?orderId=${widget.orderId}',
+        cancelUrl: 'fiftyfood://payment-error?orderId=${widget.orderId}',
       );
 
       final approvalUrl = paymentData['approvalUrl'];
       final paypalOrderId = paymentData['paypalOrderId'];
 
+      // Store order info for when we return from PayPal
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pendingOrderId', widget.orderId);
+      await prefs.setString('pendingPayPalOrderId', paypalOrderId);
+
       if (!mounted) return;
 
-      // Step 2: Open PayPal approval URL
+      // Show waiting state - deep link will handle the return
+      setState(() {
+        _isWaitingForPayPal = true;
+      });
+
+      // Open PayPal in browser
       await PaymentService.openPaymentUrl(approvalUrl);
 
-      // Step 3: Let user confirm after returning from PayPal and then capture
-      if (!mounted) return;
-      _showPayPalCaptureDialog(paypalOrderId);
+      // The deep link handler will automatically process the result when user returns
     } catch (e) {
+      setState(() {
+        _isWaitingForPayPal = false;
+      });
       rethrow;
     }
-  }
-
-  void _showPayPalCaptureDialog(String paypalOrderId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Complete PayPal Payment'),
-        content: const Text(
-          'After you finish PayPal checkout in your browser, tap the button below to confirm and capture payment.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Not Yet'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                final capture = await PaymentService.capturePayPalPayment(
-                  paypalOrderId: paypalOrderId,
-                  orderId: widget.orderId,
-                );
-
-                if (!mounted) return;
-                Navigator.pop(context);
-
-                if (capture['isSuccessful'] == true) {
-                  _showPaymentSuccessDialog('PayPal');
-                } else {
-                  _showPaymentErrorDialog('PayPal payment is not completed yet.');
-                }
-              } catch (e) {
-                if (!mounted) return;
-                Navigator.pop(context);
-                _showPaymentErrorDialog(e.toString());
-              }
-            },
-            child: const Text('I Paid'),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Show Stripe card entry and confirm
@@ -520,6 +688,35 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     );
   }
 
+  /// Show Session Expired Dialog
+  void _showSessionExpiredDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Session Expired'),
+        content: const Text(
+          'Your login session has expired. Please sign in again to complete your payment.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // Clear JWT and redirect to login
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('jwt');
+              if (!mounted) return;
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                '/signin',
+                (route) => false,
+              );
+            },
+            child: const Text('Sign In Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -528,9 +725,11 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         backgroundColor: const Color(0xFF1F9D7A),
         foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Order Summary
@@ -677,6 +876,47 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
             ],
           ],
         ),
+      ),
+      // Waiting for PayPal overlay
+      if (_isWaitingForPayPal)
+          Container(
+            color: Colors.black.withOpacity(0.7),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Complete payment in PayPal...',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'You\'ll return here automatically',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isWaitingForPayPal = false;
+                        });
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
