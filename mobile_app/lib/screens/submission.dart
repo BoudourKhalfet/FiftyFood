@@ -149,21 +149,7 @@ class PartnerSubmissionPage extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: const [
-                        Icon(
-                          Icons.check_circle_outline,
-                          color: Color(0xFF10B981),
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            "Once approved, you'll be able to publish offers and start selling.",
-                          ),
-                        ),
-                      ],
-                    ),
+                   
                   ],
                 ),
               ),

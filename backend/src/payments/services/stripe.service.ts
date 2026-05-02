@@ -16,7 +16,7 @@ export class StripeService {
     }
 
     this.stripe = new Stripe(secretKey, {
-      apiVersion: '2026-03-25.dahlia',
+      apiVersion: '2026-04-22.dahlia',
     });
   }
 
@@ -27,10 +27,9 @@ export class StripeService {
   }
 
   async createPaymentIntent(params: {
-    orderId: string;
+    orderData: Record<string, any>;
     amount: number;
     email?: string;
-    description?: string;
   }) {
     this.ensureStripe();
 
@@ -38,10 +37,10 @@ export class StripeService {
       amount: Math.round(params.amount * 100),
       currency: 'eur',
       metadata: {
-        orderId: params.orderId,
-        email: params.email || 'unknown',
+        orderData: JSON.stringify(params.orderData),
       },
-      description: params.description || `FiftyFood Order ${params.orderId}`,
+      description: 'FiftyFood Order',
+      receipt_email: params.email || undefined,
     });
 
     return {
@@ -60,11 +59,12 @@ export class StripeService {
       status: paymentIntent.status,
       amount: paymentIntent.amount / 100,
       orderId: paymentIntent.metadata?.orderId,
+      metadata: paymentIntent.metadata,
     };
   }
 
   async createCheckoutSession(params: {
-    orderId: string;
+    orderData: Record<string, any>;
     amount: number;
     email?: string;
     successUrl?: string;
@@ -72,8 +72,10 @@ export class StripeService {
   }) {
     this.ensureStripe();
 
-    const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
+    const baseUrl = process.env.PUBLIC_BACKEND_URL;
+    if (!baseUrl) {
+      throw new BadRequestException('PUBLIC_BACKEND_URL is not configured');
+    }
 
     const successUrl =
       params.successUrl || `${baseUrl}/payments/stripe/checkout/success`;
@@ -90,7 +92,7 @@ export class StripeService {
             currency: 'eur',
             unit_amount: Math.round(params.amount * 100),
             product_data: {
-              name: `FiftyFood Order ${params.orderId}`,
+              name: `FiftyFood Order`,
             },
           },
           quantity: 1,
@@ -98,9 +100,9 @@ export class StripeService {
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      customer_email: params.email,
+      ...(params.email ? { customer_email: params.email } : {}),
       metadata: {
-        orderId: params.orderId,
+        orderData: JSON.stringify(params.orderData),
       },
     });
 
@@ -119,6 +121,11 @@ export class StripeService {
       status: session.payment_status,
       orderId: session.metadata?.orderId,
       paymentIntentId: session.payment_intent,
+      metadata: session.metadata,
     };
+  }
+
+  constructWebhookEvent(rawBody: Buffer, signature: string, secret: string) {
+    return this.stripe.webhooks.constructEvent(rawBody, signature, secret);
   }
 }

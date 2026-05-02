@@ -104,9 +104,19 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         final successUrl = '$origin/';
         final cancelUrl = '$origin/';
 
+        final orderDetails = widget.orderDetails;
         final sessionData = await PaymentService.createStripeCheckoutSession(
-          orderId: widget.orderId,
-          email: _userEmail,
+          restaurantId: orderDetails['restaurantId'] as String,
+          offerId: orderDetails['offerId'] as String,
+          items: orderDetails['items'] as Map<String, dynamic>,
+          total: (orderDetails['total'] as num).toDouble(),
+          collectionMethod: orderDetails['collectionMethod'] as String?,
+          deliveryAddress: orderDetails['deliveryAddress'] as String?,
+          deliveryPhone: orderDetails['deliveryPhone'] as String?,
+          deliveryFee: orderDetails['deliveryFee'] != null
+              ? (orderDetails['deliveryFee'] as num).toDouble()
+              : null,
+          email: (_userEmail?.isNotEmpty == true) ? _userEmail : null,
           successUrl: successUrl,
           cancelUrl: cancelUrl,
         );
@@ -122,13 +132,22 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
         if (!mounted) return;
         _showStripeCheckoutConfirmDialog(sessionId);
-        return;
+        return;  
       }
       // Step 1: Create payment intent on backend
+      final orderDetails = widget.orderDetails;
       final intentData = await PaymentService.createStripeIntent(
-        orderId: widget.orderId,
-        amount: widget.totalAmount,
-        email: _userEmail,
+        restaurantId: orderDetails['restaurantId'] as String,
+        offerId: orderDetails['offerId'] as String,
+        items: orderDetails['items'] as Map<String, dynamic>,
+        total: (orderDetails['total'] as num).toDouble(),
+        collectionMethod: orderDetails['collectionMethod'] as String?,
+        deliveryAddress: orderDetails['deliveryAddress'] as String?,
+        deliveryPhone: orderDetails['deliveryPhone'] as String?,
+        deliveryFee: orderDetails['deliveryFee'] != null
+            ? (orderDetails['deliveryFee'] as num).toDouble()
+            : null,
+        email: (_userEmail?.isNotEmpty == true) ? _userEmail : null,
       );
 
       final clientSecret = intentData['clientSecret'] as String?;
@@ -153,11 +172,18 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         throw Exception('Payment cancelled');
       }
 
-      // Step 3: Confirm on backend to update order status
-      await PaymentService.confirmStripePayment(
-        orderId: widget.orderId,
+      // Step 3: Confirm on backend (fallback — webhook is source of truth)
+      final confirmation = await PaymentService.confirmStripePayment(
         paymentIntentId: paymentIntentId,
       );
+
+      // Check if order was actually created
+      if (confirmation['orderId'] == null) {
+        if (confirmation['status'] == 'order_creation_failed') {
+          throw Exception('Payment succeeded but order creation failed. Please contact support.');
+        }
+        throw Exception('Payment confirmation failed. Please try again or contact support.');
+      }
 
       _showPaymentSuccessDialog('Card');
     } catch (e) {
@@ -185,14 +211,15 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                 final confirmation =
                     await PaymentService.confirmStripeCheckoutSession(
                   sessionId: sessionId,
-                  orderId: widget.orderId,
                 );
 
                 if (!mounted) return;
                 Navigator.pop(context);
 
-                if (confirmation['status'] == 'paid') {
+                if (confirmation['status'] == 'paid' && confirmation['orderId'] != null) {
                   _showPaymentSuccessDialog('Card');
+                } else if (confirmation['status'] == 'order_creation_failed') {
+                  _showPaymentErrorDialog('Payment succeeded but order creation failed. Please contact support.');
                 } else {
                   _showPaymentErrorDialog('Payment not completed yet.');
                 }

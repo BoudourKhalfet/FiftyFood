@@ -324,24 +324,6 @@ class _PartnerOrdersTabState extends State<PartnerOrdersTab> {
     }
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(color: Color(0xFF374151), fontSize: 13),
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            TextSpan(text: value.isEmpty ? 'N/A' : value),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildInfoChip({
     required IconData icon,
     required String label,
@@ -480,10 +462,11 @@ class _PartnerOrdersTabState extends State<PartnerOrdersTab> {
     return _formatOrderCode(code, method);
   }
 
-  bool _isPickupWindowExpired(String pickupTime) {
+  bool _isPickupWindowExpired(String pickupTime, String? pickupDateTimeStr) {
     final raw = pickupTime.trim();
     if (raw.isEmpty) return false;
 
+    // Parse the end time from pickupTime (e.g., "12:00 - 14:00")
     final parts = raw.split('-');
     final endPart = parts.length >= 2 ? parts.last.trim() : raw;
     final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(endPart);
@@ -493,9 +476,22 @@ class _PartnerOrdersTabState extends State<PartnerOrdersTab> {
     final endMinute = int.tryParse(match.group(2)!);
     if (endHour == null || endMinute == null) return false;
 
-    final now = DateTime.now();
-    final endTime = DateTime(now.year, now.month, now.day, endHour, endMinute);
-    return now.isAfter(endTime);
+    // Use pickupDateTime if available (from backend), otherwise use today
+    DateTime deadline;
+    if (pickupDateTimeStr != null && pickupDateTimeStr.isNotEmpty) {
+      try {
+        deadline = DateTime.parse(pickupDateTimeStr);
+      } catch (_) {
+        // Fallback to today if parsing fails
+        final now = DateTime.now();
+        deadline = DateTime(now.year, now.month, now.day, endHour, endMinute);
+      }
+    } else {
+      final now = DateTime.now();
+      deadline = DateTime(now.year, now.month, now.day, endHour, endMinute);
+    }
+
+    return DateTime.now().isAfter(deadline);
   }
 
   String _effectiveStatus(Map<String, dynamic> order) {
@@ -503,7 +499,10 @@ class _PartnerOrdersTabState extends State<PartnerOrdersTab> {
     if (status == 'PENDING') {
       final method = (order['method'] ?? '').toString().toUpperCase();
       final pickupTime = (order['pickupTime'] ?? '').toString();
-      if (method == 'PICKUP' && _isPickupWindowExpired(pickupTime)) {
+      final pickupDateTime = (order['pickupDateTime'] ?? '').toString();
+      // Expire both pickup AND delivery orders if pickup window has passed
+      if ((method == 'PICKUP' || method == 'DELIVERY') &&
+          _isPickupWindowExpired(pickupTime, pickupDateTime)) {
         return 'EXPIRED';
       }
     }

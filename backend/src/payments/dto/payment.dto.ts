@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsEnum, IsOptional } from 'class-validator';
+import { IsString, IsNumber, IsEnum, IsOptional, IsObject } from 'class-validator';
 
 export enum PaymentMethod {
   CARD = 'CARD',
@@ -18,7 +18,35 @@ export class CreatePaymentIntentDto {
   description?: string;
 }
 
-export class CreateStripeIntentDto extends CreatePaymentIntentDto {
+export class CreateStripeIntentDto {
+  @IsString()
+  restaurantId!: string;
+
+  @IsString()
+  offerId!: string;
+
+  @IsObject()
+  items!: any;
+
+  @IsNumber()
+  total!: number;
+
+  @IsString()
+  @IsOptional()
+  collectionMethod?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryPhone?: string;
+
+  @IsNumber()
+  @IsOptional()
+  deliveryFee?: number;
+
   @IsString()
   @IsOptional()
   email?: string;
@@ -26,7 +54,32 @@ export class CreateStripeIntentDto extends CreatePaymentIntentDto {
 
 export class CreateStripeCheckoutDto {
   @IsString()
-  orderId!: string;
+  restaurantId!: string;
+
+  @IsString()
+  offerId!: string;
+
+  @IsObject()
+  items!: any;
+
+  @IsNumber()
+  total!: number;
+
+  @IsString()
+  @IsOptional()
+  collectionMethod?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryPhone?: string;
+
+  @IsNumber()
+  @IsOptional()
+  deliveryFee?: number;
 
   @IsString()
   @IsOptional()

@@ -1,6 +1,5 @@
 import {
   FaFlag,
-  FaRobot,
   FaUtensils,
   FaUsers,
   FaTruck,
@@ -30,7 +29,6 @@ const menu: Array<{
   { label: "Deliverers", key: "deliverers", icon: <FaTruck /> },
   { label: "Orders", key: "orders", icon: <FaClipboardList /> },
   { label: "Reports", key: "reports", icon: <FaFlag /> },
-  { label: "AI Insights", key: "insights", icon: <FaRobot /> },
 ];
 
 export default function AdminSidebar({ current, onNavigate }: SidebarProps) {

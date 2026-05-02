@@ -14,6 +14,10 @@ void showPickupQRCodeModal(
   required String pickupSlot,
   required String restaurantName,
 }) {
+  // Debug logging
+  debugPrint('[QR DISPLAY] qrData length: ${qrData.length}, startsWith: ${qrData.substring(0, qrData.length > 30 ? 30 : qrData.length)}...');
+  debugPrint('[QR DISPLAY] displayCode: $displayCode');
+  
   showDialog(
     context: context,
     barrierDismissible: true,
@@ -406,21 +410,28 @@ class OrderCard extends StatelessWidget {
                             vertical: 9,
                           ),
                         ),
-                        onPressed: () => showPickupQRCodeModal(
-                          context,
-                          qrData:
-                              (pickupQrToken != null &&
-                                  pickupQrToken!.trim().isNotEmpty)
-                              ? pickupQrToken!
-                              : reference,
-                          displayCode:
-                              (pickupQrDisplay != null &&
-                                  pickupQrDisplay!.trim().isNotEmpty)
-                              ? pickupQrDisplay!
-                              : reference,
-                          pickupSlot: timeSlot,
-                          restaurantName: restaurantName,
-                        ),
+                        onPressed: () {
+                          // Debug logging
+                          debugPrint('[QR BUTTON] pickupQrToken: ${pickupQrToken != null ? "present (${pickupQrToken!.substring(0, 30)}...)" : "NULL"}');
+                          debugPrint('[QR BUTTON] reference: $reference');
+                          debugPrint('[QR BUTTON] Will use: ${(pickupQrToken != null && pickupQrToken!.trim().isNotEmpty) ? "token" : "reference"}');
+                          
+                          showPickupQRCodeModal(
+                            context,
+                            qrData:
+                                (pickupQrToken != null &&
+                                    pickupQrToken!.trim().isNotEmpty)
+                                ? pickupQrToken!
+                                : reference,
+                            displayCode:
+                                (pickupQrDisplay != null &&
+                                    pickupQrDisplay!.trim().isNotEmpty)
+                                ? pickupQrDisplay!
+                                : reference,
+                            pickupSlot: timeSlot,
+                            restaurantName: restaurantName,
+                          );
+                        },
                       ),
                   ],
                 ),

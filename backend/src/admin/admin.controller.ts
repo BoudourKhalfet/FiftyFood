@@ -99,4 +99,9 @@ export class AdminController {
   async createUser(@Body() dto: AdminCreateUserDto) {
     return this.admin.createUser(dto.email, dto.password, dto.role);
   }
+
+  @Get('complaints/report')
+  async getComplaintsReport() {
+    return this.admin.getComplaintsReport();
+  }
 }

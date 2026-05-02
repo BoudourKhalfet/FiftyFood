@@ -9,6 +9,7 @@ import AdminLogin from "./pages/AdminLogin";
 import Orders from "./pages/Orders";
 import VerifiedEmail from "./pages/VerifiedEmail";
 import Dashboard from "./pages/Dashboard";
+import Reports from "./pages/Reports";
 
 // Helper to check if admin is logged in (token exists in localStorage)
 function isAdminAuthenticated() {
@@ -41,6 +42,7 @@ function AdminPanel({ page, setPage }: { page: string; setPage: (page: string) =
           {page === "clients" && <Clients />}
           {page === "deliverers" && <Deliverers />}
           {page === "orders" && <Orders />}
+          {page === "reports" && <Reports />}
         </div>
       </div>
     </RequireAdminAuth>

@@ -8,6 +8,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmbeddingService } from '../recommendations/embedding.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Category, OfferVisibility } from '@prisma/client';
@@ -90,7 +91,10 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OffersService.name);
   private expirationTimer?: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly embedding: EmbeddingService,
+  ) {}
 
   async onModuleInit() {
     await this.expirePastOffers();
@@ -582,7 +586,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException(`Invalid category: ${invalidCategory}`);
     }
 
-    return this.prisma.offer.create({
+    const created = await this.prisma.offer.create({
       data: {
         restaurantId: userId,
         photoUrl: dto.photoUrl,
@@ -601,6 +605,29 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
         deliveryAvailable: dto.deliveryAvailable ?? false,
       },
     });
+
+    // Fire-and-forget: generate and store semantic embedding
+    void this.embedOffer(created.id, dto.description, normalizedCategories);
+
+    return created;
+  }
+
+  private async embedOffer(
+    offerId: string,
+    description: string,
+    categories: string[],
+  ): Promise<void> {
+    try {
+      const text = this.embedding.buildOfferText(description, categories);
+      const vector = await this.embedding.embed(text);
+      if (!vector) return;
+      await this.prisma.offer.update({
+        where: { id: offerId },
+        data: { descriptionEmbedding: vector },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to embed offer ${offerId}`, err);
+    }
   }
 
   // List all offers for a restaurant.
@@ -657,24 +684,48 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     const nextPickupTime = dto.pickupTime ?? offer.pickupTime;
     this.validatePickupTimeWindow(nextPickupTime);
 
-    const nextStatus = offer.status === 'EXPIRED' ? 'ACTIVE' : offer.status;
     const nextPickupDateTime =
       offer.status === 'EXPIRED'
         ? this.normalizePickupDateTimeFromNow(nextPickupTime)
         : this.normalizePickupDateTime(offer.pickupDateTime, nextPickupTime);
 
-    return this.prisma.offer.update({
+    // Logic: If offer is SOLD_OUT, quantity is increased, and pickupDateTime is in the future, set status to ACTIVE
+    let nextStatus = offer.status;
+    const now = new Date();
+    const newQuantity = dto.quantity ?? offer.quantity;
+    if (
+      offer.status === 'SOLD_OUT' &&
+      newQuantity > offer.quantity &&
+      nextPickupDateTime > now
+    ) {
+      nextStatus = 'ACTIVE';
+    } else if (offer.status === 'EXPIRED') {
+      nextStatus = 'ACTIVE';
+    }
+
+    const updated = await this.prisma.offer.update({
       where: { id: offerId },
       data: {
         description: dto.description ?? offer.description,
         originalPrice: nextOriginalPrice,
         discountedPrice: nextDiscountedPrice,
-        quantity: dto.quantity ?? offer.quantity,
+        quantity: newQuantity,
         pickupTime: nextPickupTime,
         pickupDateTime: nextPickupDateTime,
         status: nextStatus,
       },
     });
+
+    // Re-embed if description changed
+    if (dto.description && dto.description !== offer.description) {
+      void this.embedOffer(
+        offerId,
+        dto.description,
+        (updated.categories as string[]),
+      );
+    }
+
+    return updated;
   }
 
   // Toggle offer visibility between IDENTIFIED and ANONYMOUS.

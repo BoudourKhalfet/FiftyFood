@@ -6,6 +6,7 @@ import {
   Get,
   UseGuards,
   Req,
+  Headers,
   BadRequestException,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -34,14 +35,16 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeIntentDto,
   ) {
-    if (!dto.orderId) {
-      throw new BadRequestException('Order ID is required');
-    }
-
     return this.paymentsService.createStripeIntent({
-      orderId: dto.orderId,
-      userId: req.user.sub,
-      amount: dto.amount,
+      clientId: req.user.sub,
+      restaurantId: dto.restaurantId,
+      offerId: dto.offerId,
+      items: dto.items,
+      total: dto.total,
+      collectionMethod: dto.collectionMethod,
+      deliveryAddress: dto.deliveryAddress,
+      deliveryPhone: dto.deliveryPhone,
+      deliveryFee: dto.deliveryFee,
       email: dto.email,
     });
   }
@@ -55,13 +58,16 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeCheckoutDto,
   ) {
-    if (!dto.orderId) {
-      throw new BadRequestException('Order ID is required');
-    }
-
     return this.paymentsService.createStripeCheckoutSession({
-      orderId: dto.orderId,
-      userId: req.user.sub,
+      clientId: req.user.sub,
+      restaurantId: dto.restaurantId,
+      offerId: dto.offerId,
+      items: dto.items,
+      total: dto.total,
+      collectionMethod: dto.collectionMethod,
+      deliveryAddress: dto.deliveryAddress,
+      deliveryPhone: dto.deliveryPhone,
+      deliveryFee: dto.deliveryFee,
       email: dto.email,
       successUrl: dto.successUrl,
       cancelUrl: dto.cancelUrl,
@@ -117,11 +123,13 @@ export class PaymentsController {
   // KONNECT VERIFY
   // =========================
   @Get('konnect/:paymentId/verify/:orderId')
+  @UseGuards(JwtAuthGuard)
   async verifyKonnectPayment(
+    @Req() req: ReqWithUser,
     @Param('paymentId') paymentId: string,
     @Param('orderId') orderId: string,
   ) {
-    return this.paymentsService.verifyKonnectPayment(paymentId, orderId);
+    return this.paymentsService.verifyKonnectPayment(paymentId, orderId, req.user.sub);
   }
 
   // =========================
@@ -144,28 +152,41 @@ export class PaymentsController {
   // =========================
   // STRIPE CONFIRM INTENT
   // =========================
-  @Post('confirm-stripe/:orderId/:paymentIntentId')
+  @Post('confirm-stripe/:paymentIntentId')
+  @UseGuards(JwtAuthGuard)
   async confirmStripePayment(
-    @Param('orderId') orderId: string,
+    @Req() req: ReqWithUser,
     @Param('paymentIntentId') paymentIntentId: string,
   ) {
-    return this.paymentsService.confirmStripePayment(
-      orderId,
-      paymentIntentId,
-    );
+    return this.paymentsService.confirmStripePayment(paymentIntentId, req.user.sub);
+  }
+
+  // =========================
+  // STRIPE WEBHOOK
+  // =========================
+  @Post('webhooks/stripe')
+  async stripeWebhook(
+    @Req() req: Request & { body: Buffer },
+    @Headers('stripe-signature') signature: string,
+  ) {
+    if (!signature) {
+      throw new BadRequestException('Missing stripe-signature header');
+    }
+    return this.paymentsService.handleStripeWebhook(req.body, signature);
   }
 
   // =========================
   // STRIPE CHECKOUT CONFIRM
   // =========================
-  @Get('stripe/checkout/:sessionId/confirm/:orderId')
+  @Get('stripe/checkout/:sessionId/confirm')
+  @UseGuards(JwtAuthGuard)
   async confirmStripeCheckout(
+    @Req() req: ReqWithUser,
     @Param('sessionId') sessionId: string,
-    @Param('orderId') orderId: string,
   ) {
     return this.paymentsService.confirmStripeCheckoutSession(
       sessionId,
-      orderId,
+      req.user.sub,
     );
   }
 }

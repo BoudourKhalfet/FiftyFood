@@ -8,6 +8,12 @@ import express, { Request, Response, NextFunction } from 'express';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Preserve raw body for Stripe webhook signature verification
+  app.use(
+    '/payments/webhooks/stripe',
+    express.raw({ type: 'application/json' }),
+  );
+
   // Increase body size limit for image uploads (must be before any routes)
   app.use(express.json({ limit: '5mb' }));
   app.use(express.urlencoded({ extended: true, limit: '5mb' }));

@@ -45,8 +45,10 @@ class _ComplaintModalState extends State<ComplaintModal> {
                       widget.title,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        fontSize: 22,
+                        fontSize: 20,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   IconButton(
@@ -192,64 +194,73 @@ class _ComplaintModalState extends State<ComplaintModal> {
               ),
               SizedBox(height: 18),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      icon: Icon(Icons.arrow_back, color: Color(0xFFD7263D)),
-                      label: Text(
-                        "Cancel",
-                        style: TextStyle(
-                          color: Color(0xFFD7263D),
-                          fontWeight: FontWeight.bold,
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        icon: Icon(Icons.arrow_back, color: Color(0xFFD7263D)),
+                        label: Text(
+                          "Cancel",
+                          style: TextStyle(
+                            color: Color(0xFFD7263D),
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: Color(0xFFD7263D)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Color(0xFFD7263D)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ),
                   SizedBox(width: 13),
                   Expanded(
-                    child: ElevatedButton.icon(
-                      icon: Icon(
-                        Icons.report_gmailerrorred,
-                        color: Colors.white,
-                      ),
-                      label: Text(
-                        "Submit Complaint",
-                        style: TextStyle(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        icon: Icon(
+                          Icons.report_gmailerrorred,
                           color: Colors.white,
-                          fontWeight: FontWeight.w700,
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFFD7263D),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        label: Text(
+                          "Submit",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      onPressed: () {
-                        final customReason = selectedReason == "Other"
-                            ? otherReasonController.text.trim()
-                            : selectedReason ?? '';
-                        if (customReason.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text("Please specify a reason.")),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFD7263D),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () {
+                          final customReason = selectedReason == "Other"
+                              ? otherReasonController.text.trim()
+                              : selectedReason ?? '';
+                          if (customReason.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Please specify a reason.")),
+                            );
+                            return;
+                          }
+                          widget.onSubmit(
+                            customReason,
+                            descriptionController.text.trim().isEmpty
+                                ? null
+                                : descriptionController.text.trim(),
                           );
-                          return;
-                        }
-                        widget.onSubmit(
-                          customReason,
-                          descriptionController.text.trim().isEmpty
-                              ? null
-                              : descriptionController.text.trim(),
-                        );
-                        Navigator.of(context).pop();
-                      },
+                          Navigator.of(context).pop();
+                        },
+                      ),
                     ),
                   ),
                 ],

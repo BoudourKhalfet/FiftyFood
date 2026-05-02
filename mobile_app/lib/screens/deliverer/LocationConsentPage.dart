@@ -234,7 +234,7 @@ class _LocationConsentPageState extends State<LocationConsentPage> {
                   ),
                   const SizedBox(height: 11),
                   Text(
-                    "Your data is protected under our Privacy Policy. You can change this anytime in Settings.",
+                    "Your data is protected under our Privacy Policy.",
                     style: TextStyle(fontSize: 12.7, color: Colors.grey[600]),
                     textAlign: TextAlign.left,
                   ),

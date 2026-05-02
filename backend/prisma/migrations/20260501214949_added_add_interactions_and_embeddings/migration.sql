@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Offer" ADD COLUMN     "descriptionEmbedding" DOUBLE PRECISION[] DEFAULT ARRAY[]::DOUBLE PRECISION[];

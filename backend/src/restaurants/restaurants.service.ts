@@ -132,8 +132,7 @@ export class RestaurantsService {
         UPDATE "RestaurantProfile"
         SET
           "latitude" = ${coords.lat},
-          "longitude" = ${coords.lng},
-          "lastGeocodedAt" = NOW()
+          "longitude" = ${coords.lng}
         WHERE "userId" = ${userId}
       `;
     }
@@ -193,8 +192,7 @@ export class RestaurantsService {
             UPDATE "RestaurantProfile"
             SET
               "latitude" = ${coords.lat},
-              "longitude" = ${coords.lng},
-              "lastGeocodedAt" = NOW()
+              "longitude" = ${coords.lng}
             WHERE "userId" = ${userId}
           `;
         }
@@ -416,6 +414,122 @@ export class RestaurantsService {
     }));
   }
 
+  async getMonthlyHistory(userId: string) {
+    const now = new Date();
+    const result: { month: string; revenue: number; mealsSaved: number }[] = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const start = new Date(date.getFullYear(), date.getMonth(), 1);
+      const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+
+      const agg = await this.prisma.order.aggregate({
+        where: {
+          restaurantId: userId,
+          status: { in: ['DELIVERED'] },
+          createdAt: { gte: start, lte: end },
+        },
+        _sum: { total: true },
+      });
+
+      const completedOrders = await this.prisma.order.findMany({
+        where: {
+          restaurantId: userId,
+          status: { in: ['PICKED_UP', 'DELIVERED'] },
+          createdAt: { gte: start, lte: end },
+        },
+        select: { items: true },
+      });
+      const mealsSaved = completedOrders.reduce((total, order) => {
+        const items = order.items as Array<{ quantity?: number }> | null;
+        if (!Array.isArray(items)) return total;
+        return total + items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      }, 0);
+
+      result.push({
+        month: date.toLocaleString('en-US', { month: 'short' }),
+        revenue: Math.round((agg._sum?.total || 0) * 100) / 100,
+        mealsSaved,
+      });
+    }
+
+    return result;
+  }
+
+  async getPickupsPerHour(userId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        restaurantId: userId,
+        status: { in: ['PICKED_UP', 'DELIVERED'] },
+        collectionMethod: 'PICKUP',
+      },
+      select: { createdAt: true },
+    });
+
+    const map: Record<number, number> = {};
+    for (const order of orders) {
+      const hour = new Date(order.createdAt).getHours();
+      map[hour] = (map[hour] || 0) + 1;
+    }
+
+    const hours = Object.keys(map).map(Number).sort((a, b) => a - b);
+    return hours.map((h) => ({ hour: `${h}h`, count: map[h] }));
+  }
+
+  async getRatingsDistribution(userId: string) {
+    const rows = await this.prisma.review.groupBy({
+      by: ['rating'],
+      where: { restaurantId: userId },
+      _count: { rating: true },
+    });
+
+    const map: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const row of rows) {
+      if (row.rating >= 1 && row.rating <= 5) {
+        map[row.rating] = row._count.rating;
+      }
+    }
+
+    const total = Object.values(map).reduce((s, v) => s + v, 0);
+    return {
+      total,
+      distribution: [5, 4, 3, 2, 1].map((stars) => ({ stars, count: map[stars] })),
+    };
+  }
+
+  async getWeeklyChartData(userId: string) {
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const now = new Date();
+    const result: { day: string; revenue: number; orders: number }[] = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const start = new Date(now);
+      start.setDate(now.getDate() - i);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+
+      const agg = await this.prisma.order.aggregate({
+        where: {
+          restaurantId: userId,
+          status: { in: ['DELIVERED', 'PICKED_UP'] },
+          createdAt: { gte: start, lte: end },
+        },
+        _sum: { total: true },
+        _count: { id: true },
+      });
+
+      result.push({
+        day: DAYS[start.getDay()],
+        revenue: Math.round((agg._sum?.total || 0) * 100) / 100,
+        orders: agg._count?.id || 0,
+      });
+    }
+
+    return result;
+  }
+
   async getRestaurantStats(userId: string) {
     await this.prisma.offer.updateMany({
       where: {
@@ -426,47 +540,107 @@ export class RestaurantsService {
       data: { status: 'EXPIRED' },
     });
 
-    // Get restaurant profile for avgRating
     const profile = await this.prisma.restaurantProfile.findUnique({
       where: { userId },
-      select: { id: true, avgRating: true },
+      select: { id: true, avgRating: true, restaurantName: true },
     });
 
     if (!profile) {
       throw new BadRequestException('Restaurant profile not found');
     }
 
-    // Get total sales from delivered orders
-    const orderData = await this.prisma.order.aggregate({
-      where: {
-        restaurantId: userId,
-        status: 'DELIVERED',
-      },
+    const now = new Date();
+    const d7ago = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const d14ago = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const completedStatuses = { in: ['PICKED_UP', 'DELIVERED'] as any[] };
+
+    // Helper to sum item quantities from orders
+    const sumItemQuantities = (orders: { items: unknown }[]): number => {
+      return orders.reduce((total, order) => {
+        const items = order.items as Array<{ quantity?: number }> | null;
+        if (!Array.isArray(items)) return total;
+        return total + items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      }, 0);
+    };
+
+    // Total stats
+    const totalOrderData = await this.prisma.order.aggregate({
+      where: { restaurantId: userId, status: { in: ['DELIVERED'] } },
       _sum: { total: true },
     });
-
-    // Meals saved metric is the number of completed orders
-    const completedOrdersCount = await this.prisma.order.count({
-      where: {
-        restaurantId: userId,
-        status: { in: ['PICKED_UP', 'DELIVERED'] },
-      },
+    const totalCompletedOrders = await this.prisma.order.findMany({
+      where: { restaurantId: userId, status: completedStatuses },
+      select: { items: true },
     });
-
-    // Get count of active offers
+    const totalMealsSaved = sumItemQuantities(totalCompletedOrders);
+    const totalOrders = await this.prisma.order.count({
+      where: { restaurantId: userId },
+    });
     const activeOffersCount = await this.prisma.offer.count({
-      where: {
-        restaurantId: userId,
-        status: 'ACTIVE',
-        pickupDateTime: { gte: new Date() },
-      },
+      where: { restaurantId: userId, status: 'ACTIVE', pickupDateTime: { gte: now } },
     });
+
+    // Last 7 days
+    const data7d = await this.prisma.order.aggregate({
+      where: { restaurantId: userId, status: { in: ['DELIVERED'] }, createdAt: { gte: d7ago } },
+      _sum: { total: true },
+      _count: { id: true },
+    });
+    const completedOrders7d = await this.prisma.order.findMany({
+      where: { restaurantId: userId, status: completedStatuses, createdAt: { gte: d7ago } },
+      select: { items: true },
+    });
+    const meals7d = sumItemQuantities(completedOrders7d);
+    const completedOrdersPrev7d = await this.prisma.order.findMany({
+      where: { restaurantId: userId, status: completedStatuses, createdAt: { gte: d14ago, lt: d7ago } },
+      select: { items: true },
+    });
+    const mealsPrev7d = sumItemQuantities(completedOrdersPrev7d);
+
+    // Previous 7 days (for % change)
+    const dataPrev7d = await this.prisma.order.aggregate({
+      where: { restaurantId: userId, status: { in: ['DELIVERED'] }, createdAt: { gte: d14ago, lt: d7ago } },
+      _sum: { total: true },
+      _count: { id: true },
+    });
+
+    // Avg rating: current 7d vs previous 7d from reviews
+    const ratingCurr = await this.prisma.review.aggregate({
+      where: { restaurantId: userId, createdAt: { gte: d7ago } },
+      _avg: { rating: true },
+    });
+    const ratingPrev = await this.prisma.review.aggregate({
+      where: { restaurantId: userId, createdAt: { gte: d14ago, lt: d7ago } },
+      _avg: { rating: true },
+    });
+
+    const revenue7d = data7d._sum?.total || 0;
+    const orders7d = data7d._count?.id || 0;
+    const prevRevenue = dataPrev7d._sum?.total || 0;
+    const prevOrders = dataPrev7d._count?.id || 0;
+    const avgCurr = ratingCurr._avg?.rating ?? null;
+    const avgPrev = ratingPrev._avg?.rating ?? null;
+
+    const pctChange = (curr: number, prev: number) =>
+      prev === 0 ? 0 : Math.round(((curr - prev) / prev) * 1000) / 10;
+    const pointChange = (curr: number | null, prev: number | null) =>
+      curr === null || prev === null ? 0 : Math.round((curr - prev) * 10) / 10;
 
     return {
-      totalSales: orderData._sum?.total || 0,
-      mealsSaved: completedOrdersCount,
+      totalSales: totalOrderData._sum?.total || 0,
+      totalOrders,
+      totalMealsSaved,
+      restaurantName: profile.restaurantName || '',
       avgRating: profile.avgRating || 0,
       activeOffers: activeOffersCount,
+      revenue7d,
+      orders7d,
+      mealsSaved7d: meals7d,
+      revenueChangePercent: pctChange(revenue7d, prevRevenue),
+      ordersChangePercent: pctChange(orders7d, prevOrders),
+      mealsSavedChangePercent: pctChange(meals7d, mealsPrev7d),
+      avgRatingChange: pointChange(avgCurr, avgPrev),
     };
   }
 }

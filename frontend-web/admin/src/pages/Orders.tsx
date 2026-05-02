@@ -160,21 +160,73 @@ const Orders: React.FC = () => {
       </div>
 
       {selectedOrder && (
-        <div className="fixed inset-0 bg-black/35 flex items-center justify-center">
-          <div className="bg-white rounded-2xl w-full max-w-xl p-6">
-            <h3 className="text-xl font-bold mb-4">Order Details</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Order #{selectedOrder.orderDisplayCode || selectedOrder.orderCode || selectedOrder.id.slice(0, 8)}
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Placed on {new Date(selectedOrder.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedOrder(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-            <p><b>Client:</b> {selectedOrder.userName}</p>
-            <p><b>Restaurant:</b> {selectedOrder.restaurantName}</p>
-            <p><b>Status:</b> {selectedOrder.status}</p>
-            <p><b>Date:</b> {selectedOrder.date?.slice(0, 10)}</p>
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              {/* Status Badge */}
+              <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                <span className="text-sm text-gray-600">Status</span>
+                <OrderStatusBadge status={selectedOrder.status} />
+              </div>
 
-            <button
-              onClick={() => setSelectedOrder(null)}
-              className="mt-4 bg-gray-200 px-4 py-2 rounded"
-            >
-              Close
-            </button>
+              {/* Info Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-1">Client</p>
+                  <p className="font-medium text-gray-900">{selectedOrder.userName}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-1">Restaurant</p>
+                  <p className="font-medium text-gray-900">{selectedOrder.restaurantName}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-1">Amount</p>
+                  <p className="font-medium text-teal-700">€{selectedOrder.amount?.toFixed(2)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-1">Payment Method</p>
+                  <p className="font-medium text-gray-900">{selectedOrder.method || "—"}</p>
+                </div>
+              </div>
+
+              {selectedOrder.deliverer && (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-1">Deliverer</p>
+                  <p className="font-medium text-gray-900">{selectedOrder.deliverer}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={() => setSelectedOrder(null)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

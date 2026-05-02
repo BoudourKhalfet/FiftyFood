@@ -159,7 +159,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String? _uploadedOfferImageUrl;
   bool _uploadingOfferImage = false;
   String? _offerImageUploadError;
-  DateTime? _pickupDate;
   List<String> _selectedCategories = [];
   final List<String> _categories = [
     'BAKERY',
@@ -213,10 +212,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final picked = await picker.pickImage(source: ImageSource.gallery);
       if (picked == null) return;
 
-      if (picked.path.isEmpty) {
-        throw Exception('Selected image path is not available');
-      }
-
       modalSetState(() {
         _uploadingOfferImage = true;
         _offerImageUploadError = null;
@@ -226,10 +221,14 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
 
+      // Read image bytes - works on both mobile and web
+      final bytes = await picked.readAsBytes();
+
       final data = await ApiService.uploadFile(
         'offers/upload-photo',
         'file',
-        picked.path,
+        '', // filePath not needed when bytes are provided
+        bytes: bytes,
         fileName: picked.name,
         headers: {'Authorization': 'Bearer $jwt'},
       );
@@ -304,9 +303,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String _visibility = 'IDENTIFIED';
 
   // Image Upload
-
-  bool _aiVerifying = false;
-  Map<String, dynamic>? _aiResult;
 
   // QR Scanner
   Map<String, dynamic>? _qrResult;
@@ -438,13 +434,18 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     });
 
     try {
+      debugPrint('QR Validate: Starting validation for token: ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
+      debugPrint('QR Validate: JWT ${jwt != null ? "present" : "missing"}');
+      
+      debugPrint('QR Validate: Calling API...');
       final response = await ApiService.post(
         'orders/qr/validate',
         {'token': token.trim()},
         headers: {if (jwt != null) 'Authorization': 'Bearer $jwt'},
       );
+      debugPrint('QR Validate: API response: $response');
 
       if (!mounted) return;
       final success = response['success'] == true;
@@ -455,7 +456,16 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         _qrResult = {'success': success, 'message': message};
       });
 
-      if (success) {
+      if (!success) {
+        // Show error for failed validation
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('QR Invalid: $message'),
+            backgroundColor: Colors.red[700],
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      } else if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
@@ -479,12 +489,21 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       }
     } catch (e) {
       if (!mounted) return;
+      final errorMessage = e.toString().replaceFirst('Exception: ', '');
       setState(() {
         _qrResult = {
           'success': false,
-          'message': e.toString().replaceFirst('Exception: ', ''),
+          'message': errorMessage,
         };
       });
+      // Show error in SnackBar
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('QR Scan Failed: $errorMessage'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 5),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -494,50 +513,92 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     }
   }
 
-  Future<void> _scanQrWithCamera(BuildContext dialogContext) async {
+  Future<void> _scanQrWithCamera(BuildContext parentDialogContext) async {
     bool consumed = false;
+    String? scannedToken;
 
-    final scannedToken = await showDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text('Scan QR Code'),
-        content: SizedBox(
-          width: 320,
-          height: 320,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: MobileScanner(
-              onDetect: (capture) {
-                if (consumed) return;
-                final barcodes = capture.barcodes;
-                if (barcodes.isEmpty) return;
-                final value = barcodes.first.rawValue;
-                if (value == null || value.trim().isEmpty) return;
-                consumed = true;
-                Navigator.of(dialogContext).pop(value.trim());
-              },
+    try {
+      scannedToken = await showDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        builder: (cameraDialogContext) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Text('Scan QR Code'),
+          content: SizedBox(
+            width: 320,
+            height: 320,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: MobileScanner(
+                onDetect: (capture) {
+                  if (consumed) return;
+                  final barcodes = capture.barcodes;
+                  if (barcodes.isEmpty) {
+                    debugPrint('QR Scan: No barcodes detected');
+                    return;
+                  }
+                  final value = barcodes.first.rawValue;
+                  debugPrint('QR Scan: Detected value: ${value?.substring(0, value.length > 20 ? 20 : value.length)}...');
+                  if (value == null || value.trim().isEmpty) {
+                    debugPrint('QR Scan: Empty value, ignoring');
+                    return;
+                  }
+                  consumed = true;
+                  Navigator.of(cameraDialogContext).pop(value.trim());
+                },
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(cameraDialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
+      );
+    } catch (e, stackTrace) {
+      debugPrint('QR Scan: Error during camera scan: $e');
+      debugPrint('QR Scan: Stack trace: $stackTrace');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Camera error: $e'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
 
-    if (scannedToken == null || scannedToken.isEmpty) return;
+    debugPrint('QR Scan: Scanned token result: ${scannedToken != null ? "found (${scannedToken.substring(0, scannedToken.length > 20 ? 20 : scannedToken.length)}...)" : "null/empty"}');
 
-    await _validateQrToken(
-      scannedToken,
-      dialogContext: dialogContext,
-      autoCloseOnSuccess: _autoCloseQrDialogOnSuccess,
-    );
+    if (scannedToken == null || scannedToken.isEmpty) {
+      debugPrint('QR Scan: No token scanned or user cancelled');
+      return;
+    }
+
+    debugPrint('QR Scan: Validating token...');
+    try {
+      await _validateQrToken(
+        scannedToken,
+        dialogContext: parentDialogContext,
+        autoCloseOnSuccess: _autoCloseQrDialogOnSuccess,
+      );
+      debugPrint('QR Scan: Validation completed');
+    } catch (e, stackTrace) {
+      debugPrint('QR Scan: Error during validation: $e');
+      debugPrint('QR Scan: Stack trace: $stackTrace');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Validation error: $e'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   void _showQrScannerDialog() {
@@ -1687,7 +1748,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
 
                                       Navigator.of(ctx).pop();
                                       setState(() {
-                                        _aiResult = null;
                                         _offerDescription = '';
                                         _originalPrice = '';
                                         _discountedPrice = '';

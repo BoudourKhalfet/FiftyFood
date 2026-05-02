@@ -29,7 +29,9 @@ export function generateDailyHistory(days: number): DailyPoint[] {
     const weekendBoost = weekday === 5 || weekday === 6 ? 1.18 : 1;
     const wave = 1 + Math.sin((days - i) / 4) * 0.13;
     const baseRevenue = 280;
-    const revenue = Math.round(baseRevenue * weekendBoost * wave + (days - i) * 2.1);
+    const revenue = Math.round(
+      baseRevenue * weekendBoost * wave + (days - i) * 2.1,
+    );
     const orders = Math.max(8, Math.round(revenue / 11));
     const mealsSaved = Math.max(6, Math.round(orders * 1.24));
 
@@ -47,11 +49,11 @@ export function generateDailyHistory(days: number): DailyPoint[] {
 
 export function generateOfferHistory(): OfferHistoryPoint[] {
   return [
-    { name: 'Pasta Box', sold: 61, total: 75 },
-    { name: 'Chicken Bowl', sold: 47, total: 60 },
-    { name: 'Bakery Mix', sold: 38, total: 50 },
-    { name: 'Veggie Pack', sold: 29, total: 42 },
-    { name: 'Dessert Combo', sold: 24, total: 36 },
+    { name: "Pasta Box", sold: 61, total: 75 },
+    { name: "Chicken Bowl", sold: 47, total: 60 },
+    { name: "Bakery Mix", sold: 38, total: 50 },
+    { name: "Veggie Pack", sold: 29, total: 42 },
+    { name: "Dessert Combo", sold: 24, total: 36 },
   ];
 }
 

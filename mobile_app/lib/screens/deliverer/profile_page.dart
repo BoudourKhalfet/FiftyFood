@@ -314,6 +314,164 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
     );
   }
 
+  void _showAllReviewsDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+        child: Container(
+          width: double.infinity,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.reviews, color: Color(0xFF26A69A), size: 24),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'All Reviews',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              // Reviews list
+              Flexible(
+                child: _receivedReviews.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text(
+                          'No reviews yet.',
+                          style: TextStyle(color: Color(0xFF6B7280)),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: _receivedReviews.map((review) {
+                            final rating = review['rating']?.toString() ?? '0';
+                            final comment = (review['comment'] ?? '').toString();
+                            final reviewer = (review['reviewerName'] ??
+                                    review['reviewerEmail'] ??
+                                    'Anonymous')
+                                .toString();
+                            final date = review['createdAt'] != null
+                                ? DateTime.tryParse(review['createdAt'].toString())
+                                : null;
+                            return Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFCFBF8),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFE4DDCF)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star_rounded,
+                                          color: Color(0xFFF59E0B), size: 18),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        rating,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w700),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        reviewer,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF6B7280),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (date != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${date.day}/${date.month}/${date.year}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                  ],
+                                  if (comment.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      comment,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+              ),
+              // Footer with count
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Colors.grey.shade200),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star, size: 16, color: Colors.amber.shade600),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_receivedReviews.length} review${_receivedReviews.length != 1 ? 's' : ''}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _reviewsSection() {
     if (_receivedReviews.isEmpty) {
       return const Text(
@@ -322,55 +480,82 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
       );
     }
 
+    final previewReviews = _receivedReviews.take(2).toList();
+
     return Column(
-      children: _receivedReviews.map((review) {
-        final rating = review['rating']?.toString() ?? '0';
-        final comment = (review['comment'] ?? '').toString();
-        final reviewer =
-            (review['reviewerName'] ?? review['reviewerEmail'] ?? '')
-                .toString();
-        return Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFCFBF8),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE4DDCF)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.star_rounded,
-                    color: Color(0xFFF59E0B),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    rating,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const Spacer(),
-                  Text(
-                    reviewer,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
+      children: [
+        ...previewReviews.map((review) {
+          final rating = review['rating']?.toString() ?? '0';
+          final comment = (review['comment'] ?? '').toString();
+          final reviewer =
+              (review['reviewerName'] ?? review['reviewerEmail'] ?? '')
+                  .toString();
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFCFBF8),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE4DDCF)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      color: Color(0xFFF59E0B),
+                      size: 18,
                     ),
+                    const SizedBox(width: 6),
+                    Text(
+                      rating,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const Spacer(),
+                    Text(
+                      reviewer,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+                if (comment.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    comment,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
-              ),
-              if (comment.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(comment),
               ],
-            ],
+            ),
+          );
+        }),
+        if (_receivedReviews.length > 2) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _showAllReviewsDialog,
+              icon: const Icon(Icons.open_in_full, size: 18),
+              label: Text('View all ${_receivedReviews.length} reviews'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF26A69A),
+                side: const BorderSide(color: Color(0xFF26A69A)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ),
-        );
-      }).toList(),
+        ],
+      ],
     );
   }
 

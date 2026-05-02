@@ -6,10 +6,16 @@ import '../constants/api.dart';
 
 class PaymentService {
 
-  /// Create Stripe payment intent
+  /// Create Stripe payment intent (no order created yet)
   static Future<Map<String, dynamic>> createStripeIntent({
-    required String orderId,
-    required double amount,
+    required String restaurantId,
+    required String offerId,
+    required Map<String, dynamic> items,
+    required double total,
+    String? collectionMethod,
+    String? deliveryAddress,
+    String? deliveryPhone,
+    double? deliveryFee,
     String? email,
   }) async {
     try {
@@ -27,9 +33,15 @@ class PaymentService {
           'Authorization': 'Bearer $jwt',
         },
         body: jsonEncode({
-          'orderId': orderId,
-          'amount': amount,
-          'email': email,
+          'restaurantId': restaurantId,
+          'offerId': offerId,
+          'items': items,
+          'total': total,
+          if (collectionMethod != null) 'collectionMethod': collectionMethod,
+          if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
+          if (deliveryPhone != null) 'deliveryPhone': deliveryPhone,
+          if (deliveryFee != null) 'deliveryFee': deliveryFee,
+          if (email != null && email.isNotEmpty) 'email': email,
         }),
       );
 
@@ -43,9 +55,16 @@ class PaymentService {
     }
   }
 
-  /// Create Stripe Checkout session (web)
+  /// Create Stripe Checkout session (web) — no order created yet
   static Future<Map<String, dynamic>> createStripeCheckoutSession({
-    required String orderId,
+    required String restaurantId,
+    required String offerId,
+    required Map<String, dynamic> items,
+    required double total,
+    String? collectionMethod,
+    String? deliveryAddress,
+    String? deliveryPhone,
+    double? deliveryFee,
     String? email,
     String? successUrl,
     String? cancelUrl,
@@ -65,10 +84,17 @@ class PaymentService {
           'Authorization': 'Bearer $jwt',
         },
         body: jsonEncode({
-          'orderId': orderId,
-          'email': email,
-          'successUrl': successUrl,
-          'cancelUrl': cancelUrl,
+          'restaurantId': restaurantId,
+          'offerId': offerId,
+          'items': items,
+          'total': total,
+          if (collectionMethod != null) 'collectionMethod': collectionMethod,
+          if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
+          if (deliveryPhone != null) 'deliveryPhone': deliveryPhone,
+          if (deliveryFee != null) 'deliveryFee': deliveryFee,
+          if (email != null && email.isNotEmpty) 'email': email,
+          if (successUrl != null) 'successUrl': successUrl,
+          if (cancelUrl != null) 'cancelUrl': cancelUrl,
         }),
       );
 
@@ -85,13 +111,18 @@ class PaymentService {
   /// Confirm Stripe Checkout session (web)
   static Future<Map<String, dynamic>> confirmStripeCheckoutSession({
     required String sessionId,
-    required String orderId,
   }) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+
+      if (jwt == null) {
+        throw Exception('No authentication token found');
+      }
+
       final response = await http.get(
-        Uri.parse(
-          apiUrl('payments/stripe/checkout/$sessionId/confirm/$orderId'),
-        ),
+        Uri.parse(apiUrl('payments/stripe/checkout/$sessionId/confirm')),
+        headers: {'Authorization': 'Bearer $jwt'},
       );
 
       if (response.statusCode != 200) {
@@ -237,9 +268,8 @@ class PaymentService {
     }
   }
 
-  /// Confirm Stripe payment
+  /// Confirm Stripe payment (mobile fallback — webhook is source of truth)
   static Future<Map<String, dynamic>> confirmStripePayment({
-    required String orderId,
     required String paymentIntentId,
   }) async {
     try {
@@ -251,9 +281,7 @@ class PaymentService {
       }
 
       final response = await http.post(
-        Uri.parse(
-          apiUrl('payments/confirm-stripe/$orderId/$paymentIntentId'),
-        ),
+        Uri.parse(apiUrl('payments/confirm-stripe/$paymentIntentId')),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $jwt',

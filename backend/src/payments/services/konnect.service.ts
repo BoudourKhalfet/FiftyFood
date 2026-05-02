@@ -8,7 +8,8 @@ export class KonnectService {
 
   constructor() {
     this.konnectApiKey = process.env.KONNECT_API_KEY || '';
-    this.konnectBaseUrl = process.env.KONNECT_BASE_URL || 'https://api.konnect.tn';
+    this.konnectBaseUrl =
+      process.env.KONNECT_BASE_URL || 'https://api.konnect.tn';
 
     if (!this.konnectApiKey) {
       this.logger.warn('KONNECT_API_KEY not configured');
@@ -31,28 +32,25 @@ export class KonnectService {
     try {
       const returnUrl =
         params.returnUrl ||
-        `${process.env.FRONTEND_URL || 'http://192.168.61.154:3000'}/payment-success`;
+        `${process.env.FRONTEND_URL || 'http://192.168.53.51:3000'}/payment-success`;
 
-      const response = await fetch(
-        `${this.konnectBaseUrl}/api/v2/payments`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.konnectApiKey}`,
-          },
-          body: JSON.stringify({
-            amount: Math.round(params.amount * 1000), // Konnect expects millimes (1 dinar = 1000 millimes)
-            currency: 'TND',
-            orderId: params.orderId,
-            firstName: params.firstName,
-            lastName: params.lastName,
-            email: params.email,
-            phone: params.phone || '',
-            returnUrl,
-          }),
+      const response = await fetch(`${this.konnectBaseUrl}/api/v2/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.konnectApiKey}`,
         },
-      );
+        body: JSON.stringify({
+          amount: Math.round(params.amount * 1000), // Konnect expects millimes (1 dinar = 1000 millimes)
+          currency: 'TND',
+          orderId: params.orderId,
+          firstName: params.firstName,
+          lastName: params.lastName,
+          email: params.email,
+          phone: params.phone || '',
+          returnUrl,
+        }),
+      });
 
       if (!response.ok) {
         const error = await response.json();

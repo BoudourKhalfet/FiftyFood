@@ -16,6 +16,8 @@ class _SignupStep1State extends State<SignupStep1> {
   bool _agreed = false;
   bool _loading = false;
   String? _error;
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -215,7 +217,18 @@ class _SignupStep1State extends State<SignupStep1> {
                         controller: _passwordController,
                         label: AppLocalizations.of(context)!.labelPassword,
                         icon: Icons.lock,
-                        obscureText: true,
+                        obscureText: _obscurePassword,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                            color: const Color(0xFF9CA3AF),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                        ),
                         validator: (v) {
                           if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
                           if (v.length < 8) {
@@ -229,7 +242,18 @@ class _SignupStep1State extends State<SignupStep1> {
                         controller: _confirmController,
                         label: AppLocalizations.of(context)!.labelConfirmPassword,
                         icon: Icons.lock_outline,
-                        obscureText: true,
+                        obscureText: _obscureConfirm,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                            color: const Color(0xFF9CA3AF),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureConfirm = !_obscureConfirm;
+                            });
+                          },
+                        ),
                         validator: (v) {
                           if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
                           if (v != _passwordController.text)
@@ -391,6 +415,7 @@ class _SignupStep1State extends State<SignupStep1> {
     bool obscureText = false,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    Widget? suffixIcon,
   }) {
     return SizedBox(
       width: 289,
@@ -403,6 +428,7 @@ class _SignupStep1State extends State<SignupStep1> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
+          suffixIcon: suffixIcon,
           contentPadding: const EdgeInsets.symmetric(
             vertical: 12,
             horizontal: 12,

@@ -184,6 +184,34 @@ export class RestaurantsController {
     this.ensureRestaurant(req);
     return this.restaurants.getRestaurantStats(req.user.sub);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('weekly-chart')
+  async getWeeklyChart(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.restaurants.getWeeklyChartData(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('ratings-distribution')
+  async getRatingsDistribution(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.restaurants.getRatingsDistribution(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('monthly-history')
+  async getMonthlyHistory(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.restaurants.getMonthlyHistory(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pickups-per-hour')
+  async getPickupsPerHour(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.restaurants.getPickupsPerHour(req.user.sub);
+  }
 }
 
 @Public()

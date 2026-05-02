@@ -177,15 +177,18 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       nonce: crypto.randomBytes(16).toString('hex'),
     });
 
+    const hash = this.sha256(token);
     await this.prisma.$executeRaw`
       UPDATE "Order"
       SET
-        "pickupQrTokenHash" = ${this.sha256(token)},
+        "pickupQrTokenHash" = ${hash},
         "pickupQrExpiresAt" = ${expiresAt},
         "pickupQrUsedAt" = NULL,
         "pickupQrStatus" = 'NOT_SCANNED'::"QrStatus"
       WHERE "id" = ${order.id}
     `;
+    
+    this.logger.log(`[QR TOKEN] Saved to DB: order=${order.id.substring(0, 8)}, hash=${hash.substring(0, 16)}..., expires=${expiresAt.toISOString()}`);
 
     return token;
   }
@@ -211,6 +214,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     status: string;
     pickupQrStatus?: string | null;
     pickupQrUsedAt?: Date | null;
+    pickupQrExpiresAt?: Date | null;
   }): boolean {
     if (order.pickupQrUsedAt != null || order.pickupQrStatus === 'USED') {
       return false;
@@ -218,6 +222,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     if (order.pickupQrStatus === 'EXPIRED') {
       return false;
     }
+    // Note: We intentionally allow re-issuing QR tokens even if one exists
+    // This ensures the mobile app always has a valid token to display
     return !['DELIVERED', 'CANCELLED', 'EXPIRED'].includes(order.status);
   }
 
@@ -248,15 +254,6 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async expirePendingOrdersPastPickupTime() {
-    await this.prisma.order.updateMany({
-      where: {
-        status: 'PENDING',
-      },
-      data: {
-        status: 'CONFIRMED',
-      },
-    });
-
     const pendingOrders = await this.prisma.order.findMany({
       where: {
         status: {
@@ -322,6 +319,43 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           "updatedAt" = NOW()
       WHERE "id" IN (${Prisma.join(expiredOrderIds)})
     `;
+
+    // Also cancel PENDING (unpaid) orders whose pickup window has passed
+    const unpaidOrders = await this.prisma.order.findMany({
+      where: {
+        status: 'PENDING',
+        pickupQrUsedAt: null,
+      },
+      select: { id: true, offerId: true },
+    });
+
+    if (unpaidOrders.length) {
+      const unpaidOfferIds = [...new Set(unpaidOrders.map((o) => o.offerId))];
+      const unpaidOffers = await this.prisma.offer.findMany({
+        where: { id: { in: unpaidOfferIds } },
+        select: { id: true, status: true, pickupTime: true, pickupDateTime: true },
+      });
+      const unpaidOfferById = new Map(unpaidOffers.map((o) => [o.id, o]));
+
+      const staleUnpaidIds = unpaidOrders
+        .filter((order) => {
+          const offer = unpaidOfferById.get(order.offerId);
+          if (!offer) return false;
+          if (offer.status === 'EXPIRED') return true;
+          const deadline = this.getPickupDeadline(offer.pickupDateTime, offer.pickupTime);
+          return deadline != null && deadline.getTime() <= Date.now();
+        })
+        .map((o) => o.id);
+
+      if (staleUnpaidIds.length) {
+        await this.prisma.$executeRaw`
+          UPDATE "Order"
+          SET "status" = 'CANCELLED'::"OrderStatus",
+              "updatedAt" = NOW()
+          WHERE "id" IN (${Prisma.join(staleUnpaidIds)})
+        `;
+      }
+    }
   }
 
   private normalizeText(value?: string | null): string {
@@ -477,7 +511,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           reference,
           offerId,
           orderCode: generatedOrderCode,
-          status: 'CONFIRMED',
+          status: 'PENDING',
         },
       });
 
@@ -516,12 +550,103 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async createConfirmed(params: {
+    clientId: string;
+    restaurantId: string;
+    offerId: string;
+    items: any;
+    total: number;
+    collectionMethod: string;
+    deliveryAddress?: string;
+    deliveryPhone?: string;
+    deliveryFee?: number;
+    paymentMethod?: string;
+    paymentDetails?: any;
+  }): Promise<{ id: string }> {
+    let unique = false;
+    let reference = '';
+    while (!unique) {
+      reference = nanoid();
+      const found = await this.prisma.order.findUnique({ where: { reference } });
+      if (!found) unique = true;
+    }
+
+    const lastOrder = await this.prisma.order.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { orderCode: true },
+    });
+    let newCodeNum = 1;
+    if (lastOrder?.orderCode) {
+      const match = lastOrder.orderCode.match(/\d+$/);
+      if (match) newCodeNum = parseInt(match[0]) + 1;
+    }
+    const orderCode = 'DEL' + newCodeNum.toString().padStart(3, '0');
+
+    let quantityOrdered = 1;
+    try {
+      const mainItem = getMainItem(params.items);
+      if (typeof mainItem?.quantity === 'number') {
+        quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
+      }
+    } catch { /* ignore */ }
+
+    const order = await this.prisma.$transaction(async (tx) => {
+      const reserved = await tx.offer.updateMany({
+        where: { id: params.offerId, status: 'ACTIVE', quantity: { gte: quantityOrdered } },
+        data: { quantity: { decrement: quantityOrdered } },
+      });
+      if (reserved.count === 0) {
+        throw new BadRequestException('Offer no longer available');
+      }
+      const created = await tx.order.create({
+        data: {
+          clientId: params.clientId,
+          restaurantId: params.restaurantId,
+          offerId: params.offerId,
+          items: params.items,
+          total: params.total,
+          collectionMethod: params.collectionMethod as any,
+          deliveryAddress: params.deliveryAddress,
+          deliveryPhone: params.deliveryPhone,
+          deliveryFee: params.deliveryFee,
+          paymentMethod: params.paymentMethod as any,
+          paymentDetails: params.paymentDetails,
+          reference,
+          orderCode,
+          status: 'CONFIRMED',
+        },
+      });
+      await tx.offer.updateMany({
+        where: { id: params.offerId, quantity: { lte: 0 } },
+        data: { status: 'SOLD_OUT' },
+      });
+      return created;
+    });
+
+    await this.notificationsService.notifyOrderCreated(order.id);
+    return { id: order.id };
+  }
+
   async findByClient(clientId: string) {
     await this.expirePendingOrdersPastPickupTime();
 
     const orders = await this.prisma.order.findMany({
       where: { clientId },
-      include: {
+      select: {
+        id: true,
+        reference: true,
+        orderCode: true,
+        status: true,
+        collectionMethod: true,
+        total: true,
+        items: true,
+        createdAt: true,
+        pickupQrStatus: true,
+        pickupQrUsedAt: true,
+        pickupQrExpiresAt: true,
+        clientId: true,
+        restaurantId: true,
+        offerId: true,
         restaurant: {
           select: {
             restaurantProfile: { select: { restaurantName: true } },
@@ -543,13 +668,22 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       orders.map(async (order) => {
         const mainItem = getMainItem(order.items);
 
-        const pickupQrToken = this.canIssueQrForOrder(order)
+        // Log QR token decision
+        const canIssue = this.canIssueQrForOrder(order);
+        this.logger.log(`[QR TOKEN] Order ${order.id.substring(0, 8)}: canIssue=${canIssue}, status=${order.status}, qrStatus=${order.pickupQrStatus}, expiresAt=${order.pickupQrExpiresAt}`);
+        
+        // Only issue new QR token if one doesn't already exist or has expired
+        const pickupQrToken = canIssue
           ? await this.issuePickupQrToken({
               id: order.id,
               reference: order.reference,
               collectionMethod: order.collectionMethod,
             })
           : null;
+        
+        if (pickupQrToken) {
+          this.logger.log(`[QR TOKEN] Order ${order.id.substring(0, 8)}: Issued new token: ${pickupQrToken.substring(0, 30)}...`);
+        }
 
         return {
           id: order.id,
@@ -838,7 +972,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           customerName: order.client?.clientProfile?.fullName ?? '',
           date: order.updatedAt,
           amount: order.deliveryFee ?? order.total ?? 0,
-          rating: order.reviews?.[0]?.rating ?? 5,
+          rating: order.reviews?.[0]?.rating ?? null,
           status: order.status,
           deliveryAddress: order.deliveryAddress ?? '',
         })),
@@ -930,6 +1064,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             select: {
               description: true,
               pickupTime: true,
+              pickupDateTime: true,
               discountedPrice: true,
               photoUrl: true,
             },
@@ -947,6 +1082,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           customerName: order.client?.clientProfile?.fullName ?? '',
           amount: order.total,
           pickupTime: order.offer?.pickupTime ?? '',
+          pickupDateTime: order.offer?.pickupDateTime?.toISOString() ?? '',
           offerTitle: order.offer?.description ?? '',
           offerPhoto: order.offer?.photoUrl ?? '',
           price: order.offer?.discountedPrice ?? '',
@@ -991,10 +1127,24 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     orderStatus?: string;
     collectionMethod?: string | null;
   }> {
+    this.logger.log(`[QR DEBUG] Starting QR validation, actor: ${actor.role} (${actor.id})`);
+    this.logger.log(`[QR DEBUG] Raw token received: "${token.substring(0, 50)}..." (length: ${token.length})`);
+    this.logger.log(`[QR DEBUG] Token contains '.': ${token.includes('.')}, split parts: ${token.split('.').length}`);
+    
     await this.expirePendingOrdersPastPickupTime();
 
-    const parsed = this.parseAndVerifyQrToken(token);
+    let parsed: QrPayload;
+    try {
+      parsed = this.parseAndVerifyQrToken(token);
+      this.logger.log(`[QR DEBUG] Token parsed OK, orderId: ${parsed.oid}, role: ${parsed.role}, exp: ${parsed.exp}`);
+    } catch (e) {
+      this.logger.error(`[QR DEBUG] Token parse/verify failed: ${e}`);
+      this.logger.error(`[QR DEBUG] Failed token content: "${token.substring(0, 100)}..."`);
+      throw e;
+    }
+    
     const tokenHash = this.sha256(token);
+    this.logger.log(`[QR DEBUG] Token hash: ${tokenHash.substring(0, 16)}...`);
 
     const rows = await this.prisma.$queryRaw<
       Array<{
@@ -1028,13 +1178,18 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     const order = rows[0];
 
     if (!order) {
+      this.logger.error(`[QR DEBUG] Order not found for id: ${parsed.oid}`);
       throw new NotFoundException({
         code: 'QR_ORDER_NOT_FOUND',
         message: 'Order not found for this QR token',
       });
     }
+    this.logger.log(`[QR DEBUG] Order found: ${order.id}, status: ${order.status}, restaurant: ${order.restaurantId}`);
+    this.logger.log(`[QR DEBUG] Order QR hash: ${order.pickupQrTokenHash?.substring(0, 16)}..., expected: ${tokenHash.substring(0, 16)}...`);
+    this.logger.log(`[QR DEBUG] Order QR status: ${order.pickupQrStatus}, usedAt: ${order.pickupQrUsedAt}, expiresAt: ${order.pickupQrExpiresAt}`);
 
     if (actor.role !== Role.RESTAURANT) {
+      this.logger.error(`[QR DEBUG] Role check failed: actor=${actor.role}, expected=RESTAURANT`);
       throw new ForbiddenException({
         code: 'QR_ROLE_NOT_ALLOWED',
         message: 'Only restaurant accounts can validate pickup QR',
@@ -1042,6 +1197,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (order.restaurantId !== actor.id) {
+      this.logger.error(`[QR DEBUG] Restaurant mismatch: order.restaurantId=${order.restaurantId}, actor.id=${actor.id}`);
       throw new ForbiddenException({
         code: 'QR_RESTAURANT_MISMATCH',
         message: 'This QR does not belong to your restaurant',
@@ -1049,6 +1205,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (order.reference !== parsed.ref) {
+      this.logger.error(`[QR DEBUG] Reference mismatch: order.ref=${order.reference}, parsed.ref=${parsed.ref}`);
       throw new BadRequestException({
         code: 'QR_REFERENCE_MISMATCH',
         message: 'QR reference mismatch',
@@ -1058,6 +1215,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     const expectedRole =
       order.collectionMethod === 'DELIVERY' ? 'DELIVERER' : 'CLIENT';
     if (parsed.role !== expectedRole) {
+      this.logger.error(`[QR DEBUG] Role mismatch: parsed.role=${parsed.role}, expected=${expectedRole}`);
       throw new BadRequestException({
         code: 'QR_TOKEN_ROLE_MISMATCH',
         message: 'QR token role does not match order collection method',
@@ -1065,6 +1223,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!order.pickupQrTokenHash || order.pickupQrTokenHash !== tokenHash) {
+      this.logger.error(`[QR DEBUG] Token hash mismatch or missing: orderHash=${order.pickupQrTokenHash?.substring(0, 16)}, tokenHash=${tokenHash.substring(0, 16)}`);
       throw new BadRequestException({
         code: 'QR_TOKEN_INVALID',
         message: 'Invalid QR token',
@@ -1204,14 +1363,12 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         address: string | null;
         latitude: number | null;
         longitude: number | null;
-        lastGeocodedAt: Date | null;
       }>
     >`
       SELECT
         rp."address",
         rp."latitude",
-        rp."longitude",
-        rp."lastGeocodedAt"
+        rp."longitude"
       FROM "RestaurantProfile" rp
       WHERE rp."userId" = ${restaurantId}
       LIMIT 1
@@ -1241,9 +1398,6 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     const restaurantCoordsMismatchKm = Number(
       process.env.RESTAURANT_COORDS_MISMATCH_KM ?? 0.5,
     );
-    const restaurantForceRefreshMinutes = Number(
-      process.env.RESTAURANT_GEOCODE_FORCE_REFRESH_MINUTES ?? 60,
-    );
     let restaurantCoords: Coordinates | null = null;
 
     const restaurantQuery = (restaurant.address ?? '').trim();
@@ -1269,23 +1423,15 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             restaurantCoords,
             geocodedRestaurantCoords,
           );
-          const minutesSinceLastGeocode = restaurant.lastGeocodedAt
-            ? (Date.now() - new Date(restaurant.lastGeocodedAt).getTime()) /
-              60000
-            : Number.POSITIVE_INFINITY;
-          const shouldForceRefresh =
-            minutesSinceLastGeocode >= restaurantForceRefreshMinutes;
+          // Always refresh if mismatch is significant (no lastGeocodedAt tracking)
           const shouldRefreshCoords =
-            shouldForceRefresh || mismatchKm > restaurantCoordsMismatchKm;
+            mismatchKm > restaurantCoordsMismatchKm;
 
           console.log('[DELIVERY DEBUG] restaurant coords mismatch check', {
             stored: restaurantCoords,
             geocoded: geocodedRestaurantCoords,
             mismatchKm: Number(mismatchKm.toFixed(3)),
             restaurantCoordsMismatchKm,
-            minutesSinceLastGeocode: Number(minutesSinceLastGeocode.toFixed(1)),
-            restaurantForceRefreshMinutes,
-            shouldForceRefresh,
             shouldRefreshCoords,
           });
 
@@ -1295,8 +1441,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
               UPDATE "RestaurantProfile"
               SET
                 "latitude" = ${restaurantCoords.lat},
-                "longitude" = ${restaurantCoords.lng},
-                "lastGeocodedAt" = NOW()
+                "longitude" = ${restaurantCoords.lng}
               WHERE "userId" = ${restaurantId}
             `;
             console.log(
@@ -1329,8 +1474,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           UPDATE "RestaurantProfile"
           SET
             "latitude" = ${restaurantCoords.lat},
-            "longitude" = ${restaurantCoords.lng},
-            "lastGeocodedAt" = NOW()
+            "longitude" = ${restaurantCoords.lng}
           WHERE "userId" = ${restaurantId}
         `;
         console.log('[DELIVERY DEBUG] stored restaurant coords in DB');

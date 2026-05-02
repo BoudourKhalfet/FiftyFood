@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 import '../../api/auth_storage.dart';
 import '../../api/api_service.dart';
@@ -165,25 +162,26 @@ class _DelivererHistoryPageState extends State<DelivererHistoryPage> {
                 ),
               ),
               const SizedBox(height: 6),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.star_rounded,
-                    size: 18,
-                    color: Color(0xFFF1A21B),
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    rating.toStringAsFixed(0),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF5E6D66),
+              if (rating > 0)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      size: 18,
+                      color: Color(0xFFF1A21B),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 2),
+                    Text(
+                      rating.toStringAsFixed(0),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF5E6D66),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ],

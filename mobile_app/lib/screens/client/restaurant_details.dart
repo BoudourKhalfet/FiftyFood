@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../constants/api.dart';
 import '../../api/auth_storage.dart';
+import '../../api/api_service.dart';
 
 class RestaurantDetailsPage extends StatefulWidget {
   final String restaurantId;
@@ -24,6 +25,19 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
   void initState() {
     super.initState();
     _dataFuture = fetchRestaurantData(widget.restaurantId);
+    _trackRestaurantView();
+  }
+
+  Future<void> _trackRestaurantView() async {
+    try {
+      final jwt = await getJwt();
+      if (jwt == null || jwt.isEmpty) return;
+      await ApiService.post('interactions/restaurant-view', {
+        'restaurantId': widget.restaurantId,
+      }, headers: {'Authorization': 'Bearer $jwt'});
+    } catch (_) {
+      // Best-effort tracking; ignore failures.
+    }
   }
 
   @override
@@ -227,7 +241,7 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
                                         (data['avgRating'] ??
                                                 data['rating'] ??
                                                 4.5)
-                                            .toString(),
+                                            .toStringAsFixed(1),
                                         style: const TextStyle(
                                           color: Color(0xFF44AA45),
                                           fontWeight: FontWeight.bold,
@@ -503,9 +517,27 @@ class _RestaurantDetailsPageState extends State<RestaurantDetailsPage> {
                             ),
                           ),
                           const SizedBox(height: 9),
-                          ...(data['reviews'] as List<dynamic>? ?? [])
-                              .map(
-                                (review) => Container(
+                          if ((data['reviews'] as List<dynamic>? ?? []).isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'No reviews yet. Be the first to leave a review!',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            ...(data['reviews'] as List<dynamic>? ?? [])
+                                .map(
+                                  (review) => Container(
                                   margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.all(13),
                                   decoration: BoxDecoration(

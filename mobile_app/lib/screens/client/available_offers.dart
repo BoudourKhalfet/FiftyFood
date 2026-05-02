@@ -336,7 +336,35 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
       error = null;
     });
     try {
-      final data = await ApiService.getList('offers');
+      // Try personalised recommendations first (requires auth)
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+
+      List<dynamic> data;
+      if (jwt != null) {
+        try {
+          final recommended = await ApiService.getList(
+            'offers/recommended',
+            headers: {'Authorization': 'Bearer $jwt'},
+          );
+          // Unwrap {offer, score, reasons} → offer map, keep score & reasons
+          data = recommended.map((item) {
+            if (item is Map && item.containsKey('offer')) {
+              final offer = Map<String, dynamic>.from(item['offer'] as Map);
+              offer['_recommendationScore'] = item['score'];
+              offer['_recommendationReasons'] = item['reasons'];
+              return offer;
+            }
+            return item;
+          }).toList();
+        } catch (_) {
+          // Fall back to public offers if recommended endpoint fails
+          data = await ApiService.getList('offers');
+        }
+      } else {
+        data = await ApiService.getList('offers');
+      }
+
       setState(() {
         offers = data;
         filteredOffers = data;

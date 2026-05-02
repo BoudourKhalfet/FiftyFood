@@ -18,6 +18,7 @@ import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { GenerateDescriptionDto } from './dto/generate-description.dto';
+import { RecommendationService } from '../recommendations/recommendation.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -27,7 +28,10 @@ type ReqWithUser = Request & { user: { sub: string; role: Role } };
 
 @Controller('offers')
 export class OffersController {
-  constructor(private readonly offers: OffersService) {}
+  constructor(
+    private readonly offers: OffersService,
+    private readonly recommendations: RecommendationService,
+  ) {}
 
   private ensureRestaurant(req: ReqWithUser) {
     if (req.user.role !== Role.RESTAURANT) {
@@ -121,6 +125,16 @@ export class OffersController {
   async toggleStatus(@Req() req: ReqWithUser, @Param('id') id: string) {
     this.ensureRestaurant(req);
     return this.offers.toggleStatus(req.user.sub, id);
+  }
+
+  /**
+   * GET /offers/recommended
+   * Personalised offer feed for the authenticated client.
+   * Uses hybrid AI: content-based + collaborative filtering + contextual boosting.
+   */
+  @Get('recommended')
+  async getRecommendedOffers(@Req() req: ReqWithUser) {
+    return this.recommendations.getRecommendedOffers(req.user.sub);
   }
 
   @Public()

@@ -678,7 +678,7 @@ export class AdminService {
 
     // Send welcome email
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.46.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.53.51:3000';
     const roleLabel =
       role === Role.CLIENT
         ? 'Client'
@@ -732,5 +732,229 @@ export class AdminService {
     return this.prisma.user.delete({
       where: { id: userId },
     });
+  }
+
+  async getComplaintsReport() {
+    type RestaurantWithStats = {
+      id: string;
+      email: string;
+      status: string;
+      suspendedAt: Date | null;
+      restaurantProfile: { restaurantName: string | null; avgRating: number | null } | null;
+      restaurantOrders: { id: string }[];
+      restaurantComplaints: { id: string; reason: string }[];
+    };
+
+    type DelivererWithStats = {
+      id: string;
+      email: string;
+      status: string;
+      suspendedAt: Date | null;
+      livreurProfile: { fullName: string | null; avgRating: number | null } | null;
+      livreurOrders: { id: string }[];
+      delivererComplaints: { id: string; reason: string }[];
+    };
+
+    // Get all restaurants with their orders, complaints and profile
+    const restaurants = await this.prisma.user.findMany({
+      where: { role: 'RESTAURANT' },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        suspendedAt: true,
+        restaurantProfile: {
+          select: {
+            restaurantName: true,
+            avgRating: true,
+          },
+        },
+        restaurantOrders: {
+          where: {
+            status: { in: ['PICKED_UP', 'DELIVERED'] }
+          },
+          select: { id: true },
+        },
+        restaurantComplaints: {
+          select: { id: true, reason: true },
+        },
+      },
+    }) as RestaurantWithStats[];
+
+    // Get all deliverers with their orders, complaints and profile
+    const deliverers = await this.prisma.user.findMany({
+      where: { role: 'LIVREUR' },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        suspendedAt: true,
+        livreurProfile: {
+          select: {
+            fullName: true,
+            avgRating: true,
+          },
+        },
+        livreurOrders: {
+          where: {
+            status: { in: ['PICKED_UP', 'DELIVERED'] }
+          },
+          select: { id: true },
+        },
+        delivererComplaints: {
+          select: { id: true, reason: true },
+        },
+      },
+    }) as DelivererWithStats[];
+
+    type ComplaintWithRelations = {
+      id: string;
+      reason: string;
+      description: string | null;
+      createdAt: Date;
+      restaurantId: string | null;
+      delivererId: string | null;
+      orderId: string | null;
+      order: { reference: string | null; orderCode: string | null } | null;
+      complainant: { email: string; clientProfile: { fullName: string | null } | null } | null;
+      restaurant: { restaurantProfile: { restaurantName: string | null } | null } | null;
+      deliverer: { livreurProfile: { fullName: string | null } | null } | null;
+    };
+
+    // Get all complaints with relations
+    const complaints = await this.prisma.complaint.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        reason: true,
+        description: true,
+        createdAt: true,
+        restaurantId: true,
+        delivererId: true,
+        orderId: true,
+        order: {
+          select: {
+            reference: true,
+            orderCode: true,
+          },
+        },
+        complainant: {
+          select: {
+            email: true,
+            clientProfile: {
+              select: { fullName: true },
+            },
+          },
+        },
+        restaurant: {
+          select: {
+            restaurantProfile: {
+              select: { restaurantName: true },
+            },
+          },
+        },
+        deliverer: {
+          select: {
+            livreurProfile: {
+              select: { fullName: true },
+            },
+          },
+        },
+      },
+    }) as ComplaintWithRelations[];
+
+    // Get complaint categories by target type
+    const allComplaints = await this.prisma.complaint.findMany({
+      select: {
+        reason: true,
+        restaurantId: true,
+      },
+    });
+
+    const categoriesMap = new Map<string, { reason: string; targetType: string; count: number }>();
+    
+    for (const c of allComplaints) {
+      const targetType = c.restaurantId ? 'RESTAURANT' : 'DELIVERER';
+      const key = `${c.reason}|${targetType}`;
+      const existing = categoriesMap.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        categoriesMap.set(key, { reason: c.reason, targetType, count: 1 });
+      }
+    }
+
+    const complaintCategories = Array.from(categoriesMap.values())
+      .sort((a, b) => b.count - a.count);
+
+    // Format restaurant stats
+    const restaurantStats = restaurants.map((r) => {
+      // Aggregate complaint reasons for this restaurant
+      const complaintReasons: Record<string, number> = {};
+      for (const c of r.restaurantComplaints) {
+        complaintReasons[c.reason] = (complaintReasons[c.reason] || 0) + 1;
+      }
+
+      return {
+        id: r.id,
+        restaurantName: r.restaurantProfile?.restaurantName || 'Unknown',
+        email: r.email,
+        status: r.status,
+        suspendedAt: r.suspendedAt?.toISOString() || null,
+        totalOrders: r.restaurantOrders.length,
+        totalComplaints: r.restaurantComplaints.length,
+        avgRating: r.restaurantProfile?.avgRating || 0,
+        complaintCategories: Object.entries(complaintReasons)
+          .map(([reason, count]) => ({ reason, count }))
+          .sort((a, b) => b.count - a.count),
+      };
+    });
+
+    // Format deliverer stats
+    const delivererStats = deliverers.map((d) => {
+      // Aggregate complaint reasons for this deliverer
+      const complaintReasons: Record<string, number> = {};
+      for (const c of d.delivererComplaints) {
+        complaintReasons[c.reason] = (complaintReasons[c.reason] || 0) + 1;
+      }
+
+      return {
+        id: d.id,
+        delivererName: d.livreurProfile?.fullName || 'Unknown',
+        email: d.email,
+        status: d.status,
+        suspendedAt: d.suspendedAt?.toISOString() || null,
+        totalOrders: d.livreurOrders.length,
+        totalComplaints: d.delivererComplaints.length,
+        avgRating: d.livreurProfile?.avgRating || 0,
+        complaintCategories: Object.entries(complaintReasons)
+          .map(([reason, count]) => ({ reason, count }))
+          .sort((a, b) => b.count - a.count),
+      };
+    });
+
+    // Format complaints
+    const formattedComplaints = complaints.map((c) => ({
+      id: c.id,
+      reason: c.reason,
+      description: c.description,
+      createdAt: c.createdAt.toISOString(),
+      restaurantId: c.restaurantId,
+      delivererId: c.delivererId,
+      orderId: c.orderId,
+      orderReference: c.order?.reference || null,
+      orderCode: c.order?.orderCode || null,
+      complainantEmail: c.complainant?.email || null,
+      complainantName: c.complainant?.clientProfile?.fullName || null,
+      restaurantName: c.restaurant?.restaurantProfile?.restaurantName || null,
+      delivererName: c.deliverer?.livreurProfile?.fullName || null,
+    }));
+
+    return {
+      complaints: formattedComplaints,
+      restaurantStats,
+      delivererStats,
+      complaintCategories,
+    };
   }
 }

@@ -711,7 +711,7 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
             children: [
               _buildStatusFilterChip('All', 'ALL'),
               _buildStatusFilterChip('Active', 'ACTIVE'),
-              _buildStatusFilterChip('Paused', 'PAUSED'),
+              _buildStatusFilterChip('Sold Out', 'SOLD_OUT'),
               _buildStatusFilterChip('Expired', 'EXPIRED'),
             ],
           ),

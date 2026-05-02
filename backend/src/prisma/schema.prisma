@@ -7,63 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                          String             @id @default(cuid())
-  email                       String             @unique
-  passwordHash                String
-  role                        Role
-  status                      AccountStatus      @default(PENDING)
-  emailVerifiedAt             DateTime?
-  emailVerificationTokenHash  String?
-  emailVerificationExpiresAt  DateTime?
-  emailChangeTokenHash        String?
-  emailChangeExpiresAt        DateTime?
-  pendingEmail                String?
-  createdAt                   DateTime           @default(now())
-  updatedAt                   DateTime           @updatedAt
-  statusReason                String?
-  suspendedAt                 DateTime?
-  passwordResetTokenExpiresAt DateTime?
-  passwordResetTokenHash      String?
-  accountHistory              AccountHistory[]
-  clientProfile               ClientProfile?
-  legalAgreements             LegalAgreement[]
-  livreurProfile              LivreurProfile?
-  restaurantOffers            Offer[]            @relation("RestaurantOffers")
-  clientOrders                Order[]            @relation("ClientOrders")
-  livreurOrders               Order[]            @relation("LivreurOrders")
-  restaurantOrders            Order[]            @relation("RestaurantOrders")
-  restaurantProfile           RestaurantProfile?
-  delivererReviews            Review[]           @relation("DelivererReview")
-  restaurantReviews           Review[]           @relation("RestaurantReview")
-  reviewsGiven                Review[]           @relation("Reviewer")
-
-  @@index([role])
-  @@index([status])
-}
-
-model ClientProfile {
-  id                      String               @id @default(cuid())
-  userId                  String               @unique
-  fullName                String?
-  phone                   String?
-  defaultAddress          String?
-  cuisinePreferences      CuisinePreference[]
-  dietaryRestrictions     DietaryRestriction[]
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-  termsAcceptedAt         DateTime?
-  notificationPreferences Json?                @default("{}")
-  joinedAt                DateTime?
-  submittedAt             DateTime?
-  locationConsentGiven    Boolean              @default(false)
-  locationConsentGivenAt  DateTime?
-  lastLatitude             Float?
-  lastLongitude            Float?
-  lastLocationAt           DateTime?
-  user                    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
 model RestaurantProfile {
   id                              String             @id @default(cuid())
   userId                          String             @unique
@@ -106,81 +49,6 @@ model LegalAgreement {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model AccountHistory {
-  id        String        @id @default(cuid())
-  userId    String
-  actorId   String
-  actorRole String
-  action    AccountAction
-  field     String?
-  oldValue  String?
-  newValue  String?
-  reason    String?
-  createdAt DateTime      @default(now())
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model LivreurProfile {
-  id                     String        @id @default(cuid())
-  userId                 String        @unique
-  fullName               String?
-  phone                  String?
-  vehicleType            String?
-  zone                   String?
-  photoUrl               String?
-  cinOrPassportNumber    String?
-  licensePhotoUrl        String?
-  termsAcceptedAt        DateTime?
-  submittedAt            DateTime?
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
-  termsAcceptedName      String?
-  payoutDetails          Json?
-  payoutMethod           PayoutMethod?
-  vehicleOwnershipDocUrl String?
-  vehiclePhotoUrl        String?
-  avgRating              Float?        @default(0)
-  locationConsentGiven   Boolean       @default(false)
-  locationConsentGivenAt DateTime?
-  lastOnlineAt           DateTime?
-  lastLatitude           Float?
-  lastLongitude          Float?
-  lastLocationAt         DateTime?
-  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Order {
-  id                    String            @id @default(uuid())
-  clientId              String
-  restaurantId          String
-  items                 Json
-  total                 Float
-  status                OrderStatus       @default(PENDING)
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  collectionMethod      CollectionMethod?
-  deliveryAddress       String?
-  deliveryFee           Float?
-  deliveryPhone         String?
-  paymentMethod         String?
-  reference             String            @unique
-  paymentDetails        Json?
-  livreurId             String?
-  clientLocation        String?
-  delivererLocation     String?
-  offerId               String
-  orderCode             String
-  pickupQrStatus        QrStatus          @default(NOT_SCANNED)
-  pickupQrTokenHash     String?
-  pickupQrExpiresAt     DateTime?
-  pickupQrUsedAt        DateTime?
-  client                User              @relation("ClientOrders", fields: [clientId], references: [id])
-  livreur               User?             @relation("LivreurOrders", fields: [livreurId], references: [id])
-  offer                 Offer             @relation(fields: [offerId], references: [id])
-  restaurant            User              @relation("RestaurantOrders", fields: [restaurantId], references: [id])
-  reviews               Review[]
-}
-
 model Offer {
   id                String          @id @default(cuid())
   restaurantId      String
@@ -197,31 +65,13 @@ model Offer {
   updatedAt         DateTime        @updatedAt
   pickupDateTime    DateTime
   categories        String[]        @default([])
+  descriptionEmbedding Float[]         @default([])
   restaurant        User            @relation("RestaurantOffers", fields: [restaurantId], references: [id])
   orders            Order[]
 
   @@index([restaurantId])
   @@index([status])
   @@index([createdAt])
-}
-
-model Review {
-  id           String   @id @default(cuid())
-  orderId      String?
-  reviewerId   String
-  restaurantId String?
-  delivererId  String?
-  rating       Int
-  comment      String
-  createdAt    DateTime @default(now())
-  deliverer    User?    @relation("DelivererReview", fields: [delivererId], references: [id])
-  order        Order?   @relation(fields: [orderId], references: [id])
-  restaurant   User?    @relation("RestaurantReview", fields: [restaurantId], references: [id])
-  reviewer     User     @relation("Reviewer", fields: [reviewerId], references: [id])
-
-  @@index([orderId])
-  @@index([restaurantId])
-  @@index([delivererId])
 }
 
 enum Role {
@@ -241,23 +91,21 @@ enum AccountStatus {
   PROFILE_EDIT
 }
 
-enum DietaryRestriction {
-  NO_RESTRICTIONS
-  VEGETARIAN
-  VEGAN
-  GLUTEN_FREE
-  DAIRY_FREE
-  NUT_FREE
-  HALAL
-}
-
 enum CuisinePreference {
-  ITALIAN
-  JAPANESE
-  HEALTHY
-  BURGERS
   BAKERY
   CAFE
+  GRILL
+  FAST_FOOD
+  VEGETARIAN
+  HALAL
+  SEAFOOD
+  SUSHI
+  PIZZA
+  BURGER
+  BBQ
+  HEALTHY
+  DESSERT
+  STREET_FOOD
   SANDWICHES
   SALAD
   PASTA
@@ -460,7 +308,7 @@ model Order {
   deliveryFee       Float? 
   clientLocation      String?  
   delivererLocation String?
-  paymentMethod     String?
+  paymentMethod PaymentMethod?
   paymentDetails    Json? 
   pickupQrTokenHash String?
   pickupQrExpiresAt DateTime?
@@ -532,6 +380,7 @@ enum OrderStatus {
   DELIVERED
   CANCELLED
   ASSIGNED
+  EXPIRED
 }
 
 enum OfferVisibility {
@@ -635,4 +484,23 @@ model UserDeviceToken {
   updatedAt DateTime       @updatedAt
 
   @@index([userId, revokedAt])
+}
+
+enum InteractionType {
+  OFFER_VIEW
+  RESTAURANT_VIEW
+}
+
+model ClientInteraction {
+  id             String          @id @default(cuid())
+  clientId       String
+  interactionType InteractionType
+  offerId        String?
+  restaurantId   String?
+  categories     String[]        @default([])
+  price          Float?
+  createdAt      DateTime        @default(now())
+
+  @@index([clientId, interactionType])
+  @@index([clientId, createdAt])
 }

@@ -8,8 +8,9 @@ export default defineConfig({
     port: 5174,
     proxy: {
       "^/auth": "http://localhost:3000",
-      "^/admin": "http://localhost:3000",
+      "^/admin/(dashboard|users|complaints|restaurants|livreurs|clients)": "http://localhost:3000",
       "^/orders": "http://localhost:3000",
+      "^/feedback": "http://localhost:3000",
     },
     middlewareMode: false,
   },

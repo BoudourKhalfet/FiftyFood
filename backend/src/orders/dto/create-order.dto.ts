@@ -8,7 +8,7 @@ export enum CollectionMethod {
 export enum PaymentMethod {
   CARD = 'CARD',
   D17 = 'D17',
-  CASH = 'CASH',
+  PAYPAL = 'PAYPAL',
 }
 
 export class CreateOrderDto {

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../checkout/order_checkout_screen.dart';
 import '../../constants/api.dart';
 import '../../api/client_profile_service.dart';
+import '../../api/api_service.dart';
 import '../../models/client_profile.dart';
 import 'package:location/location.dart';
 
@@ -51,6 +52,28 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     super.initState();
     _loadClientProfile();
     _loadCurrentLocation();
+    _trackOfferView();
+  }
+
+  Future<void> _trackOfferView() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+      final offer = widget.offer;
+      final categories = (offer['categories'] as List<dynamic>?)
+              ?.map((c) => c.toString())
+              .toList() ??
+          [];
+      final price = (offer['discountedPrice'] as num?)?.toDouble();
+      await ApiService.post('interactions/offer-view', {
+        'offerId': offer['id'],
+        'categories': categories,
+        'price': price,
+      }, headers: {'Authorization': 'Bearer $jwt'});
+    } catch (_) {
+      // Best-effort tracking; ignore failures.
+    }
   }
 
   Future<void> _loadClientProfile() async {
@@ -416,7 +439,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                         const SizedBox(width: 6),
                         const Icon(Icons.star, color: Colors.amber, size: 18),
                         Text(
-                          rating.toString(),
+                          rating.toStringAsFixed(1),
                           style: const TextStyle(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
@@ -673,7 +696,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                   ),
                                 )
                               : const Text(
-                                  'Reserve Now',
+                                  'Order Now',
                                   style: TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.bold,
@@ -1064,6 +1087,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                       // ✅ FIXED: Update the class-level selectedPayment before navigating
                                       this.selectedPayment =
                                           'card'; // or get from payment selector
+                                      final pageContext = this.context;
                                       Navigator.of(context).pop();
                                       await _createOrderAndPay({
                                         "restaurantId":
@@ -1092,9 +1116,9 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                         "paymentDetails": {
                                           "status": "pending",
                                           "provider": selectedPayment
-                                              .toLowerCase(), // ✅ Now accessible
+                                              .toLowerCase(),
                                         },
-                                      }, context);
+                                      }, pageContext);
                                     },
                               child: _isCreatingOrder
                                   ? const SizedBox(
@@ -1108,7 +1132,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                             ),
                                       ),
                                     )
-                                  : Text('Confirm and Pay'),
+                                  : Text('Continue to payment'),
                             ),
                           ),
                         ],
@@ -1128,77 +1152,20 @@ class _OfferDetailsPageState extends State<OfferDetails> {
     Map<String, dynamic> orderDetails,
     BuildContext context,
   ) async {
-    if (_isCreatingOrder) return;
-    if (mounted) {
-      setState(() => _isCreatingOrder = true);
-    }
+    final totalAmount = (orderDetails['total'] is num)
+        ? (orderDetails['total'] as num).toDouble()
+        : 0.0;
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt');
-    if (token == null) {
-      // Handle user not logged in
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('You are not logged in.')));
-      if (mounted) {
-        setState(() => _isCreatingOrder = false);
-      }
-      return;
-    }
-
-    try {
-      final response = await http.post(
-        Uri.parse(apiUrl('orders')),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(orderDetails),
-      );
-
-      if (response.statusCode == 201) {
-        final responseData = jsonDecode(response.body);
-        final orderId =
-            (responseData['order']?['id'] ?? responseData['orderId'])
-                ?.toString();
-        final clientSecret = responseData['clientSecret'];
-        final totalAmount = (orderDetails['total'] is num)
-            ? (orderDetails['total'] as num).toDouble()
-            : 0.0;
-
-        if (orderId == null || orderId.isEmpty || orderId == 'null') {
-          throw Exception('Order created but no order id returned by backend');
-        }
-
-        // Navigate to a success page or show a success message
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => OrderCheckoutScreen(
-              orderDetails: orderDetails,
-              orderId: orderId,
-              totalAmount: totalAmount,
-              clientSecret: clientSecret,
-            ),
-          ),
-        );
-      } else {
-        final errorData = jsonDecode(response.body);
-        // Handle error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to create order: ${errorData['message']}'),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
-    } finally {
-      if (mounted) {
-        setState(() => _isCreatingOrder = false);
-      }
-    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => OrderCheckoutScreen(
+          orderDetails: orderDetails,
+          orderId: '',
+          totalAmount: totalAmount,
+          clientSecret: null,
+        ),
+      ),
+    );
   }
 
 }
