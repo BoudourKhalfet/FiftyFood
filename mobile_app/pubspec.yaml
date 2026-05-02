@@ -30,10 +30,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-<<<<<<< HEAD
+  
+  # Firebase
   firebase_core: ^3.13.0
   firebase_messaging: ^15.2.10
-=======
       
   # Camera and image handling
   camera: ^0.10.5
@@ -58,9 +58,7 @@ dependencies:
   flutter_svg: ^2.0.7
   
   # Utilities
-
   permission_handler: ^11.0.0
->>>>>>> e4c0d50e25f43f81c5edf5b91e096c9f90e51860
   http: ^1.2.1
   shared_preferences: ^2.2.2
   file_picker: ^8.0.0

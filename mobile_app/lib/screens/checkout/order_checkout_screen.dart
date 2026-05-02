@@ -181,9 +181,6 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         case AppPaymentMethod.card:
           await _processStripePayment();
           break;
-        case AppPaymentMethod.eDinar:
-          await _processKonnectPayment();
-          break;
         case AppPaymentMethod.paypal:
           await _processPayPalPayment();
           break;

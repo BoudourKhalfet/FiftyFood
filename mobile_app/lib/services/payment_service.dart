@@ -135,47 +135,6 @@ class PaymentService {
     }
   }
 
-  /// Create Konnect (E-Dinar) payment
-  static Future<Map<String, dynamic>> createKonnectPayment({
-    required String orderId,
-    required String firstName,
-    required String lastName,
-    required String email,
-    String? phone,
-  }) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final jwt = prefs.getString('jwt');
-
-      if (jwt == null) {
-        throw Exception('No authentication token found');
-      }
-
-      final response = await http.post(
-        Uri.parse(apiUrl('payments/konnect')),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $jwt',
-        },
-        body: jsonEncode({
-          'orderId': orderId,
-          'firstName': firstName,
-          'lastName': lastName,
-          'email': email,
-          'phone': phone,
-        }),
-      );
-
-      if (response.statusCode != 201 && response.statusCode != 200) {
-        throw Exception('Failed to create Konnect payment: ${response.body}');
-      }
-
-      return jsonDecode(response.body);
-    } catch (e) {
-      throw Exception('Konnect payment error: $e');
-    }
-  }
-
   /// Create PayPal payment
   static Future<Map<String, dynamic>> createPayPalPayment({
     required String orderId,
@@ -210,26 +169,6 @@ class PaymentService {
       return jsonDecode(response.body);
     } catch (e) {
       throw Exception('PayPal payment error: $e');
-    }
-  }
-
-  /// Verify Konnect payment status
-  static Future<Map<String, dynamic>> verifyKonnectPayment({
-    required String paymentId,
-    required String orderId,
-  }) async {
-    try {
-      final response = await http.get(
-        Uri.parse(apiUrl('payments/konnect/$paymentId/verify/$orderId')),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to verify Konnect payment: ${response.body}');
-      }
-
-      return jsonDecode(response.body);
-    } catch (e) {
-      throw Exception('Konnect verification error: $e');
     }
   }
 

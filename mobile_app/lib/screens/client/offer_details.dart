@@ -1105,7 +1105,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
                                         ? phoneController.text.trim()
                                         : null,
                                     "deliveryFee": deliveryFee,
-                                    "paymentMethod": selectedPayment.toLowerCase() == 'edinar' ? 'D17' : selectedPayment.toUpperCase(),
+                                    "paymentMethod": selectedPayment.toUpperCase(),
                                     "paymentDetails": {
                                     "status": "pending",
                                     "provider": selectedPayment.toLowerCase() // ✅ Now accessible
@@ -1240,42 +1240,6 @@ class _OfferDetailsPageState extends State<OfferDetails> {
             ),
           );
         }
-      } else if (paymentMethod == 'D17') {
-        // Konnect (e-Dinar) payment
-        try {
-          final fullName = _clientProfile?.fullName ?? prefs.getString('fullName') ?? 'User';
-          final nameParts = fullName.split(' ');
-          final firstName = nameParts.isNotEmpty ? nameParts.first : 'User';
-          final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-
-          await PaymentService.createKonnectPayment(
-            orderId: orderId,
-            firstName: firstName,
-            lastName: lastName,
-            email: _clientProfile?.email ?? prefs.getString('email') ?? 'user@example.com',
-          );
-
-          if (!mounted) return;
-
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => OrderCheckoutScreen(
-                orderId: orderId,
-                totalAmount: totalAmount,
-                orderDetails: responseData['order'] ?? orderDetails,
-                initialMethod: AppPaymentMethod.eDinar,
-              ),
-            ),
-          );
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Payment error: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
       } else if (paymentMethod == 'PAYPAL') {
         // PayPal payment
         try {
@@ -1305,15 +1269,14 @@ class _OfferDetailsPageState extends State<OfferDetails> {
           );
         }
       } else {
-        // Cash payment - success
+        // Unsupported payment method
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Order created! Pay in cash at pickup/delivery.")),
+          SnackBar(content: Text("Payment method not supported.")),
         );
-        if (!mounted) return;
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/offers',
-          (route) => false,
-        );
+        if (mounted) {
+          setState(() => _isCreatingOrder = false);
+        }
+        return;
       }
     } catch (e) {
       if (mounted) {
