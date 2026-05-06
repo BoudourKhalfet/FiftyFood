@@ -60,10 +60,31 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrdersService.name);
   private expirationTimer?: NodeJS.Timeout;
 
+  // Valid order status transitions (state machine)
+  private static readonly VALID_TRANSITIONS: Record<string, string[]> = {
+    PENDING:   ['CONFIRMED', 'CANCELLED', 'EXPIRED'],
+    CONFIRMED: ['ASSIGNED', 'READY', 'CANCELLED', 'EXPIRED'],
+    ASSIGNED:  ['READY', 'PICKED_UP', 'CANCELLED'],
+    READY:     ['PICKED_UP', 'DELIVERED', 'CANCELLED'],
+    PICKED_UP: ['DELIVERED'],
+    DELIVERED: [],
+    CANCELLED: [],
+    EXPIRED:   [],
+  };
+
   constructor(
     private prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  private validateStatusTransition(current: string, next: string): void {
+    const allowed = OrdersService.VALID_TRANSITIONS[current];
+    if (!allowed || !allowed.includes(next)) {
+      throw new BadRequestException(
+        `Invalid status transition from ${current} to ${next}`,
+      );
+    }
+  }
 
   async onModuleInit() {
     await this.expirePendingOrdersPastPickupTime();
@@ -472,58 +493,39 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('offerId is required');
     }
 
-    const order = await this.prisma.$transaction(async (tx) => {
-      const reserved = await tx.offer.updateMany({
-        where: {
-          id: offerId,
-          status: 'ACTIVE',
-          quantity: { gte: quantityOrdered },
-        },
-        data: { quantity: { decrement: quantityOrdered } },
-      });
+    // Validate offer exists and has enough quantity (but don't decrement yet —
+    // quantity is only decremented when payment succeeds in confirmOrderPayment)
+    const currentOffer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      select: { id: true, status: true, quantity: true },
+    });
 
-      if (reserved.count === 0) {
-        const currentOffer = await tx.offer.findUnique({
-          where: { id: offerId },
-          select: { id: true, status: true, quantity: true },
-        });
+    if (!currentOffer) {
+      throw new NotFoundException('Offer not found');
+    }
 
-        if (!currentOffer) {
-          throw new NotFoundException('Offer not found');
-        }
+    if (
+      currentOffer.status === 'SOLD_OUT' ||
+      currentOffer.status === 'EXPIRED' ||
+      currentOffer.quantity <= 0
+    ) {
+      throw new BadRequestException('Offer is sold out');
+    }
 
-        if (
-          currentOffer.status === 'SOLD_OUT' ||
-          currentOffer.status === 'EXPIRED' ||
-          currentOffer.quantity <= 0
-        ) {
-          throw new BadRequestException('Offer is sold out');
-        }
+    if (currentOffer.quantity < quantityOrdered) {
+      throw new BadRequestException('Not enough quantity available');
+    }
 
-        throw new BadRequestException('Not enough quantity available');
-      }
-
-      const createdOrder = await tx.order.create({
-        data: {
-          ...orderData,
-          collectionMethod,
-          clientId,
-          reference,
-          offerId,
-          orderCode: generatedOrderCode,
-          status: 'PENDING',
-        },
-      });
-
-      await tx.offer.updateMany({
-        where: {
-          id: offerId,
-          quantity: { lte: 0 },
-        },
-        data: { status: 'SOLD_OUT' },
-      });
-
-      return createdOrder;
+    const order = await this.prisma.order.create({
+      data: {
+        ...orderData,
+        collectionMethod,
+        clientId,
+        reference,
+        offerId,
+        orderCode: generatedOrderCode,
+        status: 'PENDING',
+      },
     });
 
     const pickupQrToken = await this.issuePickupQrToken(order);
@@ -1001,9 +1003,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Order already assigned');
     }
 
-    if (!['CONFIRMED', 'READY'].includes(order.status)) {
-      throw new BadRequestException('Order not available for assignment');
-    }
+    this.validateStatusTransition(order.status, 'ASSIGNED');
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
@@ -1029,12 +1029,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     if (order.collectionMethod !== 'DELIVERY') {
       throw new BadRequestException('Only delivery orders can be confirmed');
     }
-    if (order.status === 'DELIVERED') return order;
-    if (!['ASSIGNED', 'PICKED_UP', 'READY'].includes(order.status)) {
-      throw new BadRequestException(
-        'Order is not ready for delivery confirmation',
-      );
-    }
+    if (order.status === 'DELIVERED') return order; // idempotent
+    this.validateStatusTransition(order.status, 'DELIVERED');
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
@@ -1090,6 +1086,118 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
               : (getMainItem(order.items)?.quantity ?? 1),
         })),
       );
+  }
+
+  async cancelOrder(orderId: string, clientId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.clientId !== clientId) {
+      throw new ForbiddenException('You can only cancel your own orders');
+    }
+
+    // Idempotency: already cancelled
+    if (order.status === 'CANCELLED') {
+      this.logger.log(`Order ${orderId} already cancelled (idempotent)`);
+      return order;
+    }
+
+    this.validateStatusTransition(order.status, 'CANCELLED');
+
+    // Only restore quantity if payment was completed (CONFIRMED or later),
+    // because PENDING orders never had quantity decremented
+    const wasPaid = order.status !== 'PENDING';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const cancelled = await tx.order.update({
+        where: { id: orderId },
+        data: { status: 'CANCELLED' },
+      });
+
+      if (wasPaid) {
+        const mainItem = getMainItem(order.items);
+        const quantityToRestore = mainItem?.quantity ?? 1;
+
+        // Restore quantity back to the offer
+        await tx.offer.update({
+          where: { id: order.offerId },
+          data: { quantity: { increment: quantityToRestore } },
+        });
+
+        // If offer was SOLD_OUT, reactivate it
+        await tx.offer.updateMany({
+          where: { id: order.offerId, status: 'SOLD_OUT' },
+          data: { status: 'ACTIVE' },
+        });
+      }
+
+      return cancelled;
+    });
+
+    return updated;
+  }
+
+  async confirmOrderPayment(
+    orderId: string,
+    clientId: string,
+    paymentMethod: string,
+    paymentDetails?: any,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.clientId !== clientId) {
+      throw new ForbiddenException('You can only confirm your own orders');
+    }
+
+    // Idempotency: if already confirmed, return as-is (prevents double processing)
+    if (order.status === 'CONFIRMED') {
+      this.logger.log(`Order ${orderId} payment already confirmed (idempotent)`);
+      return order;
+    }
+
+    this.validateStatusTransition(order.status, 'CONFIRMED');
+
+    // Decrement offer quantity only now (payment succeeded)
+    const mainItem = getMainItem(order.items);
+    const quantityOrdered = mainItem?.quantity ?? 1;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const confirmed = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'CONFIRMED',
+          paymentMethod: paymentMethod as any,
+          paymentDetails: {
+            ...(typeof order.paymentDetails === 'object' && order.paymentDetails !== null
+              ? (order.paymentDetails as Record<string, unknown>)
+              : {}),
+            ...paymentDetails,
+            confirmedAt: new Date().toISOString(),
+          } as any,
+        },
+      });
+
+      // Decrement offer quantity
+      await tx.offer.update({
+        where: { id: order.offerId },
+        data: { quantity: { decrement: quantityOrdered } },
+      });
+
+      // Mark as SOLD_OUT if quantity hits 0
+      await tx.offer.updateMany({
+        where: { id: order.offerId, quantity: { lte: 0 } },
+        data: { status: 'SOLD_OUT' },
+      });
+
+      return confirmed;
+    });
+
+    return updated;
   }
 
   async acceptAndConfirmOrder(
@@ -1340,8 +1448,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     if (actor.role === Role.RESTAURANT && order.restaurantId !== actor.id) {
       throw new ForbiddenException('You can only update your own orders');
     }
-    if (order.status !== 'CONFIRMED' && order.status !== 'ASSIGNED')
-      throw new Error('Order must be confirmed or assigned to be ready');
+    this.validateStatusTransition(order.status, 'READY');
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },

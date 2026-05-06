@@ -2624,7 +2624,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
         } catch (e) {
 
-          if (mounted) return;
+          if (!mounted) return;
 
           ScaffoldMessenger.of(context).showSnackBar(
 

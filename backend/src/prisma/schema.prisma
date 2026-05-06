@@ -34,6 +34,7 @@ model RestaurantProfile {
   termsAcceptedAt                 DateTime?
   termsAcceptedName               String?
   avgRating                       Float?             @default(0)
+  commissionRate                  Float              @default(15)
   latitude                        Float?
   longitude                       Float?
   user                            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -173,10 +174,17 @@ model ClientProfile {
   userId           String @unique
   user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  clientType       ClientType @default(NORMAL)
+
   // Client profile fields (mandatory after signup step 2)
   fullName         String?
   phone            String?
   defaultAddress   String?
+
+  societyName      String?
+  fiscalNumber     String?
+  proPhone         String?
+  proAddress       String?
 
   notificationPreferences Json? @default("{}")
 
@@ -203,6 +211,11 @@ enum EstablishmentType {
   BAKERY
   RESTAURANT
   HOTEL
+}
+
+enum ClientType {
+  NORMAL
+  PRO
 }
 
 enum OwnershipType {

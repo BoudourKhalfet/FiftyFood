@@ -99,6 +99,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   }
   
   Future<void> _verifyPayPalPayment() async {
+    if (!mounted) return;
     setState(() {
       _isWaitingForPayPal = false;
       _isProcessing = true;
@@ -114,18 +115,32 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           orderId: widget.orderId,
         );
         
-        if (capture['success'] == true || capture['status'] == 'COMPLETED') {
+        if (!mounted) return;
+        
+        if (capture['isSuccessful'] == true || capture['status'] == 'already_processed') {
           await prefs.remove('pendingPayPalOrderId');
           await prefs.remove('pendingOrderId');
           _showPaymentSuccess();
+        } else if (capture['needsApproval'] == true) {
+          setState(() {
+            _isProcessing = false;
+            _error = 'Please complete the payment approval in PayPal first.';
+          });
         } else {
           setState(() {
             _isProcessing = false;
-            _error = 'Payment verification failed.';
+            _error = 'Payment could not be verified. Status: ${capture['status'] ?? 'unknown'}';
           });
         }
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _isProcessing = false;
+          _error = 'No pending PayPal payment found.';
+        });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isProcessing = false;
         _error = 'Error: $e';
@@ -134,6 +149,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   }
   
   void _showPaymentSuccess() {
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -145,7 +161,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(true); // Return to previous screen with success
+              if (mounted) {
+                Navigator.of(context).pop(true); // Return to previous screen with success
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3D9176)),
             child: const Text('Done'),
@@ -418,10 +436,17 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
       if (capture['isSuccessful'] == true) {
         _showPaymentSuccessDialog('PayPal');
+      } else if (capture['status'] == 'already_processed') {
+        _showPaymentSuccessDialog('PayPal');
       } else if (capture['needsApproval'] == true) {
-        _showPaymentErrorDialog('Payment not yet approved. Please complete payment in PayPal first.');
+        _showPaymentErrorDialog('Payment not yet approved. Please open the PayPal link and complete the payment first, then try again.');
       } else {
-        _showPaymentErrorDialog('PayPal payment could not be completed.');
+        final captureStatus = capture['status']?.toString() ?? '';
+        _showPaymentErrorDialog(
+          captureStatus.isNotEmpty
+              ? 'PayPal returned status: $captureStatus. Please make sure you approved the payment in PayPal.'
+              : 'PayPal payment could not be completed. Please make sure you completed the payment in PayPal.',
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -436,13 +461,13 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     }
   }
 
-  /// Handle PayPal Payment with deep links
+  /// Handle PayPal Payment with deep links (mobile) or dialog (web)
   Future<void> _processPayPalPayment() async {
     try {
       final paymentData = await PaymentService.createPayPalPayment(
         orderId: widget.orderId,
-        returnUrl: 'fiftyfood://payment-success?orderId=${widget.orderId}',
-        cancelUrl: 'fiftyfood://payment-error?orderId=${widget.orderId}',
+        returnUrl: kIsWeb ? null : 'fiftyfood://payment-success?orderId=${widget.orderId}',
+        cancelUrl: kIsWeb ? null : 'fiftyfood://payment-error?orderId=${widget.orderId}',
       );
 
       final approvalUrl = paymentData['approvalUrl'];
@@ -455,7 +480,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
       if (!mounted) return;
 
-      // Show waiting state - deep link will handle the return
+      // Show waiting state
       setState(() {
         _isWaitingForPayPal = true;
       });
@@ -463,7 +488,16 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       // Open PayPal in browser
       await PaymentService.openPaymentUrl(approvalUrl);
 
-      // The deep link handler will automatically process the result when user returns
+      if (kIsWeb) {
+        // On web, deep links don't work. The backend captures payment on redirect.
+        // Show a dialog for the user to confirm they completed payment.
+        if (!mounted) return;
+        setState(() {
+          _isWaitingForPayPal = false;
+        });
+        _showPayPalReturnDialog(paypalOrderId);
+      }
+      // On mobile, the deep link handler will automatically process the result
     } catch (e) {
       setState(() {
         _isWaitingForPayPal = false;

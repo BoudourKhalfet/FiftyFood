@@ -43,10 +43,14 @@ export class ProfileCompleteGuard implements CanActivate {
       select: {
         clientProfile: {
           select: {
+            clientType: true,
             fullName: true,
             phone: true,
             defaultAddress: true,
             cuisinePreferences: true,
+            societyName: true,
+            fiscalNumber: true,
+            proPhone: true,
           },
         },
       },
@@ -55,23 +59,26 @@ export class ProfileCompleteGuard implements CanActivate {
     if (!user) return true;
 
     const p = user.clientProfile;
-    const complete =
-      !!p?.fullName &&
-      !!p?.phone &&
-      !!p?.defaultAddress &&
-      (p?.cuisinePreferences?.length ?? 0) > 0;
+    const isPro = p?.clientType === 'PRO';
+
+    const complete = isPro
+      ? !!p?.societyName &&
+        !!p?.fiscalNumber &&
+        !!p?.proPhone &&
+        (p?.cuisinePreferences?.length ?? 0) > 0
+      : !!p?.fullName &&
+        !!p?.phone &&
+        !!p?.defaultAddress &&
+        (p?.cuisinePreferences?.length ?? 0) > 0;
 
     if (!complete) {
       throw new ForbiddenException({
         code: 'PROFILE_INCOMPLETE',
         message:
           'Client must complete profile step 2 before accessing this resource.',
-        required: [
-          'fullName',
-          'phone',
-          'defaultAddress',
-          'cuisinePreferences (min 1)',
-        ],
+        required: isPro
+          ? ['societyName', 'fiscalNumber', 'proPhone', 'cuisinePreferences (min 1)']
+          : ['fullName', 'phone', 'defaultAddress', 'cuisinePreferences (min 1)'],
       });
     }
 

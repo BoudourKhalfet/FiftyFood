@@ -161,6 +161,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String? _uploadedOfferImageUrl;
   bool _uploadingOfferImage = false;
   String? _offerImageUploadError;
+  bool _aiVerifyingImage = false;
+  String? _aiVerificationResult;
   List<String> _selectedCategories = [];
   final List<String> _categories = [
     'BAKERY',
@@ -241,6 +243,60 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         _uploadedOfferImageUrl = data['url'];
         _offerImageUploadError = null;
       });
+
+      // Auto-trigger AI verification and description generation
+      final imageUrl = data['url'] as String?;
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        // Show AI processing indicator
+        modalSetState(() {
+          _aiVerifyingImage = true;
+          _aiVerificationResult = null;
+        });
+
+        try {
+          // 1. Verify photo with AI (food check)
+          final verifyResponse = await http.post(
+            Uri.parse(apiUrl('offers/ai-verify-photo')),
+            headers: {
+              'Authorization': 'Bearer $jwt',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'imageUrl': imageUrl,
+              'categories': ['food'],
+            }),
+          );
+
+          if (verifyResponse.statusCode == 200) {
+            final verifyData = jsonDecode(verifyResponse.body);
+            final isValid = verifyData['isValid'] as bool? ?? false;
+            final messages = verifyData['messages'] as List<dynamic>?;
+
+            modalSetState(() {
+              _aiVerificationResult = isValid ? 'valid' : 'invalid';
+            });
+
+            if (isValid) {
+              // 2. Auto-generate description if photo is valid
+              await _generateDescriptionForImage(imageUrl, modalSetState);
+            } else {
+              // Photo failed verification - show warning
+              modalSetState(() {
+                _offerImageUploadError = 'Photo verification failed: ${messages?.join(", ") ?? "Not a valid food image"}';
+                _uploadedOfferImageUrl = null;
+              });
+            }
+          }
+        } catch (aiError) {
+          // AI verification failed but we can still proceed
+          print('AI verification error: $aiError');
+        } finally {
+          modalSetState(() {
+            _aiVerifyingImage = false;
+          });
+        }
+      }
+
     } catch (e) {
       modalSetState(
         () => _offerImageUploadError = 'Image picker/upload error: $e',
@@ -349,6 +405,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   int _mealsSaved = 0;
   double _avgRating = 0.0;
   int _activeOffers = 0;
+  double _commissionRate = 15.0;
   bool _loadingStats = true;
 
   Map<String, dynamic> _restaurantInfo = {
@@ -443,6 +500,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           _mealsSaved = response['mealsSaved'] ?? 0;
           _avgRating = (response['avgRating'] ?? 0).toDouble();
           _activeOffers = response['activeOffers'] ?? 0;
+          _commissionRate = (response['commissionRate'] ?? 15).toDouble();
           _loadingStats = false;
         });
       }
@@ -1024,59 +1082,85 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     required IconData icon,
     required Color iconColor,
     required Color iconBg,
+    String? badgeLabel,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            border: Border.all(color: const Color(0xFFE6E6E6)),
           ),
-        ],
-        border: Border.all(color: const Color(0xFFE6E6E6)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-            child: Icon(icon, color: iconColor, size: 21),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                child: Icon(icon, color: iconColor, size: 21),
+              ),
+
+              const SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 9, color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-
-          const SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1A1A1A),
-                  ),
+        ),
+        if (badgeLabel != null)
+          Positioned(
+            top: -7,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                badgeLabel,
+                style: const TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 9, color: Color(0xFF6B7280)),
-                ),
-              ],
+              ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1912,6 +1996,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
               icon: Icons.euro,
               iconColor: const Color(0xFF1F9D7A),
               iconBg: const Color(0xFFE8F5F1),
+              badgeLabel: _loadingStats ? null : "${_commissionRate.toStringAsFixed(0)}% fee",
             ),
             _buildStatCard(
               title: "Meals Saved",

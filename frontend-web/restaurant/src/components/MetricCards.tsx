@@ -23,6 +23,13 @@ const StarIcon = () => (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
+const PercentIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="19" y1="5" x2="5" y2="19" />
+    <circle cx="6.5" cy="6.5" r="2.5" />
+    <circle cx="17.5" cy="17.5" r="2.5" />
+  </svg>
+);
 
 function MetricCard({
   iconBg,
@@ -91,7 +98,7 @@ const cardStyle: React.CSSProperties = {
 
 export default function MetricCards({ stats }: { stats: RestaurantStats }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16 }}>
       <MetricCard
         iconBg="#f0fdf4" iconColor="#16a34a" icon={<EuroIcon />}
         change={stats.revenueChangePercent}
@@ -116,6 +123,12 @@ export default function MetricCards({ stats }: { stats: RestaurantStats }) {
         value={stats.avgRating.toFixed(1)}
         label="Avg rating"
         changeIsPoints
+      />
+      <MetricCard
+        iconBg="#eff6ff" iconColor="#2563eb" icon={<PercentIcon />}
+        change={0}
+        value={`${stats.commissionRate}%`}
+        label="FiftyFood commission"
       />
     </div>
   );

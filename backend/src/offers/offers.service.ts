@@ -13,34 +13,61 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Category, OfferVisibility } from '@prisma/client';
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
-const AUTHENTICITY_PROMPT = `You are a photo authenticity detector with HIGH SENSITIVITY. Determine if a food photo was genuinely taken today by the seller using their phone, or downloaded from the internet.
+// API Keys for different AI services - read lazily to ensure dotenv is loaded
+const getGeminiDescriptionKey = () => {
+  const key = process.env.GEMINI_API_KEY || '';
+  console.log('DEBUG GEMINI_API_KEY:', key ? 'Found (first 10 chars: ' + key.substring(0, 10) + '...)' : 'NOT FOUND');
+  return key;
+};
+const getGeminiVerificationKey = () => {
+  const key = process.env.GEMINI_VERIFICATION_KEY || process.env.GEMINI_API_KEY || '';
+  console.log('DEBUG GEMINI_VERIFICATION_KEY:', key ? 'Found (first 10 chars: ' + key.substring(0, 10) + '...)' : 'NOT FOUND');
+  return key;
+};
 
-REJECT: Stock photo lighting, watermarks, overly perfect styling, studio backgrounds, professional DSLR quality, food blog images.
-ACCEPT: Natural phone camera quality, real kitchen/restaurant environment, casual framing, slightly imperfect lighting.
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-Be STRICT. When in doubt, mark as NOT authentic.`;
+// Updated prompts - less strict for food verification
+const VERIFICATION_PROMPT = `You are a food quality inspector for a restaurant surplus food app.
+Analyze this image carefully and respond ONLY with a valid JSON object (no markdown, no code blocks, just raw JSON).
 
-const FRESHNESS_PROMPT = `You are an expert food safety inspector with HIGH SENSITIVITY. Examine this food photo for ANY signs of spoilage.
+Evaluate:
+1. isFood: Is there food visible in this image? (true/false)
+2. isGoodQuality: Is the photo visually clear enough to see the food? (true/false - be lenient, even phone photos are fine)
+3. isConsumable: Does the food look consumable/edible? Look for obvious signs it's NOT good: mold, rot, visible pests, extreme contamination, trash mixed with food, food thrown in garbage bin. Be reasonably lenient - slightly imperfect food is fine. Only reject if there are clear signs the food is truly not consumable.
+4. overallApproved: Should this image be approved for a food surplus sale? (true if it's food and looks reasonably consumable)
+5. rejectionReason: If not approved, a short user-friendly reason (null if approved)
+6. confidenceScore: Your confidence in the assessment 0-100
 
-Check for: mold, discoloration, slimy textures, dried-out edges, wilting, unusual colors, separation, curdling.
+Respond ONLY with this JSON:
+{
+  "isFood": boolean,
+  "isGoodQuality": boolean,
+  "isConsumable": boolean,
+  "overallApproved": boolean,
+  "rejectionReason": string | null,
+  "confidenceScore": number
+}`;
 
-Rate: fresh (just prepared) | acceptable (minor age signs, safe) | questionable (borderline) | spoiled (unsafe).
-Be VERY STRICT. Consumer safety is top priority.`;
+const DESCRIPTION_PROMPT_EN = `You are an expert food marketing copywriter for a restaurant surplus food app called FiftyFood.
+Analyze this food image and create an enticing commercial description to help sell this surplus food.
+Respond ONLY with a valid JSON object (no markdown, no code blocks, just raw JSON).
 
-const DESCRIPTION_PROMPT_EN = `You are a professional food photographer and marketing copywriter for restaurants. 
-Analyze this food photo and generate a SHORT, COMMERCIAL, ENTICING product description suitable for a food surplus/discount app (like FiftyFood).
+Create:
+1. title: A short, appetizing name for the dish (max 50 chars)
+2. description: A compelling commercial description highlighting taste, ingredients, and occasion (2-3 sentences, max 200 chars)
+3. highlights: Array of 3-4 short selling points (e.g. "Freshly prepared", "Generous portion", "Chef's special") - each max 30 chars
+4. suggestedPrice: A suggested discount price range like "$8-12" based on what you see (estimate based on dish type)
 
-Requirements:
-- Maximum 150 characters
-- Highlight food quality, freshness, and appeal
-- Include main ingredients or food type
-- Make it IRRESISTIBLE to hungry customers
-- Professional tone, not casual
-- No marketing hype, be authentic
-- Example: "Fresh homemade lasagna with layers of creamy ricotta and rich Bolognese sauce. Perfect for dinner!"
+Write in an enticing, positive, appetizing tone. Make customers want to buy it!
 
-Return ONLY the description text, nothing else.`;
+Respond ONLY with:
+{
+  "title": string,
+  "description": string,
+  "highlights": string[],
+  "suggestedPrice": string
+}`;
 
 const DESCRIPTION_PROMPT_FR = `Vous êtes un photographe culinaire professionnel et rédacteur marketing pour les restaurants.
 Analysez cette photo de nourriture et générez une description produit COURTE, COMMERCIALE et ALLÉCHANTE adaptée à une application de nourriture excédentaire/discount (comme FiftyFood).
@@ -219,84 +246,65 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // --- Properly type toolDef as object
-  private async callModel<T extends object>(
-    model: string,
-    systemPrompt: string,
+  // --- Gemini API helper for image analysis
+  private async callGemini<T extends object>(
+    apiKey: string,
+    prompt: string,
     imageBase64: string,
-    toolDef: { function: { name: string } } & Record<string, unknown>,
+    mimeType: string = 'image/jpeg',
   ): Promise<T> {
-    if (!OPENROUTER_API_KEY) {
-      throw new Error('OPENROUTER_API_KEY not configured');
-    }
-
-    const imageUrl = imageBase64.startsWith('data:')
-      ? imageBase64
-      : `data:image/jpeg;base64,${imageBase64}`;
-
-    const imageContent = [
-      { type: 'text', text: 'Analyze this food photo.' },
-      { type: 'image_url', image_url: { url: imageUrl } },
-    ];
-
-    try {
-      const response = await fetch(
-        'https://openrouter.ai/api/v1/chat/completions',
+    const payload = {
+      contents: [
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: imageContent },
-            ],
-            tools: [toolDef],
-            tool_choice: {
-              type: 'function',
-              function: { name: toolDef.function.name },
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: imageBase64,
+              },
             },
-          }),
+            { text: prompt },
+          ],
         },
-      );
+      ],
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 1024,
+      },
+    };
 
-      if (!response.ok) {
-        const status = response.status;
-        if (status === 429 || status === 402) {
-          const errorMsg =
-            status === 429 ? 'Rate limit exceeded' : 'API credits exhausted';
-          const err: Error & { status?: number } = new Error(errorMsg);
-          err.status = status;
-          throw err;
-        }
-        const text = await response.text();
-        console.error(`Model ${model} error:`, status, text);
-        throw new Error(`Model ${model} failed`);
-      }
+    const response = await fetch(`${GEMINI_API_BASE}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-      // --- Structure the expected response for type safety
-      const data = (await response.json()) as {
-        choices: {
-          message: { tool_calls: { function: { arguments: string } }[] };
-        }[];
-      };
-      const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-      if (!toolCall) throw new Error(`No tool response from ${model}`);
-      return JSON.parse(toolCall.function.arguments) as T;
-    } catch (e: unknown) {
-      // (e as Error) is best for catching real errors
-      console.error(`callModel error for ${model}:`, e);
-      throw e;
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err?.error?.message || `Gemini API error: ${response.status}`);
     }
+
+    const data = (await response.json()) as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+    };
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('No response from Gemini');
+
+    // Strip markdown code blocks if present and parse JSON
+    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]) as T;
+    }
+    throw new Error('Failed to parse JSON from Gemini response');
   }
 
-  // Verifies a food photo using parallel Gemini (authenticity) + GPT checks via OpenRouter.
-  async verifyPhoto(imageBase64: string) {
-    if (!OPENROUTER_API_KEY) {
-      console.error('OPENROUTER_API_KEY is not configured');
+  // Verifies a food photo using Gemini API with separate verification key.
+  async verifyPhoto(imageBase64: string, mimeType: string = 'image/jpeg') {
+    const verificationKey = getGeminiVerificationKey();
+    if (!verificationKey) {
+      console.error('GEMINI_VERIFICATION_KEY is not configured');
       return {
         passed: false,
         messages: ['Verification service not configured.'],
@@ -305,144 +313,59 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    const authenticityTool = {
-      type: 'function',
-      function: {
-        name: 'check_authenticity',
-        description: 'Check if the photo is authentic and recently taken',
-        parameters: {
-          type: 'object',
-          properties: {
-            is_authentic: { type: 'boolean' },
-            is_recent: { type: 'boolean' },
-            production_quality: {
-              type: 'string',
-              enum: ['casual', 'semi-professional', 'professional', 'stock'],
-            },
-            confidence: { type: 'number' },
-            reasons: { type: 'array', items: { type: 'string' } },
-          },
-          required: [
-            'is_authentic',
-            'is_recent',
-            'production_quality',
-            'confidence',
-            'reasons',
-          ],
-          additionalProperties: false,
-        },
-      },
-    };
-
-    const freshnessTool = {
-      type: 'function',
-      function: {
-        name: 'check_freshness',
-        description: 'Assess food quality, freshness and safety',
-        parameters: {
-          type: 'object',
-          properties: {
-            food_looks_fresh: { type: 'boolean' },
-            freshness_rating: {
-              type: 'string',
-              enum: ['fresh', 'acceptable', 'questionable', 'spoiled'],
-            },
-            spoilage_signs: { type: 'array', items: { type: 'string' } },
-            confidence: { type: 'number' },
-            reasons: { type: 'array', items: { type: 'string' } },
-          },
-          required: [
-            'food_looks_fresh',
-            'freshness_rating',
-            'spoilage_signs',
-            'confidence',
-            'reasons',
-          ],
-          additionalProperties: false,
-        },
-      },
+    // Type for verification result
+    type VerificationResult = {
+      isFood: boolean;
+      isGoodQuality: boolean;
+      isConsumable: boolean;
+      overallApproved: boolean;
+      rejectionReason: string | null;
+      confidenceScore: number;
     };
 
     try {
-      // Run both LLM checks in parallel via OpenRouter (fully typed!)
-      const [authResult, freshResult]: [AuthenticityResult, FreshnessResult] =
-        await Promise.all([
-          this.callModel<AuthenticityResult>(
-            'google/gemini-2.5-flash',
-            AUTHENTICITY_PROMPT,
-            imageBase64,
-            authenticityTool,
-          ),
-          this.callModel<FreshnessResult>(
-            'openai/gpt-4-turbo',
-            FRESHNESS_PROMPT,
-            imageBase64,
-            freshnessTool,
-          ),
-        ]);
-
-      // Aggregate messages
-      const messages: string[] = [];
-      if (authResult.is_authentic && authResult.is_recent) {
-        messages.push(
-          '✓ Photo appears authentic and recently taken (Gemini Flash)',
-        );
-      } else {
-        if (!authResult.is_authentic)
-          messages.push('✗ Photo may be from internet or stock source');
-        if (!authResult.is_recent)
-          messages.push('✗ Photo does not appear to be taken today');
-        authResult.reasons?.forEach((r: string) => messages.push(`  → ${r}`));
-      }
-
-      if (freshResult.food_looks_fresh) {
-        messages.push(
-          `✓ Food freshness: ${freshResult.freshness_rating} (GPT-4 Turbo)`,
-        );
-      } else {
-        messages.push(
-          `✗ Food freshness concern: ${freshResult.freshness_rating} (GPT-4 Turbo)`,
-        );
-        freshResult.spoilage_signs?.forEach((s: string) =>
-          messages.push(`  ⚠ ${s}`),
-        );
-      }
-      freshResult.reasons?.forEach((r: string) => messages.push(`  → ${r}`));
-
-      // Final decision
-      const passed =
-        authResult.is_authentic &&
-        authResult.is_recent &&
-        authResult.production_quality !== 'stock' &&
-        authResult.production_quality !== 'professional' &&
-        freshResult.food_looks_fresh &&
-        (freshResult.freshness_rating === 'fresh' ||
-          freshResult.freshness_rating === 'acceptable');
-
-      const avgConfidence = Math.round(
-        ((authResult.confidence ?? 0) + (freshResult.confidence ?? 0)) / 2,
+      // Call Gemini for food verification
+      const result = await this.callGemini<VerificationResult>(
+        verificationKey,
+        VERIFICATION_PROMPT,
+        imageBase64,
+        mimeType,
       );
 
-      // Debug log: print full AI response and decision
+      // Compose messages
+      const messages: string[] = [];
+
+      if (result.overallApproved) {
+        messages.push('✓ Photo approved: Valid food image');
+        if (result.isFood) messages.push('✓ Food detected in image');
+        if (result.isGoodQuality) messages.push('✓ Photo quality is acceptable');
+        if (result.isConsumable) messages.push('✓ Food appears consumable');
+      } else {
+        messages.push('✗ Photo verification failed');
+        if (!result.isFood) messages.push('✗ No food detected in image');
+        if (!result.isGoodQuality) messages.push('✗ Photo quality too low');
+        if (!result.isConsumable) messages.push('✗ Food does not appear consumable');
+        if (result.rejectionReason) messages.push(`→ ${result.rejectionReason}`);
+      }
+
+      // Debug log
       console.log('AI Verification Debug:', {
-        authResult,
-        freshResult,
-        passed,
+        result,
+        passed: result.overallApproved,
         messages,
-        confidence: avgConfidence,
+        confidence: result.confidenceScore,
       });
 
       return {
-        passed,
-        is_authentic: authResult.is_authentic,
-        is_recent: authResult.is_recent,
-        food_looks_fresh: freshResult.food_looks_fresh,
-        freshness_rating: freshResult.freshness_rating,
-        confidence: avgConfidence,
+        passed: result.overallApproved,
+        is_authentic: result.isFood && result.isConsumable,
+        is_recent: true, // Gemini doesn't check this, assume true
+        food_looks_fresh: result.isConsumable,
+        freshness_rating: result.isConsumable ? 'acceptable' : 'spoiled',
+        confidence: result.confidenceScore,
         messages,
         models_used: {
-          authenticity: 'gemini-2.5-flash',
-          freshness: 'gpt-4-turbo',
+          verification: 'gemini-2.0-flash',
         },
       };
     } catch (e: unknown) {
@@ -481,8 +404,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
   async generateDescription(imageUrl: string, language: string = 'en') {
     // If no API key, return empty so frontend can use manual entry
-    if (!OPENROUTER_API_KEY) {
-      console.warn('OPENROUTER_API_KEY not configured - using manual mode');
+    const descriptionKey = getGeminiDescriptionKey();
+    if (!descriptionKey) {
+      console.warn('GEMINI_API_KEY not configured - using manual mode');
       return {
         description: '',
         generated_at: new Date().toISOString(),
@@ -499,74 +423,26 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
       const buffer = await response.arrayBuffer();
       const base64 = Buffer.from(buffer).toString('base64');
-      const imageBase64 = `data:image/jpeg;base64,${base64}`;
 
       const prompt = this.getDescriptionPrompt(language);
-      const imageContent = [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageBase64 } },
-      ];
 
-      const apiResponse = await fetch(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [{ role: 'user', content: imageContent }],
-            max_tokens: 200,
-            temperature: 0.7,
-          }),
-        },
-      );
+      // Use Gemini API directly for description generation
+      const result = await this.callGemini<{
+        title: string;
+        description: string;
+        highlights: string[];
+        suggestedPrice: string;
+      }>(descriptionKey, prompt, base64, 'image/jpeg');
 
-      if (!apiResponse.ok) {
-        const status = apiResponse.status;
-        const errorText = await apiResponse.text();
-        console.error(
-          `Gemini API error (${status}):`,
-          errorText.substring(0, 200),
-        );
-
-        if (status === 429 || status === 402) {
-          return {
-            description: '',
-            generated_at: new Date().toISOString(),
-            model: 'manual',
-            error: status === 429 ? 'Rate limit exceeded' : 'API credits exhausted',
-          };
-        }
-        // Return empty for manual entry on other errors
-        return {
-          description: '',
-          generated_at: new Date().toISOString(),
-          model: 'manual',
-          error: 'AI service unavailable - please enter description manually',
-        };
-      }
-
-      const data = (await apiResponse.json()) as {
-        choices: { message: { content: string } }[];
-      };
-      const description = data.choices?.[0]?.message?.content?.trim();
-
-      if (!description) {
-        return {
-          description: '',
-          generated_at: new Date().toISOString(),
-          model: 'manual',
-          error: 'No description generated - please enter manually',
-        };
-      }
+      const fullDescription = `${result.title}\n\n${result.description}\n\nHighlights: ${result.highlights.join(', ')}`;
 
       return {
-        description,
+        description: fullDescription,
         generated_at: new Date().toISOString(),
-        model: 'google/gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
+        title: result.title,
+        highlights: result.highlights,
+        suggestedPrice: result.suggestedPrice,
       };
     } catch (e: unknown) {
       const err = e as Error & { status?: number };

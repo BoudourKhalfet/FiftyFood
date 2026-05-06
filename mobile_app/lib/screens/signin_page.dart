@@ -145,7 +145,8 @@ class _SignInPageState extends State<SignInPage> {
               : int.tryParse(nextOnboardingStep?.toString() ?? '') ?? 2;
 
           if (user['role'] == 'CLIENT') {
-            Navigator.of(context).pushReplacementNamed('/client/signup2');
+            final ct = user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
+            Navigator.of(context).pushReplacementNamed('/client/signup2', arguments: ct);
             return;
           }
 
@@ -203,7 +204,8 @@ class _SignInPageState extends State<SignInPage> {
           }
 
           if (user['role'] == 'CLIENT') {
-            Navigator.of(context).pushReplacementNamed('/client/signup2');
+            final ct = user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
+            Navigator.of(context).pushReplacementNamed('/client/signup2', arguments: ct);
             return;
           }
           if (user['role'].toString().toUpperCase() == 'LIVREUR') {
@@ -251,7 +253,8 @@ class _SignInPageState extends State<SignInPage> {
               });
             }
           } else {
-            Navigator.of(context).pushReplacementNamed('/client/signup2');
+            final ct = user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
+            Navigator.of(context).pushReplacementNamed('/client/signup2', arguments: ct);
           }
         } else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
           if (user['status'] == 'APPROVED') {

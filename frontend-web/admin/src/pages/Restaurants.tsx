@@ -29,7 +29,7 @@ type RestaurantUser = {
     businessRegistrationDocumentUrl?: string | null;
     hygieneCertificateUrl?: string | null;
     proofOfOwnershipOrLeaseUrl?: string | null;
-    // Extend as needed (docs, trustScore, etc.)
+    commissionRate?: number;
   };
   legalAgreements?: {
     type: string;
@@ -67,6 +67,8 @@ export default function Restaurants() {
     title: string;
     message: string;
   } | null>(null);
+  const [editingCommission, setEditingCommission] = useState<string | null>(null);
+  const [commissionValue, setCommissionValue] = useState("");
 
   useEffect(() => {
     async function fetchRestaurants() {
@@ -340,6 +342,9 @@ export default function Restaurants() {
                   Docs
                 </th>
                 <th className="py-3 text-left text-green-900 font-semibold">
+                  Commission
+                </th>
+                <th className="py-3 text-left text-green-900 font-semibold">
                   Status
                 </th>
                 <th className="py-3 text-left text-green-900 font-semibold">
@@ -396,6 +401,56 @@ export default function Restaurants() {
                         >
                           Ownership/Lease
                         </a>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {editingCommission === r.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            value={commissionValue}
+                            onChange={(e) => setCommissionValue(e.target.value)}
+                            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-green-400"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                void (async () => {
+                                  try {
+                                    const resp = await fetch(`/admin/restaurants/${r.id}/commission`, {
+                                      method: "PATCH",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        Authorization: "Bearer " + localStorage.getItem("access_token"),
+                                      },
+                                      body: JSON.stringify({ commissionRate: parseFloat(commissionValue) }),
+                                    });
+                                    if (!resp.ok) throw new Error("Failed");
+                                    setEditingCommission(null);
+                                    setRefresh((v) => v + 1);
+                                  } catch {
+                                    setInfoModal({ title: "Error", message: "Failed to update commission rate." });
+                                  }
+                                })();
+                              }
+                              if (e.key === "Escape") setEditingCommission(null);
+                            }}
+                            autoFocus
+                          />
+                          <span className="text-xs text-gray-500">%</span>
+                        </div>
+                      ) : (
+                        <button
+                          className="text-sm text-gray-700 hover:text-green-700 hover:underline cursor-pointer"
+                          title="Click to edit"
+                          onClick={() => {
+                            setEditingCommission(r.id);
+                            setCommissionValue(String(r.restaurantProfile?.commissionRate ?? 15));
+                          }}
+                        >
+                          {r.restaurantProfile?.commissionRate ?? 15}%
+                        </button>
                       )}
                     </td>
                     <td className="py-3">
@@ -467,7 +522,7 @@ export default function Restaurants() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center text-gray-400 py-8">
+                  <td colSpan={6} className="text-center text-gray-400 py-8">
                     No restaurants found.
                   </td>
                 </tr>

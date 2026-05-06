@@ -114,6 +114,7 @@ export class AdminService {
             proofOfOwnershipOrLeaseUrl: true,
             termsAcceptedAt: true,
             termsAcceptedName: true,
+            commissionRate: true,
           },
         },
         legalAgreements: {
@@ -678,7 +679,7 @@ export class AdminService {
 
     // Send welcome email
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.53.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
     const roleLabel =
       role === Role.CLIENT
         ? 'Client'
@@ -956,5 +957,32 @@ export class AdminService {
       delivererStats,
       complaintCategories,
     };
+  }
+
+  async getCommissionRate(restaurantId: string) {
+    const profile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId: restaurantId },
+      select: { commissionRate: true },
+    });
+    if (!profile) throw new NotFoundException('Restaurant not found');
+    return { commissionRate: profile.commissionRate };
+  }
+
+  async updateCommissionRate(restaurantId: string, commissionRate: number) {
+    if (commissionRate < 0 || commissionRate > 100) {
+      throw new BadRequestException('Commission rate must be between 0 and 100');
+    }
+
+    const profile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId: restaurantId },
+    });
+    if (!profile) throw new NotFoundException('Restaurant not found');
+
+    await this.prisma.restaurantProfile.update({
+      where: { userId: restaurantId },
+      data: { commissionRate },
+    });
+
+    return { success: true, commissionRate };
   }
 }

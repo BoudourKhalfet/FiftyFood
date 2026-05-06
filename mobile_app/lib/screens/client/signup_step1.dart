@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/api_service.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -18,12 +19,15 @@ class _SignupStep1State extends State<SignupStep1> {
   String? _error;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+  String _clientType = 'NORMAL';
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
-
-  // role selector removed per request
+  final _societyNameController = TextEditingController();
+  final _fiscalNumberController = TextEditingController();
+  final _proPhoneController = TextEditingController();
+  final _proAddressController = TextEditingController();
 
   @override
   void dispose() {
@@ -31,6 +35,10 @@ class _SignupStep1State extends State<SignupStep1> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
+    _societyNameController.dispose();
+    _fiscalNumberController.dispose();
+    _proPhoneController.dispose();
+    _proAddressController.dispose();
     super.dispose();
   }
 
@@ -48,14 +56,19 @@ class _SignupStep1State extends State<SignupStep1> {
         _error = null;
       });
       try {
-        final response = await ApiService.post(
-          'auth/register', // Use your backend endpoint!
-          {
-            'email': _emailController.text.trim(),
-            'password': _passwordController.text.trim(),
-            'role': 'CLIENT', // or whatever your backend expects
-          },
-        );
+        final Map<String, dynamic> registerData = {
+          'email': _emailController.text.trim(),
+          'password': _passwordController.text.trim(),
+          'role': 'CLIENT',
+          'clientType': _clientType,
+        };
+        if (_clientType == 'PRO') {
+          registerData['societyName'] = _societyNameController.text.trim();
+          registerData['fiscalNumber'] = _fiscalNumberController.text.trim();
+          registerData['proPhone'] = _proPhoneController.text.trim();
+          registerData['proAddress'] = _proAddressController.text.trim();
+        }
+        final response = await ApiService.post('auth/register', registerData);
 
         // Defensive: Only proceed if backend says user created
         // Check if server said to verify email
@@ -83,10 +96,7 @@ class _SignupStep1State extends State<SignupStep1> {
         } else if (response['success'] == true ||
             response['statusCode'] == 201 ||
             response['status'] == 'ok') {
-          Navigator.of(context).pushNamed(
-            '/client/signup2',
-            arguments: _emailController.text.trim(),
-          );
+          Navigator.of(context).pushNamed('/client/signup2', arguments: _clientType);
         } else {
           setState(() {
             _error = "${response['message'] ?? response.toString()}";
@@ -266,6 +276,149 @@ class _SignupStep1State extends State<SignupStep1> {
                         AppLocalizations.of(context)!.errorPasswordLength,
                         style: theme.textTheme.bodySmall,
                       ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Account Type',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _clientType = 'NORMAL'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: _clientType == 'NORMAL'
+                                      ? const Color(0xFF2D8066).withOpacity(0.08)
+                                      : Colors.white,
+                                  border: Border.all(
+                                    color: _clientType == 'NORMAL'
+                                        ? const Color(0xFF2D8066)
+                                        : const Color(0xFF9CA3AF),
+                                    width: _clientType == 'NORMAL' ? 2 : 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.person,
+                                      color: _clientType == 'NORMAL'
+                                          ? const Color(0xFF2D8066)
+                                          : const Color(0xFF9CA3AF),
+                                      size: 28,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Normal',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: _clientType == 'NORMAL'
+                                            ? const Color(0xFF2D8066)
+                                            : const Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Personal account',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _clientType = 'PRO'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: _clientType == 'PRO'
+                                      ? const Color(0xFF2D8066).withOpacity(0.08)
+                                      : Colors.white,
+                                  border: Border.all(
+                                    color: _clientType == 'PRO'
+                                        ? const Color(0xFF2D8066)
+                                        : const Color(0xFF9CA3AF),
+                                    width: _clientType == 'PRO' ? 2 : 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.business,
+                                      color: _clientType == 'PRO'
+                                          ? const Color(0xFF2D8066)
+                                          : const Color(0xFF9CA3AF),
+                                      size: 28,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Pro',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: _clientType == 'PRO'
+                                            ? const Color(0xFF2D8066)
+                                            : const Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Business account',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_clientType == 'PRO') ...[
+                        const SizedBox(height: 4),
+                        _buildProField(
+                          controller: _societyNameController,
+                          label: 'Company Name',
+                          icon: Icons.apartment,
+                          validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProField(
+                          controller: _fiscalNumberController,
+                          label: 'Fiscal Number',
+                          icon: Icons.numbers,
+                          validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProField(
+                          controller: _proPhoneController,
+                          label: 'Professional Phone',
+                          icon: Icons.phone_in_talk,
+                          keyboardType: TextInputType.phone,
+                          validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProField(
+                          controller: _proAddressController,
+                          label: 'Company Address',
+                          icon: Icons.location_city,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -453,6 +606,29 @@ class _SignupStep1State extends State<SignupStep1> {
             borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: const Color(0xFF2D8066)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF2D8066), width: 2),
         ),
       ),
     );

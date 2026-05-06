@@ -157,8 +157,9 @@ class MyAppState extends State<MyApp> {
             return MaterialPageRoute(builder: (_) => const SignupStep1());
 
           case '/client/signup2':
+            final clientType = settings.arguments as String? ?? 'NORMAL';
             return MaterialPageRoute(
-              builder: (_) => const client.SignupStep2(),
+              builder: (_) => client.SignupStep2(clientType: clientType),
             );
 
           case '/partner/signup1':

@@ -306,7 +306,36 @@ export class PaymentsService {
     }
 
     if (capture.isSuccessful) {
-      await this.updateOrderStatus(orderId, 'CONFIRMED');
+      // Decrement offer quantity when payment is successful
+      let quantityOrdered = 1;
+      try {
+        const parsed: any = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+        const mainItem = Array.isArray(parsed) ? parsed[0] : parsed;
+        if (typeof mainItem?.quantity === 'number') {
+          quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
+        }
+      } catch { /* default quantity 1 */ }
+
+      await this.prisma.$transaction(async (tx) => {
+        // Decrement offer quantity
+        const reserved = await tx.offer.updateMany({
+          where: { id: order.offerId, status: 'ACTIVE', quantity: { gte: quantityOrdered } },
+          data: { quantity: { decrement: quantityOrdered } },
+        });
+        if (reserved.count === 0) {
+          throw new BadRequestException('Offer no longer available');
+        }
+        // Update order status
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'CONFIRMED' },
+        });
+        // Mark as sold out if quantity reaches 0
+        await tx.offer.updateMany({
+          where: { id: order.offerId, quantity: { lte: 0 } },
+          data: { status: 'SOLD_OUT' },
+        });
+      });
     } else {
       await this.updateOrderStatus(orderId, 'CANCELLED');
     }

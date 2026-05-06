@@ -1,18 +1,41 @@
-import { ArrayMinSize, IsArray, IsEnum, IsString } from 'class-validator';
-import { CuisinePreference } from '@prisma/client';
+import { ArrayMinSize, IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
+import { ClientType, CuisinePreference } from '@prisma/client';
 
 export class CompleteProfileDto {
-  @IsString()
-  fullName!: string;
+  @IsOptional()
+  @IsEnum(ClientType)
+  clientType?: ClientType;
 
+  @IsOptional()
   @IsString()
-  phone!: string;
+  fullName?: string;
 
+  @IsOptional()
   @IsString()
-  defaultAddress!: string;
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultAddress?: string;
 
   @IsArray()
   @ArrayMinSize(1)
   @IsEnum(CuisinePreference, { each: true })
   cuisinePreferences!: CuisinePreference[];
+
+  @IsOptional()
+  @IsString()
+  societyName?: string;
+
+  @IsOptional()
+  @IsString()
+  fiscalNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  proPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  proAddress?: string;
 }

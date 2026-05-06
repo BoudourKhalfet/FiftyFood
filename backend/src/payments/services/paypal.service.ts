@@ -116,11 +116,11 @@ export class PayPalService {
         ],
           application_context: {
     return_url: params.returnUrl?.startsWith('fiftyfood://')
-      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?returnUrl=${encodeURIComponent(params.returnUrl)}`
-      : (params.returnUrl || `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success`),
+      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?orderId=${params.orderId}&returnUrl=${encodeURIComponent(params.returnUrl)}`
+      : `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?orderId=${params.orderId}`,
     cancel_url: params.cancelUrl?.startsWith('fiftyfood://')
-      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?cancelUrl=${encodeURIComponent(params.cancelUrl)}`
-      : (params.cancelUrl || `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel`),
+      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?orderId=${params.orderId}&cancelUrl=${encodeURIComponent(params.cancelUrl)}`
+      : `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?orderId=${params.orderId}`,
     user_action: 'PAY_NOW',
   },
       });

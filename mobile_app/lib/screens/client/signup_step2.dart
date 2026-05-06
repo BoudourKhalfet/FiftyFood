@@ -5,7 +5,8 @@ import 'LocationConsentPage.dart' as client_consent;
 import '../../api/client_profile_service.dart';
 
 class SignupStep2 extends StatefulWidget {
-  const SignupStep2({Key? key}) : super(key: key);
+  final String clientType;
+  const SignupStep2({Key? key, this.clientType = 'NORMAL'}) : super(key: key);
 
   @override
   _SignupStep2State createState() => _SignupStep2State();
@@ -15,7 +16,6 @@ class _SignupStep2State extends State<SignupStep2> {
   final _formKey = GlobalKey<FormState>();
   bool _loading = false;
   String? _error;
-
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
@@ -100,14 +100,17 @@ class _SignupStep2State extends State<SignupStep2> {
           setState(() => _error = "Not logged in. Please sign in again.");
           return;
         }
+        final Map<String, dynamic> profileData = {
+          'cuisinePreferences': _selectedFood.toList(),
+        };
+        if (widget.clientType != 'PRO') {
+          profileData['fullName'] = _nameController.text.trim();
+          profileData['phone'] = _phoneController.text.trim();
+          profileData['defaultAddress'] = _addressController.text.trim();
+        }
         await ApiService.patch(
           'users/me/complete-profile',
-          {
-            'fullName': _nameController.text.trim(),
-            'phone': _phoneController.text.trim(),
-            'defaultAddress': _addressController.text.trim(),
-            'cuisinePreferences': _selectedFood.toList(),
-          },
+          profileData,
           headers: {'Authorization': 'Bearer $jwtToken'},
         );
 
@@ -133,6 +136,7 @@ class _SignupStep2State extends State<SignupStep2> {
       }
     }
   }
+
 
   Widget _buildTextField({
     required TextEditingController controller,
@@ -226,30 +230,33 @@ class _SignupStep2State extends State<SignupStep2> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildTextField(
-                        controller: _nameController,
-                        label: 'Full Name',
-                        icon: Icons.person,
-                        validator: (v) =>
-                            (v == null || v.isEmpty) ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: _phoneController,
-                        label: 'Phone Number',
-                        icon: Icons.phone,
-                        keyboardType: TextInputType.phone,
-                        validator: (v) =>
-                            (v == null || v.isEmpty) ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: _addressController,
-                        label: 'Default address',
-                        icon: Icons.location_on,
-                        validator: (v) =>
-                            (v == null || v.isEmpty) ? 'Required' : null,
-                      ),
+                      if (widget.clientType != 'PRO') ...[
+                        _buildTextField(
+                          controller: _nameController,
+                          label: 'Full Name',
+                          icon: Icons.person,
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildTextField(
+                          controller: _phoneController,
+                          label: 'Phone Number',
+                          icon: Icons.phone,
+                          keyboardType: TextInputType.phone,
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildTextField(
+                          controller: _addressController,
+                          label: 'Default Address',
+                          icon: Icons.location_on,
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                     ],
                   ),
                 ),

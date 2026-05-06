@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { IsEmail, IsEnum, IsString, MinLength, Matches } from 'class-validator';
-import { Role } from '@prisma/client';
+import { IsEmail, IsEnum, IsOptional, IsString, MinLength, Matches } from 'class-validator';
+import { ClientType, Role } from '@prisma/client';
 
 export class RegisterDto {
   @IsEmail()
@@ -16,4 +16,24 @@ export class RegisterDto {
 
   @IsEnum(Role)
   role!: Role;
+
+  @IsOptional()
+  @IsEnum(ClientType)
+  clientType?: ClientType;
+
+  @IsOptional()
+  @IsString()
+  societyName?: string;
+
+  @IsOptional()
+  @IsString()
+  fiscalNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  proPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  proAddress?: string;
 }

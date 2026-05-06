@@ -39,22 +39,33 @@ export class DashboardService {
       },
     });
 
-    // Total orders and revenue (app revenue = 15% of order price excluding delivery fee)
+    // Total orders and revenue (app revenue = commission% of order price excluding delivery fee)
     // Get all paid orders (CONFIRMED, DELIVERED, PICKED_UP)
     const paidOrders = await this.prisma.order.findMany({
       where: {
-        status: { in: ['CONFIRMED', 'DELIVERED', 'PICKED_UP'] },
+        status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'DELIVERED', 'PICKED_UP'] },
       },
       select: {
         total: true,
         deliveryFee: true,
+        restaurantId: true,
       },
     });
 
-    // Calculate app revenue: 15% of (total - deliveryFee) for each order
+    // Build a map of restaurantId → commissionRate (default 15%)
+    const restaurantProfiles = await this.prisma.restaurantProfile.findMany({
+      select: { userId: true, commissionRate: true },
+    });
+    const commissionMap = new Map<string, number>();
+    for (const rp of restaurantProfiles) {
+      commissionMap.set(rp.userId, rp.commissionRate ?? 15);
+    }
+
+    // Calculate app revenue using per-restaurant commission rate
     const appRevenue = paidOrders.reduce((sum, order) => {
       const orderPrice = order.total - (order.deliveryFee || 0);
-      return sum + (orderPrice * 0.15);
+      const rate = (commissionMap.get(order.restaurantId) ?? 15) / 100;
+      return sum + (orderPrice * rate);
     }, 0);
 
     const orderStats = {
@@ -82,19 +93,21 @@ export class DashboardService {
       // Get paid orders for this day
       const dayOrders = await this.prisma.order.findMany({
         where: {
-          status: { in: ['CONFIRMED', 'DELIVERED', 'PICKED_UP'] },
+          status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'DELIVERED', 'PICKED_UP'] },
           createdAt: { gte: dayStart, lt: dayEnd }
         },
         select: {
           total: true,
           deliveryFee: true,
+          restaurantId: true,
         },
       });
 
-      // Calculate app revenue for the day: 15% of (total - deliveryFee)
+      // Calculate app revenue for the day using per-restaurant commission rate
       const dayRevenue = dayOrders.reduce((sum, order) => {
         const orderPrice = order.total - (order.deliveryFee || 0);
-        return sum + (orderPrice * 0.15);
+        const rate = (commissionMap.get(order.restaurantId) ?? 15) / 100;
+        return sum + (orderPrice * rate);
       }, 0);
 
       const dayIndex = dayStart.getDay();

@@ -21,7 +21,9 @@
     "create:admin": "tsx scripts/create-admin.ts"
   },
   "dependencies": {
+    "@nestjs/axios": "^3.0.0",
     "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
@@ -33,8 +35,8 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
-    "firebase-admin": "^13.8.0",
     "dotenv": "^17.4.2",
+    "firebase-admin": "^13.8.0",
     "multer": "^2.0.2",
     "nanoid": "^5.1.7",
     "nodemailer": "^8.0.1",
@@ -43,8 +45,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "stripe": "^22.0.2",
-    "tesseract.js": "^6.0.1",
-    "@nestjs/axios": "^3.0.0"
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

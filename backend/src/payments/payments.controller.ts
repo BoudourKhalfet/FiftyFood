@@ -241,27 +241,50 @@ export class PaymentsController {
       if (returnUrl && returnUrl.startsWith('fiftyfood://')) {
         return res.redirect(returnUrl);
       }
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      return res.redirect(
-        `${frontendUrl}/payment-success`,
-      );
+      // For web: show a success page that auto-closes the tab
+      return res.status(200).send(`
+        <html><head><title>Payment Successful</title></head>
+        <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f0fdf4;">
+          <div style="text-align:center;">
+            <div style="font-size:64px;margin-bottom:16px;">✅</div>
+            <h1 style="color:#16a34a;margin-bottom:8px;">Payment Successful!</h1>
+            <p style="color:#6b7280;">You can close this tab and return to the app.</p>
+          </div>
+          <script>setTimeout(()=>window.close(),2000);</script>
+        </body></html>
+      `);
     } catch (error) {
       // Check if returnUrl is a deep link (for mobile apps)
       const returnUrl = req.query.returnUrl as string;
       if (returnUrl && returnUrl.startsWith('fiftyfood://')) {
         return res.redirect(returnUrl);
       }
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      // If already captured, still redirect to success
+      // If already captured, still show success
       if ((error as Error).message?.includes('ALREADY_CAPTURED') ||
-          (error as Error).message?.includes('DUPLICATE_CAPTURE')) {
-        return res.redirect(
-          `${frontendUrl}/payment-success`,
-        );
+          (error as Error).message?.includes('DUPLICATE_CAPTURE') ||
+          (error as Error).message?.includes('already_processed')) {
+        return res.status(200).send(`
+          <html><head><title>Payment Successful</title></head>
+          <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f0fdf4;">
+            <div style="text-align:center;">
+              <div style="font-size:64px;margin-bottom:16px;">✅</div>
+              <h1 style="color:#16a34a;margin-bottom:8px;">Payment Successful!</h1>
+              <p style="color:#6b7280;">You can close this tab and return to the app.</p>
+            </div>
+            <script>setTimeout(()=>window.close(),2000);</script>
+          </body></html>
+        `);
       }
-      return res.redirect(
-        `${frontendUrl}/payment-error`,
-      );
+      return res.status(200).send(`
+        <html><head><title>Payment Failed</title></head>
+        <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#fef2f2;">
+          <div style="text-align:center;">
+            <div style="font-size:64px;margin-bottom:16px;">❌</div>
+            <h1 style="color:#dc2626;margin-bottom:8px;">Payment Failed</h1>
+            <p style="color:#6b7280;">Please close this tab and try again.</p>
+          </div>
+        </body></html>
+      `);
     }
   }
 

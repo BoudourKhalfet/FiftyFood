@@ -16,6 +16,8 @@ model User {
   emailVerifiedAt            DateTime?
   emailVerificationTokenHash String?
   emailVerificationExpiresAt DateTime?
+  emailChangeTokenHash String?
+  emailChangeExpiresAt DateTime?
   pendingEmail               String?
   statusReason String?
   suspendedAt  DateTime?
@@ -46,6 +48,11 @@ model User {
   accountHistory AccountHistory[]
   legalAgreements LegalAgreement[]
 
+  clientInteractions ClientInteraction[]
+
+  appNotifications AppNotification[]
+  deviceTokens UserDeviceToken[]
+
   @@index([role])
   @@index([status])
 }
@@ -54,9 +61,16 @@ model ClientProfile {
   userId      String @unique
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  clientType     ClientType @default(NORMAL)
+
   fullName       String?
   phone          String?
   defaultAddress String?
+
+  societyName    String?
+  fiscalNumber   String?
+  proPhone       String?
+  proAddress     String?
 
   cuisinePreferences CuisinePreference[]
   notificationPreferences Json @default("{}")
@@ -66,6 +80,11 @@ model ClientProfile {
 
   lastLatitude  Float?
   lastLongitude Float?
+  lastLocationAt DateTime?
+
+  submittedAt DateTime?
+  joinedAt DateTime?
+  termsAcceptedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -98,9 +117,15 @@ model RestaurantProfile {
   payoutMethod PayoutMethod?
   payoutDetails Json?
 
-  avgRating Float @default(0)
+  avgRating      Float @default(0)
+  commissionRate Float @default(15)
 
   submittedAt DateTime?
+  legalCompletedAt DateTime?
+  identityCompletedAt DateTime?
+  payoutCompletedAt DateTime?
+  termsAcceptedAt DateTime?
+  termsAcceptedName String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -143,10 +168,20 @@ model LivreurProfile {
   photoUrl String?
 
   cinOrPassportNumber String?
+  cinFrontPhotoUrl String?
+  cinBackPhotoUrl String?
+  cinVerificationStatus String?
+  identityVerified Boolean @default(false)
+  identityVerifiedAt DateTime?
+  cinVerifiedAt DateTime?
 
   licensePhotoUrl String?
   vehiclePhotoUrl  String?
   vehicleOwnershipDocUrl String?
+
+  termsAcceptedAt DateTime?
+  termsAcceptedName String?
+  submittedAt DateTime?
 
   payoutMethod PayoutMethod?
   payoutDetails Json?
@@ -154,8 +189,15 @@ model LivreurProfile {
   avgRating Float @default(0)
 
   locationConsentGiven Boolean @default(false)
+  locationConsentGivenAt DateTime?
   lastLatitude  Float?
   lastLongitude Float?
+  lastLocationAt DateTime?
+
+  isOnline Boolean @default(false)
+  lastOnlineAt DateTime?
+
+  notificationPreferences Json @default("{}")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -202,6 +244,12 @@ model Order {
   pickupQrUsedAt    DateTime?
   pickupQrStatus    QrStatus @default(NOT_SCANNED)
 
+  pickupReminderSentAt DateTime?
+  delivererPickupReminderSentAt DateTime?
+  delivererPickupTimeReminderSentAt DateTime?
+  deliveryConfirmReminderSentAt DateTime?
+  reviewReminderSentAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -220,6 +268,7 @@ model Offer {
   quantity       Int
 
   photoUrl String
+  descriptionEmbedding Float[]
 
   pickupTime     String
   pickupDateTime DateTime
@@ -232,6 +281,7 @@ model Offer {
   status OfferStatus @default(ACTIVE)
 
   orders Order[]
+  clientInteractions ClientInteraction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -282,33 +332,99 @@ model Complaint {
   createdAt DateTime @default(now())
 }
 
-model LegalAgreement {
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  type String
-  content String
-  signerName String
-
-  acceptedAt DateTime @default(now())
-}
-model AccountHistory {
+model AppNotification {
   id String @id @default(cuid())
 
   userId String
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  actorId String
-  actorRole String
+  type NotificationType
+  title String
+  message String
+  body String?
+  orderId String?
+  payload Json?
+  data Json?
 
-  action AccountAction
-  field String?
-  oldValue String?
-  newValue String?
-  reason String?
+  isRead Boolean @default(false)
+  readAt DateTime?
 
   createdAt DateTime @default(now())
+}
+
+model UserDeviceToken {
+  id String @id @default(cuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token String @unique
+  platform String
+
+  active Boolean @default(true)
+  revokedAt DateTime?
+  lastSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum NotificationType {
+  ORDER_STATUS
+  ORDER_STATUS_UPDATED
+  ORDER_READY_FOR_DELIVERER
+  DELIVERY_STATUS
+  DELIVERY_CONFIRMATION_REMINDER
+  NEW_DELIVERY_AVAILABLE
+  PICKUP_REMINDER
+  REVIEW_RESTAURANT_REMINDER
+  REVIEW_DELIVERER_REMINDER
+  DELIVERER_PICKUP_TIME_REMINDER
+  PROMOTION
+  SYSTEM
+  CHAT
+}
+
+model ClientInteraction {
+  id String @id @default(cuid())
+
+  userId String?
+  clientId String?
+  user   User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  offerId String?
+  offer   Offer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  restaurantId String?
+
+  type String?
+  interactionType String?
+  value Float?
+  price Float?
+  categories String[]
+
+  createdAt DateTime @default(now())
+}
+
+enum Category {
+  BAKERY
+  GRILL
+  FAST_FOOD
+  VEGETARIAN
+  HALAL
+  SEAFOOD
+  SUSHI
+  PIZZA
+  BURGER
+  BBQ
+  HEALTHY
+  DESSERT
+  STREET_FOOD
+  SANDWICHES
+  SALAD
+  PASTA
+  BREAKFAST
+  FINE_DINING
+  BRUNCH
 }
 
 enum Role {
@@ -355,4 +471,84 @@ enum QrStatus {
   SCANNED
   USED
   EXPIRED
+}
+
+enum OfferStatus {
+  ACTIVE
+  INACTIVE
+  PAUSED
+  SOLD_OUT
+  EXPIRED
+  DELETED
+}
+
+enum OfferVisibility {
+  IDENTIFIED
+  ANONYMOUS
+}
+
+enum PayoutMethod {
+  BANK_TRANSFER
+  PAYPAL
+}
+
+enum AccountAction {
+  CREATED
+  UPDATED
+  DELETED
+  SUSPENDED
+  UNSUSPENDED
+  UNSUSPEND
+  SUSPEND
+  APPROVED
+  APPROVE
+  REJECTED
+  REJECT
+  EMAIL_CHANGED
+  PASSWORD_CHANGED
+  PROFILE_EDIT
+  PROFILE_EDITED
+  REQUIRE_CHANGES
+}
+
+enum CuisinePreference {
+  BAKERY
+  GRILL
+  FAST_FOOD
+  VEGETARIAN
+  HALAL
+  SEAFOOD
+  SUSHI
+  PIZZA
+  BURGER
+  BBQ
+  HEALTHY
+  DESSERT
+  STREET_FOOD
+  SANDWICHES
+  SALAD
+  PASTA
+  BREAKFAST
+  FINE_DINING
+  BRUNCH
+}
+
+enum EstablishmentType {
+  RESTAURANT
+  CAFE
+  BAKERY
+  FAST_FOOD
+  FOOD_TRUCK
+  CATERING
+}
+
+enum OwnershipType {
+  INDIVIDUAL
+  COMPANY
+  PARTNERSHIP
+}
+
+enum ClientType {
+  NORMAL
+  PRO
 }

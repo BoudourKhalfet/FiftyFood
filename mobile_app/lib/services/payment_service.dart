@@ -307,7 +307,7 @@ class PaymentService {
         mode: kIsWeb
             ? LaunchMode.platformDefault
             : LaunchMode.externalApplication,
-        webOnlyWindowName: '_self',
+        webOnlyWindowName: kIsWeb ? '_blank' : '_self',
       );
     } else {
       throw Exception('Could not launch payment URL');

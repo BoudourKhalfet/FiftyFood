@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Delete,
@@ -103,5 +104,18 @@ export class AdminController {
   @Get('complaints/report')
   async getComplaintsReport() {
     return this.admin.getComplaintsReport();
+  }
+
+  @Get('restaurants/:id/commission')
+  async getCommissionRate(@Param('id') id: string) {
+    return this.admin.getCommissionRate(id);
+  }
+
+  @Patch('restaurants/:id/commission')
+  async updateCommissionRate(
+    @Param('id') id: string,
+    @Body() body: { commissionRate: number },
+  ) {
+    return this.admin.updateCommissionRate(id, body.commissionRate);
   }
 }

@@ -542,7 +542,7 @@ export class RestaurantsService {
 
     const profile = await this.prisma.restaurantProfile.findUnique({
       where: { userId },
-      select: { id: true, avgRating: true, restaurantName: true },
+      select: { id: true, avgRating: true, restaurantName: true, commissionRate: true },
     });
 
     if (!profile) {
@@ -641,6 +641,7 @@ export class RestaurantsService {
       ordersChangePercent: pctChange(orders7d, prevOrders),
       mealsSavedChangePercent: pctChange(meals7d, mealsPrev7d),
       avgRatingChange: pointChange(avgCurr, avgPrev),
+      commissionRate: profile.commissionRate ?? 15,
     };
   }
 }

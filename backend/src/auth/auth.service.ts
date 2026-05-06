@@ -99,7 +99,7 @@ export class AuthService {
       where: { id: user.id },
       data: {
         emailChangeTokenHash: tokenHash,
-        emailChangeExpiresAt: expires,
+      
       },
     });
     return rawToken;
@@ -144,7 +144,16 @@ export class AuthService {
       dto.role === Role.CLIENT
         ? {
             ...createDataBase,
-            clientProfile: { create: { termsAcceptedAt: new Date() } },
+            clientProfile: {
+              create: {
+                termsAcceptedAt: new Date(),
+                clientType: dto.clientType ?? 'NORMAL',
+                societyName: dto.societyName,
+                fiscalNumber: dto.fiscalNumber,
+                proPhone: dto.proPhone,
+                proAddress: dto.proAddress,
+              },
+            },
           }
         : dto.role === Role.RESTAURANT
           ? { ...createDataBase, restaurantProfile: { create: {} } }
@@ -162,7 +171,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.53.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
 
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
@@ -245,7 +254,7 @@ export class AuthService {
           email: changeUser.pendingEmail.toLowerCase(),
           pendingEmail: null,
           emailChangeTokenHash: null,
-          emailChangeExpiresAt: null,
+          
           emailVerifiedAt: new Date(),
         },
       });
@@ -332,7 +341,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.53.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}&changeEmail=1`;
 
     try {
@@ -353,13 +362,26 @@ export class AuthService {
 
   private isClientProfileComplete(user: {
     clientProfile?: {
+      clientType?: string | null;
       fullName?: string | null;
       phone?: string | null;
       defaultAddress?: string | null;
       cuisinePreferences?: unknown[] | null;
+      societyName?: string | null;
+      fiscalNumber?: string | null;
+      proPhone?: string | null;
     } | null;
   }) {
     const profile = user.clientProfile;
+    const isPro = profile?.clientType === 'PRO';
+    if (isPro) {
+      return (
+        !!profile?.societyName &&
+        !!profile?.fiscalNumber &&
+        !!profile?.proPhone &&
+        (profile?.cuisinePreferences?.length ?? 0) > 0
+      );
+    }
     return (
       !!profile?.fullName &&
       !!profile?.phone &&
@@ -406,10 +428,14 @@ export class AuthService {
 
   private getClientNextOnboardingStep(user: {
     clientProfile?: {
+      clientType?: string | null;
       fullName?: string | null;
       phone?: string | null;
       defaultAddress?: string | null;
       cuisinePreferences?: unknown[] | null;
+      societyName?: string | null;
+      fiscalNumber?: string | null;
+      proPhone?: string | null;
     } | null;
   }): number | null {
     return this.isClientProfileComplete(user) ? null : 2;
@@ -493,10 +519,14 @@ export class AuthService {
   private getNextOnboardingStep(user: {
     role: Role;
     clientProfile?: {
+      clientType?: string | null;
       fullName?: string | null;
       phone?: string | null;
       defaultAddress?: string | null;
       cuisinePreferences?: unknown[] | null;
+      societyName?: string | null;
+      fiscalNumber?: string | null;
+      proPhone?: string | null;
     } | null;
     restaurantProfile?: {
       restaurantName?: string | null;
@@ -588,6 +618,9 @@ export class AuthService {
           email: user.email,
           role: user.role,
           status: user.status,
+          clientProfile: user.clientProfile
+            ? { clientType: user.clientProfile.clientType }
+            : null,
         },
         message:
           user.role === Role.CLIENT
@@ -674,7 +707,7 @@ export class AuthService {
 
     const resetUrl =
       (process.env.PASSWORD_RESET_URL ||
-        'http://192.168.53.51:52530/reset-password') + `?token=${rawToken}`;
+        'http://192.168.1.15:52530/reset-password') + `?token=${rawToken}`;
     try {
       await this.mailService.sendMail(
         user.email,
@@ -729,10 +762,15 @@ export class AuthService {
         pendingEmail: true,
         clientProfile: {
           select: {
+            clientType: true,
             fullName: true,
             phone: true,
             defaultAddress: true,
             cuisinePreferences: true,
+            societyName: true,
+            fiscalNumber: true,
+            proPhone: true,
+            proAddress: true,
           },
         },
         restaurantProfile: {
@@ -764,9 +802,15 @@ export class AuthService {
     if (!user) return null;
 
     const clientProfile = user.clientProfile;
+    const isProClient = clientProfile?.clientType === 'PRO';
     const isProfileComplete =
       user.role !== Role.CLIENT
         ? true
+        : isProClient
+        ? !!clientProfile?.societyName &&
+          !!clientProfile?.fiscalNumber &&
+          !!clientProfile?.proPhone &&
+          (clientProfile?.cuisinePreferences?.length ?? 0) > 0
         : !!clientProfile?.fullName &&
           !!clientProfile?.phone &&
           !!clientProfile?.defaultAddress &&
@@ -786,7 +830,7 @@ export class AuthService {
     if (user.emailVerifiedAt) throw new ForbiddenException('Already verified');
     const token = await this.generateEmailVerificationToken(user);
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.53.51:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${token}`;
     try {
       await this.mailService.sendMail(

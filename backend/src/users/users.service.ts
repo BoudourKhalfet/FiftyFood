@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { CuisinePreference } from '@prisma/client';
+import { ClientType, CuisinePreference } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -30,18 +30,28 @@ export class UsersService {
       const profile = await this.prisma.clientProfile.update({
         where: { userId },
         data: {
+          clientType: dto.clientType,
           fullName: dto.fullName,
           phone: dto.phone,
           defaultAddress: dto.defaultAddress,
           cuisinePreferences: dto.cuisinePreferences,
+          societyName: dto.societyName,
+          fiscalNumber: dto.fiscalNumber,
+          proPhone: dto.proPhone,
+          proAddress: dto.proAddress,
           submittedAt: new Date(),
           // Do NOT set joinedAt here
         },
         select: {
+          clientType: true,
           fullName: true,
           phone: true,
           defaultAddress: true,
           cuisinePreferences: true,
+          societyName: true,
+          fiscalNumber: true,
+          proPhone: true,
+          proAddress: true,
           submittedAt: true,
           joinedAt: true,
         },
@@ -95,7 +105,11 @@ export class UsersService {
     });
 
     // You can validate that required fields are completed here (optional)
-    if (!profile?.fullName || !profile?.phone || !profile?.defaultAddress) {
+    const isPro = profile?.clientType === 'PRO';
+    const incomplete = isPro
+      ? !profile?.societyName || !profile?.fiscalNumber || !profile?.proPhone
+      : !profile?.fullName || !profile?.phone || !profile?.defaultAddress;
+    if (incomplete) {
       throw new BadRequestException('Profile is incomplete');
     }
 
