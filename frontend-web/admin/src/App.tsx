@@ -5,6 +5,8 @@ import AdminSidebar from "./components/AdminSidebar";
 import Restaurants from "./pages/Restaurants";
 import Clients from "./pages/Clients";
 import Deliverers from "./pages/Deliverers";
+import RestaurantDetail from "./pages/RestaurantDetail";
+import DelivererDetail from "./pages/DelivererDetail";
 import AdminLogin from "./pages/AdminLogin";
 import Orders from "./pages/Orders";
 import VerifiedEmail from "./pages/VerifiedEmail";
@@ -55,6 +57,8 @@ export default function App() {
     <Routes>
       <Route path="/verified" element={<VerifiedEmail />} />
       <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/admin/restaurants/:id" element={<RestaurantDetail />} />
+      <Route path="/admin/livreurs/:id" element={<DelivererDetail />} />
       <Route path="/admin" element={<AdminPanel page={page} setPage={setPage} />} />
       <Route path="/admin/*" element={<AdminPanel page={page} setPage={setPage} />} />
       <Route path="/" element={<Navigate to="/admin" />} />

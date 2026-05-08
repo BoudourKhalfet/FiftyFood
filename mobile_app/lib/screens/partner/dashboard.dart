@@ -11,6 +11,7 @@ import '../../l10n/app_localizations.dart';
 import 'offers_tab.dart';
 import 'orders_tab.dart';
 import 'profile_tab.dart';
+import 'transactions.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../constants/api.dart';
@@ -163,6 +164,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String? _offerImageUploadError;
   bool _aiVerifyingImage = false;
   String? _aiVerificationResult;
+  String? _aiVerificationMessage;
   List<String> _selectedCategories = [];
   final List<String> _categories = [
     'BAKERY',
@@ -225,6 +227,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         _uploadingOfferImage = true;
         _offerImageUploadError = null;
         _uploadedOfferImageUrl = null;
+        _aiVerificationMessage = null;
       });
 
       final prefs = await SharedPreferences.getInstance();
@@ -251,6 +254,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         modalSetState(() {
           _aiVerifyingImage = true;
           _aiVerificationResult = null;
+          _aiVerificationMessage = null;
         });
 
         try {
@@ -267,13 +271,15 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
             }),
           );
 
-          if (verifyResponse.statusCode == 200) {
+            if (verifyResponse.statusCode == 200 ||
+              verifyResponse.statusCode == 201) {
             final verifyData = jsonDecode(verifyResponse.body);
             final isValid = verifyData['isValid'] as bool? ?? false;
             final messages = verifyData['messages'] as List<dynamic>?;
 
             modalSetState(() {
               _aiVerificationResult = isValid ? 'valid' : 'invalid';
+              _aiVerificationMessage = messages?.join(', ');
             });
 
             if (isValid) {
@@ -287,9 +293,20 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
               });
             }
           }
+          if (verifyResponse.statusCode != 200) {
+            modalSetState(() {
+              _aiVerificationResult = 'error';
+              _aiVerificationMessage =
+                  'AI verification failed: server error ${verifyResponse.statusCode}';
+            });
+          }
         } catch (aiError) {
           // AI verification failed but we can still proceed
           print('AI verification error: $aiError');
+          modalSetState(() {
+            _aiVerificationResult = 'error';
+            _aiVerificationMessage = 'AI verification failed: $aiError';
+          });
         } finally {
           modalSetState(() {
             _aiVerifyingImage = false;
@@ -903,6 +920,51 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         label: 'Profile',
                         index: 2,
                       ),
+                      const SizedBox(height: 5),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PartnerTransactionsScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: const [
+                                Icon(
+                                  Icons.receipt_long,
+                                  size: 22,
+                                  color: Color(0xFF9CA3AF),
+                                ),
+                                SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(
+                                    'Transactions',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 24),
                       GestureDetector(
                         onTap: () {
@@ -1449,6 +1511,60 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             fontSize: 13,
                           ),
                           textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                    if (_uploadedOfferImageUrl != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (_aiVerifyingImage)
+                              const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else
+                              Icon(
+                                _aiVerificationResult == 'valid'
+                                    ? Icons.check_circle
+                                    : _aiVerificationResult == 'invalid'
+                                        ? Icons.error
+                                        : _aiVerificationResult == 'error'
+                                            ? Icons.warning
+                                            : Icons.help_outline,
+                                size: 16,
+                                color: _aiVerificationResult == 'valid'
+                                    ? const Color(0xFF10B981)
+                                    : _aiVerificationResult == 'invalid'
+                                        ? const Color(0xFFEF4444)
+                                        : _aiVerificationResult == 'error'
+                                            ? const Color(0xFFF59E0B)
+                                            : const Color(0xFF6B7280),
+                              ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                _aiVerifyingImage
+                                    ? 'Verifying image...'
+                                    : _aiVerificationResult == 'valid'
+                                        ? 'Photo verified'
+                                        : _aiVerificationResult == 'invalid'
+                                            ? 'Photo verification failed'
+                                            : _aiVerificationResult == 'error'
+                                                ? (_aiVerificationMessage ??
+                                                    'Verification error')
+                                                : 'Verification pending',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF6B7280),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 

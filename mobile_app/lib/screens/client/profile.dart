@@ -32,6 +32,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
+  final _societyNameController = TextEditingController();
+  final _fiscalNumberController = TextEditingController();
 
   final List<String> allCategories = [
     "BAKERY",
@@ -202,7 +204,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
           ),
           SizedBox(height: 10),
           Text(
-            profile?.fullName ?? '-',
+            profile?.clientType == 'PRO'
+                ? (profile?.societyName ?? '-')
+                : (profile?.fullName ?? '-'),
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w600,
@@ -243,6 +247,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               _nameController.text = profile?.fullName ?? '';
               _phoneController.text = profile?.phone ?? '';
               _addressController.text = profile?.defaultAddress ?? '';
+                           _societyNameController.text = profile?.societyName ?? '';
+                           _fiscalNumberController.text = profile?.fiscalNumber ?? '';
               showDialog(
                 context: context,
                 barrierDismissible: false,
@@ -558,9 +564,19 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                     ),
                   ),
                 ),
-              _profileTextForm("Full Name", _nameController),
-              _profileTextForm("Phone", _phoneController),
-              _profileTextForm("Default Address", _addressController),
+              if (profile?.clientType == 'PRO')
+                ...[
+                  _profileTextForm("Society Name", _societyNameController),
+                  _profileTextForm("Fiscal Number", _fiscalNumberController),
+                  _profileTextForm("Phone", _phoneController),
+                  _profileTextForm("Pro Address", _addressController),
+                ]
+              else
+                ...[
+                  _profileTextForm("Full Name", _nameController),
+                  _profileTextForm("Phone", _phoneController),
+                  _profileTextForm("Default Address", _addressController),
+                ],
               SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
@@ -624,6 +640,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         fullName: _nameController.text,
         phone: _phoneController.text,
         defaultAddress: _addressController.text,
+         societyName: _societyNameController.text,
+         fiscalNumber: _fiscalNumberController.text,
       );
 
       var emailChangeRequested = false;

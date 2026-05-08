@@ -35,7 +35,7 @@ export class CreateOfferDto {
   pickupTime!: string;
 
   @IsISO8601()
-  pickupDateTime?: string;
+  pickupDateTime!: string;
 
   @IsArray()
   @ArrayNotEmpty()

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FaSearch,
   FaCheck,
@@ -39,6 +40,7 @@ type RestaurantUser = {
 };
 
 export default function Restaurants() {
+  const navigate = useNavigate();
   const [restaurants, setRestaurants] = useState<RestaurantUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -361,7 +363,10 @@ export default function Restaurants() {
                     className="border-b last:border-b-0 hover:bg-gray-50"
                   >
                     <td className="py-3">
-                      <div className="font-semibold">
+                      <div 
+                        className="font-semibold cursor-pointer hover:text-green-600 hover:underline"
+                        onClick={() => navigate(`/admin/restaurants/${r.id}`)}
+                      >
                         {r.restaurantProfile?.restaurantName || "(no name)"}
                       </div>
                       <div className="text-xs text-gray-400">{r.email}</div>

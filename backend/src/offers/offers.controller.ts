@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -19,6 +20,7 @@ import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { GenerateDescriptionDto } from './dto/generate-description.dto';
+import { AiVerifyPhotoDto } from './dto/ai-verify-photo.dto';
 import { RecommendationService } from '../recommendations/recommendation.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -42,15 +44,14 @@ export class OffersController {
   }
 
   /**
-   * POST /offers/verify-photo
-   * [DISABLED FOR NOW] Send a base64 food photo for AI verification.
-   * This endpoint is kept for future use but not currently called.
+   * GET /offers
+   * List all active, visible offers (public endpoint)
    */
-  // @Post('verify-photo')
-  // async verifyPhoto(@Req() req: ReqWithUser, @Body() dto: VerifyPhotoDto) {
-  //   this.ensureRestaurant(req);
-  //   return this.offers.verifyPhoto(dto.image);
-  // }
+  @Public()
+  @Get()
+  async getAvailableOffers() {
+    return this.offers.getAvailableOffers();
+  }
 
   /**
    * POST /offers/generate-description
@@ -66,99 +67,29 @@ export class OffersController {
   }
 
   /**
-   * POST /offers
-   * Create a new offer.
+   * POST /offers/ai-verify-photo
+   * Verify a food photo with AI (food check).
    */
-  @Post()
-  async create(@Req() req: ReqWithUser, @Body() dto: CreateOfferDto) {
-    this.ensureRestaurant(req);
-    return this.offers.createOffer(req.user.sub, dto);
-  }
-
-  /**
-   * GET /offers/my
-   * List all offers belonging to the current restaurant.
-   */
-  @Get('my')
-  async getMyOffers(@Req() req: ReqWithUser) {
-    this.ensureRestaurant(req);
-    return this.offers.getMyOffers(req.user.sub);
-  }
-
-  /**
-   * DELETE /offers/:id
-   * Delete an offer.
-   */
-  @Delete(':id')
-  async deleteOffer(@Req() req: ReqWithUser, @Param('id') id: string) {
-    this.ensureRestaurant(req);
-    return this.offers.deleteOffer(req.user.sub, id);
-  }
-
-  /**
-   * PATCH /offers/:id
-   * Update editable offer fields (except photo).
-   */
-  @Patch(':id')
-  async updateOffer(
+  @Post('ai-verify-photo')
+  @HttpCode(200)
+  async aiVerifyPhoto(
     @Req() req: ReqWithUser,
-    @Param('id') id: string,
-    @Body() dto: UpdateOfferDto,
+    @Body() dto: AiVerifyPhotoDto,
   ) {
     this.ensureRestaurant(req);
-    return this.offers.updateOffer(req.user.sub, id, dto);
+    const result = await this.offers.verifyPhotoFromUrl(dto.imageUrl);
+    return {
+      isValid: result.passed === true,
+      messages: result.messages ?? [],
+      confidence: result.confidence ?? 0,
+      skipped: result.skipped ?? false,
+    };
   }
 
   /**
-   * PATCH /offers/:id/visibility
-   * Toggle visibility between IDENTIFIED and ANONYMOUS.
+   * POST /offers/upload-photo
+   * Upload an offer photo
    */
-  @Patch(':id/visibility')
-  async toggleVisibility(@Req() req: ReqWithUser, @Param('id') id: string) {
-    this.ensureRestaurant(req);
-    return this.offers.toggleVisibility(req.user.sub, id);
-  }
-
-  /**
-   * PATCH /offers/:id/status
-   * Toggle status between ACTIVE and PAUSED.
-   */
-  @Patch(':id/status')
-  async toggleStatus(@Req() req: ReqWithUser, @Param('id') id: string) {
-    this.ensureRestaurant(req);
-    return this.offers.toggleStatus(req.user.sub, id);
-  }
-
-  /**
-   * GET /offers/recommended
-   * Personalised offer feed for the authenticated client.
-   */
-  @Get('recommended')
-  @UseGuards(JwtAuthGuard)
-  async getRecommendedOffers(@Req() req: ReqWithUser) {
-    return this.recommendations.getRecommendedOffers(req.user.sub);
-  }
-
-  /**
-   * PATCH /offers/:id/decrement-quantity
-   * Decrement offer quantity after a successful purchase.
-   */
-  @Patch(':id/decrement-quantity')
-  @UseGuards(JwtAuthGuard)
-  async decrementQuantity(
-    @Param('id') id: string,
-    @Body() body?: { quantity?: number },
-  ) {
-    return this.offers.decrementQuantity(id, body?.quantity ?? 1);
-  }
-
-  @Public()
-  @Get()
-  async getAvailableOffers() {
-    // No auth required (public route)
-    return this.offers.getAvailableOffers();
-  }
-
   @Post('upload-photo')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -209,5 +140,93 @@ export class OffersController {
       console.error('Upload error:', error);
       throw error;
     }
+  }
+
+  /**
+   * POST /offers
+   * Create a new offer.
+   */
+  @Post()
+  async create(@Req() req: ReqWithUser, @Body() dto: CreateOfferDto) {
+    this.ensureRestaurant(req);
+    return this.offers.createOffer(req.user.sub, dto);
+  }
+
+  /**
+   * GET /offers/my
+   * List all offers belonging to the current restaurant.
+   */
+  @Get('my')
+  async getMyOffers(@Req() req: ReqWithUser) {
+    this.ensureRestaurant(req);
+    return this.offers.getMyOffers(req.user.sub);
+  }
+
+  /**
+   * GET /offers/recommended
+   * Personalised offer feed for the authenticated client.
+   */
+  @Get('recommended')
+  @UseGuards(JwtAuthGuard)
+  async getRecommendedOffers(@Req() req: ReqWithUser) {
+    return this.recommendations.getRecommendedOffers(req.user.sub);
+  }
+
+  /**
+   * DELETE /offers/:id
+   * Delete an offer.
+   */
+  @Delete(':id')
+  async deleteOffer(@Req() req: ReqWithUser, @Param('id') id: string) {
+    this.ensureRestaurant(req);
+    return this.offers.deleteOffer(req.user.sub, id);
+  }
+
+  /**
+   * PATCH /offers/:id
+   * Update editable offer fields (except photo).
+   */
+  @Patch(':id')
+  async updateOffer(
+    @Req() req: ReqWithUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateOfferDto,
+  ) {
+    this.ensureRestaurant(req);
+    return this.offers.updateOffer(req.user.sub, id, dto);
+  }
+
+  /**
+   * PATCH /offers/:id/visibility
+   * Toggle visibility between IDENTIFIED and ANONYMOUS.
+   */
+  @Patch(':id/visibility')
+  async toggleVisibility(@Req() req: ReqWithUser, @Param('id') id: string) {
+    this.ensureRestaurant(req);
+    return this.offers.toggleVisibility(req.user.sub, id);
+  }
+
+  /**
+   * PATCH /offers/:id/status
+   * Toggle status between ACTIVE and PAUSED.
+   */
+  @Patch(':id/status')
+  async toggleStatus(@Req() req: ReqWithUser, @Param('id') id: string) {
+    this.ensureRestaurant(req);
+    return this.offers.toggleStatus(req.user.sub, id);
+  }
+
+  /**
+   * PATCH /offers/:id/decrement-quantity
+   * Decrement offer quantity after a successful purchase.
+   */
+  @Patch(':id/decrement-quantity')
+  @UseGuards(JwtAuthGuard)
+  async decrementQuantity(
+    @Req() req: ReqWithUser,
+    @Param('id') id: string,
+    @Body() body?: { quantity?: number },
+  ) {
+    return this.offers.decrementQuantity(id, body?.quantity ?? 1);
   }
 }

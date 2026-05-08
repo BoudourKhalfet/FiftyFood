@@ -228,6 +228,11 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const token = localStorage.getItem("access_token");
+      if (!token) {
+        window.location.href = "/admin/login";
+        return;
+      }
+
       const response = await fetch("/admin/dashboard", {
         method: "GET",
         headers: {
@@ -236,8 +241,17 @@ export default function Dashboard() {
         },
       });
 
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/admin/login";
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch dashboard stats: ${response.status}`);
+        const message = await response.text();
+        throw new Error(
+          `Failed to fetch dashboard stats: ${response.status}${message ? ` - ${message}` : ""}`,
+        );
       }
 
       const data = await response.json();

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../api/api_service.dart';
 import '../../api/auth_storage.dart';
+import 'transactions.dart';
 
 class DelivererProfilePage extends StatefulWidget {
   const DelivererProfilePage({super.key});
@@ -1188,6 +1189,30 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
         ),
         const SizedBox(height: 16),
         _sectionCard(title: 'Recent Reviews', children: [_reviewsSection()]),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DelivererTransactionsPage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.receipt_long),
+            label: const Text('View All Transactions'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF28C76F),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         _sectionCard(
           title: 'Settings',

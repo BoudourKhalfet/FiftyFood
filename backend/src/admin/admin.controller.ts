@@ -118,4 +118,14 @@ export class AdminController {
   ) {
     return this.admin.updateCommissionRate(id, body.commissionRate);
   }
+
+  @Get('restaurants/:id/orders')
+  async getRestaurantOrders(@Param('id') id: string) {
+    return this.admin.getRestaurantOrders(id);
+  }
+
+  @Get('livreurs/:id/orders')
+  async getDelivererOrders(@Param('id') id: string) {
+    return this.admin.getDelivererOrders(id);
+  }
 }

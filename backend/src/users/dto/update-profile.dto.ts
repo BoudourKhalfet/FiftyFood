@@ -4,4 +4,6 @@ export class UpdateProfileDto {
   @IsString() @IsOptional() fullName?: string;
   @IsString() @IsOptional() phone?: string;
   @IsString() @IsOptional() defaultAddress?: string;
+  @IsString() @IsOptional() societyName?: string;
+  @IsString() @IsOptional() fiscalNumber?: string;
 }

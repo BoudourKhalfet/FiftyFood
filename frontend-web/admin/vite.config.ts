@@ -11,7 +11,7 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
       },
-      "^/admin": {
+      "^/admin/(users|dashboard|restaurants|livreurs|clients|decisions)": {
         target: "http://localhost:3000",
         changeOrigin: true,
       },

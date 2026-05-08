@@ -13,19 +13,25 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Category, OfferVisibility } from '@prisma/client';
 
-// API Keys for different AI services - read lazily to ensure dotenv is loaded
-const getGeminiDescriptionKey = () => {
-  const key = process.env.GEMINI_API_KEY || '';
-  console.log('DEBUG GEMINI_API_KEY:', key ? 'Found (first 10 chars: ' + key.substring(0, 10) + '...)' : 'NOT FOUND');
+// API Keys for AI services - read lazily to ensure dotenv is loaded
+const getOpenRouterKey = () => {
+  const key = process.env.OPENROUTER_API_KEY || '';
   return key;
 };
-const getGeminiVerificationKey = () => {
-  const key = process.env.GEMINI_VERIFICATION_KEY || process.env.GEMINI_API_KEY || '';
-  console.log('DEBUG GEMINI_VERIFICATION_KEY:', key ? 'Found (first 10 chars: ' + key.substring(0, 10) + '...)' : 'NOT FOUND');
+const getOpenRouterVerificationKey = () => {
+  const key = process.env.OPENROUTER_VERIFICATION_KEY || process.env.OPENROUTER_API_KEY || '';
   return key;
 };
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_VERIFICATION_MODEL = process.env.OPENROUTER_VERIFICATION_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free';
+const OPENROUTER_DESCRIPTION_MODEL =
+  process.env.OPENROUTER_DESCRIPTION_MODEL || 'google/gemini-2.0-flash-lite-001';
+const OPENROUTER_DESCRIPTION_FALLBACK_MODELS = [
+  'google/gemini-2.0-flash-lite-001',
+  'google/gemini-2.0-flash-001',
+  'google/gemini-1.5-flash',
+];
 
 // Updated prompts - less strict for food verification
 const VERIFICATION_PROMPT = `You are a food quality inspector for a restaurant surplus food app.
@@ -33,9 +39,9 @@ Analyze this image carefully and respond ONLY with a valid JSON object (no markd
 
 Evaluate:
 1. isFood: Is there food visible in this image? (true/false)
-2. isGoodQuality: Is the photo visually clear enough to see the food? (true/false - be lenient, even phone photos are fine)
+2. isGoodQuality: Is the photo visually clear enough to see the food? (true/false - phone photos are fine, but reject if the food itself is blurry or out of focus)
 3. isConsumable: Does the food look consumable/edible? Look for obvious signs it's NOT good: mold, rot, visible pests, extreme contamination, trash mixed with food, food thrown in garbage bin. Be reasonably lenient - slightly imperfect food is fine. Only reject if there are clear signs the food is truly not consumable.
-4. overallApproved: Should this image be approved for a food surplus sale? (true if it's food and looks reasonably consumable)
+4. overallApproved: Should this image be approved for a food surplus sale? (true only if it's food, looks reasonably consumable, AND the plating is clean/presentable). Reject if the plate/bowl is messy, smeared, or looks unappetizing.
 5. rejectionReason: If not approved, a short user-friendly reason (null if approved)
 6. confidenceScore: Your confidence in the assessment 0-100
 
@@ -49,17 +55,15 @@ Respond ONLY with this JSON:
   "confidenceScore": number
 }`;
 
-const DESCRIPTION_PROMPT_EN = `You are an expert food marketing copywriter for a restaurant surplus food app called FiftyFood.
-Analyze this food image and create an enticing commercial description to help sell this surplus food.
+const DESCRIPTION_PROMPT_EN = `You are a restaurant menu copywriter for a surplus food app called FiftyFood.
+Analyze the image and write a strong, menu-style presentation. Use the authentic dish name when you can recognize it (e.g., "Brik tunisien", "Mloukhia tunisienne", "Shakshuka", "Sushi maki"). If you are unsure, use a neutral but accurate name based on what you see and avoid assigning a different country or region. Do NOT claim web research or external sources; rely only on the image.
 Respond ONLY with a valid JSON object (no markdown, no code blocks, just raw JSON).
 
 Create:
-1. title: A short, appetizing name for the dish (max 50 chars)
-2. description: A compelling commercial description highlighting taste, ingredients, and occasion (2-3 sentences, max 200 chars)
-3. highlights: Array of 3-4 short selling points (e.g. "Freshly prepared", "Generous portion", "Chef's special") - each max 30 chars
+1. title: The real dish name when possible; otherwise a clear descriptive name (max 60 chars)
+2. description: A menu-style description that sounds like a restaurant menu item (3-4 sentences, 320-420 chars). Highlight taste, texture, key ingredients, and a serving suggestion. Use confident, premium wording without exaggeration.
+3. highlights: Array of 4-5 short menu-style selling points (max 40 chars each)
 4. suggestedPrice: A suggested discount price range like "$8-12" based on what you see (estimate based on dish type)
-
-Write in an enticing, positive, appetizing tone. Make customers want to buy it!
 
 Respond ONLY with:
 {
@@ -69,33 +73,39 @@ Respond ONLY with:
   "suggestedPrice": string
 }`;
 
-const DESCRIPTION_PROMPT_FR = `Vous êtes un photographe culinaire professionnel et rédacteur marketing pour les restaurants.
-Analysez cette photo de nourriture et générez une description produit COURTE, COMMERCIALE et ALLÉCHANTE adaptée à une application de nourriture excédentaire/discount (comme FiftyFood).
+const DESCRIPTION_PROMPT_FR = `Vous êtes un rédacteur de menus pour restaurants (application FiftyFood).
+Analysez la photo et utilisez le NOM AUTHENTIQUE du plat lorsque vous le reconnaissez (ex: "Brik tunisien", "Mloukhia tunisienne", "Couscous royal", "Ramen tonkotsu"). Si vous n'êtes pas sûr, utilisez un nom descriptif clair et évitez d'attribuer une autre région ou pays. Ne prétendez pas faire de recherche web; basez-vous uniquement sur l'image.
 
 Exigences:
-- Maximum 150 caractères
-- Mettez en évidence la qualité, la fraîcheur et l'attrait des aliments
-- Inclure le type d'ingrédients principaux ou de nourriture
-- Rendez-le IRRÉSISTIBLE pour les clients affamés
-- Ton professionnel, pas décontracté
-- Pas de battage publicitaire, soyez authentique
-- Exemple : "Lasagnes maison fraîches avec des couches de ricotta crémeuse et une riche sauce Bolognese. Parfait pour le dîner!"
+- Ton menu de restaurant, appétissant et précis
+- 3-4 phrases (320-420 caractères)
+- Mettre en avant goûts, textures, ingrédients clés, et suggestion de service
+- Pas d'exagération, style premium
 
-Retournez UNIQUEMENT le texte de la description, rien d'autre.`;
+Retournez UNIQUEMENT un objet JSON:
+{
+  "title": string,
+  "description": string,
+  "highlights": string[],
+  "suggestedPrice": string
+}`;
 
-const DESCRIPTION_PROMPT_AR = `أنت مصور طعام احترافي وكاتب تسويق لمطاعم.
-حلل هذه الصورة الغذائية وقم بإنشاء وصف منتج قصير وتجاري وجذاب مناسب لتطبيق الطعام الفائض/الخصم (مثل FiftyFood).
+const DESCRIPTION_PROMPT_AR = `أنت كاتب قوائم مطاعم لتطبيق FiftyFood.
+حلل الصورة واستخدم الاسم الحقيقي للطبق عندما تتعرف عليه (مثال: "بريك تونسي"، "ملوخية تونسية"). إذا لم تكن متأكدا، استخدم اسما وصفيا دقيقا وتجنب نسبته لبلد آخر. لا تدّعي البحث على الويب، اعتمد على الصورة فقط.
 
 المتطلبات:
-- بحد أقصى 150 حرف
-- ركز على جودة الطعام والنضارة والجاذبية
-- قم بتضمين نوع المكونات الرئيسية أو الطعام
-- اجعله لا يقاوم للعملاء الجائعين
-- نبرة احترافية وليست عادية
-- لا للمبالغة في الإعلان، كن أصليًا
-- مثال: "لازانيا منزلية طازجة مع طبقات من الريكوتا الكريمية وصلصة بولونيز الغنية. مثالي للعشاء!"
+- أسلوب قائمة مطعم جذاب ودقيق
+- 3-4 جمل (320-420 حرف)
+- إبراز الطعم والقوام والمكونات الأساسية واقتراح التقديم
+- بدون مبالغة، أسلوب راق
 
-أرجع النص الوصف فقط، لا شيء آخر.`;
+أرجع فقط كائن JSON:
+{
+  "title": string,
+  "description": string,
+  "highlights": string[],
+  "suggestedPrice": string
+}`;
 
 // --- Add interfaces here ---
 interface AuthenticityResult {
@@ -246,72 +256,165 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // --- Gemini API helper for image analysis
-  private async callGemini<T extends object>(
+  // --- OpenRouter API helper for image analysis (OpenAI-compatible)
+  private async callOpenRouterRaw(
     apiKey: string,
+    model: string,
     prompt: string,
     imageBase64: string,
     mimeType: string = 'image/jpeg',
-  ): Promise<T> {
+  ): Promise<string> {
+    if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
+
     const payload = {
-      contents: [
+      model: model,
+      messages: [
         {
-          parts: [
+          role: 'user',
+          content: [
             {
-              inlineData: {
-                mimeType: mimeType,
-                data: imageBase64,
-              },
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
             },
-            { text: prompt },
+            { type: 'text', text: prompt },
           ],
         },
       ],
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 1024,
-      },
+      temperature: 0.4,
+      max_tokens: 1024,
     };
 
-    const response = await fetch(`${GEMINI_API_BASE}?key=${apiKey}`, {
+    const response = await fetch(OPENROUTER_API_BASE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://fiftyfood.app',
+        'X-Title': 'FiftyFood',
+      },
       body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err?.error?.message || `Gemini API error: ${response.status}`);
+      throw new Error(err?.error?.message || `OpenRouter API error: ${response.status}`);
     }
 
     const data = (await response.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      choices?: { message?: { content?: string } }[];
     };
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('No response from Gemini');
-
-    // Strip markdown code blocks if present and parse JSON
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]) as T;
-    }
-    throw new Error('Failed to parse JSON from Gemini response');
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) throw new Error('No response from OpenRouter');
+    return text;
   }
 
-  // Verifies a food photo using Gemini API with separate verification key.
+  private parseJsonFromText<T extends object>(text: string): T | null {
+    const cleaned = text
+      .replace(/```json\n?/gi, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    try {
+      return JSON.parse(jsonMatch[0]) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildFallbackTitle(description: string): string {
+    const firstLine = description
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) || description.trim();
+    const firstSentence = firstLine.split(/[.!?]/)[0].trim();
+    const base = firstSentence.length > 0 ? firstSentence : firstLine;
+    return base.length > 50 ? `${base.slice(0, 47).trim()}...` : base;
+  }
+
+  private sanitizeDescriptionText(text: string): string {
+    return text
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private async callOpenRouter<T extends object>(
+    apiKey: string,
+    model: string,
+    prompt: string,
+    imageBase64: string,
+    mimeType: string = 'image/jpeg',
+  ): Promise<T> {
+    const raw = await this.callOpenRouterRaw(
+      apiKey,
+      model,
+      prompt,
+      imageBase64,
+      mimeType,
+    );
+    const parsed = this.parseJsonFromText<T>(raw);
+    if (!parsed) {
+      throw new Error('Failed to parse JSON from OpenRouter response');
+    }
+    return parsed;
+  }
+
+  private stripDataUrlPrefix(imageBase64OrDataUrl: string): {
+    base64: string;
+    mimeType: string;
+  } {
+    const trimmed = imageBase64OrDataUrl.trim();
+    if (!trimmed.startsWith('data:')) {
+      return { base64: trimmed, mimeType: 'image/jpeg' };
+    }
+
+    const match = trimmed.match(/^data:([^;]+);base64,(.*)$/i);
+    if (!match) {
+      return { base64: trimmed, mimeType: 'image/jpeg' };
+    }
+
+    return { base64: match[2], mimeType: match[1] };
+  }
+
+  private async fetchImageAsBase64(imageUrl: string): Promise<{
+    base64: string;
+    mimeType: string;
+  }> {
+    if (imageUrl.startsWith('data:')) {
+      return this.stripDataUrlPrefix(imageUrl);
+    }
+
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image from URL: ${imageUrl}`);
+    }
+
+    const mimeType = response.headers.get('content-type') || 'image/jpeg';
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    return { base64, mimeType };
+  }
+
+  // Verifies a food photo using OpenRouter API.
   async verifyPhoto(imageBase64: string, mimeType: string = 'image/jpeg') {
-    const verificationKey = getGeminiVerificationKey();
+    const verificationKey = getOpenRouterVerificationKey();
     if (!verificationKey) {
-      console.error('GEMINI_VERIFICATION_KEY is not configured');
+      this.logger.warn('OPENROUTER_API_KEY is not configured - skipping verification');
       return {
-        passed: false,
-        messages: ['Verification service not configured.'],
+        passed: true,
+        skipped: true,
+        messages: ['Verification skipped - AI not configured.'],
         freshness_rating: 'unknown',
         confidence: 0,
+        is_authentic: true,
+        is_recent: true,
+        food_looks_fresh: true,
       };
     }
+
+    const cleaned = this.stripDataUrlPrefix(imageBase64);
 
     // Type for verification result
     type VerificationResult = {
@@ -324,12 +427,13 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     };
 
     try {
-      // Call Gemini for food verification
-      const result = await this.callGemini<VerificationResult>(
+      // Call OpenRouter for food verification
+      const result = await this.callOpenRouter<VerificationResult>(
         verificationKey,
+        OPENROUTER_VERIFICATION_MODEL,
         VERIFICATION_PROMPT,
-        imageBase64,
-        mimeType,
+        cleaned.base64,
+        cleaned.mimeType || mimeType,
       );
 
       // Compose messages
@@ -365,7 +469,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
         confidence: result.confidenceScore,
         messages,
         models_used: {
-          verification: 'gemini-2.0-flash',
+          verification: OPENROUTER_VERIFICATION_MODEL,
         },
       };
     } catch (e: unknown) {
@@ -390,6 +494,11 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async verifyPhotoFromUrl(imageUrl: string) {
+    const { base64, mimeType } = await this.fetchImageAsBase64(imageUrl);
+    return this.verifyPhoto(base64, mimeType);
+  }
+
   // Generate a commercial description for a food photo using Gemini
   private getDescriptionPrompt(language: string = 'en'): string {
     switch (language) {
@@ -404,9 +513,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
   async generateDescription(imageUrl: string, language: string = 'en') {
     // If no API key, return empty so frontend can use manual entry
-    const descriptionKey = getGeminiDescriptionKey();
+    const descriptionKey = getOpenRouterKey();
     if (!descriptionKey) {
-      console.warn('GEMINI_API_KEY not configured - using manual mode');
+      console.warn('OPENROUTER_API_KEY not configured - using manual mode');
       return {
         description: '',
         generated_at: new Date().toISOString(),
@@ -426,22 +535,79 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
       const prompt = this.getDescriptionPrompt(language);
 
-      // Use Gemini API directly for description generation
-      const result = await this.callGemini<{
-        title: string;
-        description: string;
-        highlights: string[];
-        suggestedPrice: string;
-      }>(descriptionKey, prompt, base64, 'image/jpeg');
+      // Use OpenRouter API for description generation
+      const modelsToTry = [
+        OPENROUTER_DESCRIPTION_MODEL,
+        ...OPENROUTER_DESCRIPTION_FALLBACK_MODELS,
+      ].filter((value, index, self) => self.indexOf(value) === index);
 
-      const fullDescription = `${result.title}\n\n${result.description}\n\nHighlights: ${result.highlights.join(', ')}`;
+      let lastError: Error | null = null;
+      let usedModel = OPENROUTER_DESCRIPTION_MODEL;
+      let result:
+        | {
+            title: string;
+            description: string;
+            highlights: string[];
+            suggestedPrice: string;
+          }
+        | undefined;
+
+      for (const model of modelsToTry) {
+        try {
+          usedModel = model;
+          const raw = await this.callOpenRouterRaw(
+            descriptionKey,
+            model,
+            prompt,
+            base64,
+            'image/jpeg',
+          );
+          const parsed = this.parseJsonFromText<{
+            title: string;
+            description: string;
+            highlights: string[];
+            suggestedPrice: string;
+          }>(raw);
+
+          if (parsed) {
+            result = parsed;
+            break;
+          }
+
+          const fallbackText = this.sanitizeDescriptionText(raw);
+          if (fallbackText.length > 0) {
+            result = {
+              title: this.buildFallbackTitle(fallbackText),
+              description: fallbackText.slice(0, 200),
+              highlights: [],
+              suggestedPrice: '',
+            };
+            break;
+          }
+        } catch (error) {
+          const err = error as Error;
+          lastError = err;
+          if (!err.message.includes('No endpoints found')) {
+            throw err;
+          }
+        }
+      }
+
+      if (!result) {
+        throw lastError ?? new Error('Description generation failed');
+      }
+
+      const highlightText = result.highlights?.length
+        ? `\n\nHighlights: ${result.highlights.join(', ')}`
+        : '';
+      const fullDescription = `${result.title}\n\n${result.description}${highlightText}`;
 
       return {
         description: fullDescription,
         generated_at: new Date().toISOString(),
-        model: 'gemini-2.0-flash',
+        model: usedModel,
         title: result.title,
-        highlights: result.highlights,
+        highlights: result.highlights ?? [],
         suggestedPrice: result.suggestedPrice,
       };
     } catch (e: unknown) {
@@ -487,6 +653,26 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException(`Invalid category: ${invalidCategory}`);
     }
 
+    // Parse pickupDateTime and validate it's in the future
+    let pickupDate: Date;
+    try {
+      pickupDate = new Date(dto.pickupDateTime);
+      if (isNaN(pickupDate.getTime())) {
+        throw new Error('Invalid date');
+      }
+    } catch {
+      throw new BadRequestException(
+        'Invalid pickupDateTime format. Expected ISO 8601 date.',
+      );
+    }
+
+    const now = new Date();
+    if (pickupDate <= now) {
+      throw new BadRequestException(
+        'pickupDateTime must be in the future.',
+      );
+    }
+
     const created = await this.prisma.offer.create({
       data: {
         restaurantId: userId,
@@ -497,7 +683,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
         quantity: dto.quantity,
         pickupTime: dto.pickupTime,
         pickupDateTime: this.normalizePickupDateTime(
-          new Date(dto.pickupDateTime),
+          pickupDate,
           dto.pickupTime,
         ),
         categories: normalizedCategories as Category[],
@@ -585,10 +771,34 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     const nextPickupTime = dto.pickupTime ?? offer.pickupTime;
     this.validatePickupTimeWindow(nextPickupTime);
 
-    const nextPickupDateTime =
-      offer.status === 'EXPIRED'
-        ? this.normalizePickupDateTimeFromNow(nextPickupTime)
-        : this.normalizePickupDateTime(offer.pickupDateTime, nextPickupTime);
+    // Handle pickupDateTime update
+    let nextPickupDateTime = offer.pickupDateTime;
+    if (dto.pickupDateTime) {
+      try {
+        const newPickupDate = new Date(dto.pickupDateTime);
+        if (isNaN(newPickupDate.getTime())) {
+          throw new Error('Invalid date');
+        }
+        const now = new Date();
+        if (newPickupDate <= now) {
+          throw new BadRequestException(
+            'pickupDateTime must be in the future.',
+          );
+        }
+        nextPickupDateTime = this.normalizePickupDateTime(newPickupDate, nextPickupTime);
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        throw new BadRequestException(
+          'Invalid pickupDateTime format. Expected ISO 8601 date.',
+        );
+      }
+    } else if (offer.status === 'EXPIRED') {
+      nextPickupDateTime = this.normalizePickupDateTimeFromNow(nextPickupTime);
+    } else {
+      nextPickupDateTime = this.normalizePickupDateTime(offer.pickupDateTime, nextPickupTime);
+    }
 
     // Logic: If offer is SOLD_OUT, quantity is increased, and pickupDateTime is in the future, set status to ACTIVE
     let nextStatus = offer.status;
@@ -600,7 +810,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       nextPickupDateTime > now
     ) {
       nextStatus = 'ACTIVE';
-    } else if (offer.status === 'EXPIRED') {
+    } else if (offer.status === 'EXPIRED' && nextPickupDateTime > now) {
       nextStatus = 'ACTIVE';
     }
 

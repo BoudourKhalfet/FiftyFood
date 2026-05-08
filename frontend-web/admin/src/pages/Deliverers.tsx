@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FaEye,
   FaCheck,
@@ -37,6 +38,7 @@ type DelivererUser = {
 };
 
 export default function Deliverers() {
+  const navigate = useNavigate();
   const [deliverers, setDeliverers] = useState<DelivererUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -356,7 +358,10 @@ export default function Deliverers() {
                     className="border-b last:border-b-0 hover:bg-gray-50"
                   >
                     <td className="py-3">
-                      <div className="font-semibold">
+                      <div 
+                        className="font-semibold cursor-pointer hover:text-green-600 hover:underline"
+                        onClick={() => navigate(`/admin/livreurs/${d.id}`)}
+                      >
                         {d.livreurProfile?.fullName || "(no name)"}
                       </div>
                       <div className="text-xs text-gray-400">{d.email}</div>

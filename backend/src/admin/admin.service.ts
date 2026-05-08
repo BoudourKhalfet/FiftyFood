@@ -985,4 +985,108 @@ export class AdminService {
 
     return { success: true, commissionRate };
   }
+
+  async getRestaurantOrders(restaurantId: string) {
+    const restaurant = await this.prisma.user.findUnique({
+      where: { id: restaurantId },
+      select: {
+        restaurantProfile: { select: { restaurantName: true } },
+      },
+    });
+
+    if (!restaurant || !restaurant.restaurantProfile) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    // Return EXACT same format as mobile app
+    // CRITICAL: Once order is CONFIRMED, show it forever regardless of status
+    const orders = await this.prisma.order.findMany({
+      where: {
+        restaurantId,
+        status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+      },
+      include: {
+        client: { include: { clientProfile: true } },
+        reviews: {
+          select: { rating: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
+
+    return {
+      restaurantName: restaurant.restaurantProfile.restaurantName,
+      totalRevenue,
+      orders: orders.map(order => ({
+        id: order.id,
+        orderCode: order.orderCode,
+        total: order.total,
+        deliveryFee: order.deliveryFee ?? 0,
+        status: order.status,
+        createdAt: order.createdAt,
+        customerName: order.client?.clientProfile?.fullName ?? '',
+        rating: order.reviews?.[0]?.rating ?? null,
+      })),
+    };
+  }
+
+  async getDelivererOrders(delivererId: string) {
+    const deliverer = await this.prisma.user.findUnique({
+      where: { id: delivererId },
+      select: {
+        livreurProfile: { select: { fullName: true } },
+      },
+    });
+
+    if (!deliverer || !deliverer.livreurProfile) {
+      throw new NotFoundException('Deliverer not found');
+    }
+
+    // Return EXACT same format as mobile app - fixed deliverer earning per order
+    const orders = await this.prisma.order.findMany({
+      where: {
+        livreurId: delivererId,
+        // Show all orders from CONFIRMED onwards
+        status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] }
+      },
+      include: {
+        restaurant: { include: { restaurantProfile: true } },
+        client: { include: { clientProfile: true } },
+        reviews: {
+          select: { rating: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    // Transform data to match mobile app format
+    const transformedOrders = orders.map((order) => ({
+      id: order.id,
+      orderCode: order.orderCode || '',
+      restaurantName: order.restaurant?.restaurantProfile?.restaurantName || '',
+      customerName: order.client?.clientProfile?.fullName || '',
+      date: order.updatedAt,
+      amount: 2.5,
+      deliveryFee: 0,
+      total: 2.5,
+      rating: order.reviews?.[0]?.rating || null,
+      status: order.status,
+      deliveryAddress: order.deliveryAddress || '',
+    }));
+
+    // Total earnings = sum of all amounts (no fees deducted)
+    const totalEarnings = transformedOrders.reduce((sum, order) => sum + (order.amount || 0), 0);
+
+    return {
+      delivererName: deliverer.livreurProfile.fullName,
+      totalEarnings,
+      orders: transformedOrders,
+    };
+  }
 }

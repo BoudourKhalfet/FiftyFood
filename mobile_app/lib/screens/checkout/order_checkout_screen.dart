@@ -264,7 +264,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         await PaymentService.openPaymentUrl(sessionUrl);
 
         if (!mounted) return;
-        _showStripeCheckoutConfirmDialog(sessionId);
+        await _pollStripeCheckoutStatus(sessionId);
         return;  
       }
       // Step 1: Create payment intent on backend
@@ -490,12 +490,11 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
       if (kIsWeb) {
         // On web, deep links don't work. The backend captures payment on redirect.
-        // Show a dialog for the user to confirm they completed payment.
         if (!mounted) return;
         setState(() {
           _isWaitingForPayPal = false;
         });
-        _showPayPalReturnDialog(paypalOrderId);
+        await _pollPayPalCapture(paypalOrderId);
       }
       // On mobile, the deep link handler will automatically process the result
     } catch (e) {
@@ -504,6 +503,113 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       });
       rethrow;
     }
+  }
+
+  Future<void> _pollStripeCheckoutStatus(String sessionId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Waiting for Stripe confirmation...'),
+          ],
+        ),
+      ),
+    );
+
+    const maxAttempts = 20;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final confirmation =
+            await PaymentService.confirmStripeCheckoutSession(
+          sessionId: sessionId,
+        );
+
+        if (!mounted) return;
+
+        if (confirmation['status'] == 'paid' &&
+            confirmation['orderId'] != null) {
+          Navigator.of(context).pop();
+          _showPaymentSuccessDialog('Card');
+          return;
+        }
+
+        if (confirmation['status'] == 'order_creation_failed') {
+          Navigator.of(context).pop();
+          _showPaymentErrorDialog(
+            'Payment succeeded but order creation failed. Please contact support.',
+          );
+          return;
+        }
+      } catch (_) {
+        // Keep polling and only show error on timeout.
+      }
+
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    _showPaymentErrorDialog('Payment not completed yet. Please try again.');
+  }
+
+  Future<void> _pollPayPalCapture(String paypalOrderId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Waiting for PayPal confirmation...'),
+          ],
+        ),
+      ),
+    );
+
+    const maxAttempts = 20;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final capture = await PaymentService.capturePayPalPayment(
+          paypalOrderId: paypalOrderId,
+          orderId: widget.orderId,
+        );
+
+        if (!mounted) return;
+
+        if (capture['isSuccessful'] == true ||
+            capture['status'] == 'already_processed') {
+          Navigator.of(context).pop();
+          _showPaymentSuccessDialog('PayPal');
+          return;
+        }
+
+        if (capture['needsApproval'] != true) {
+          Navigator.of(context).pop();
+          final captureStatus = capture['status']?.toString() ?? '';
+          _showPaymentErrorDialog(
+            captureStatus.isNotEmpty
+                ? 'PayPal returned status: $captureStatus. Please make sure you approved the payment in PayPal.'
+                : 'PayPal payment could not be completed. Please make sure you completed the payment in PayPal.',
+          );
+          return;
+        }
+      } catch (_) {
+        // Keep polling and only show error on timeout.
+      }
+
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    _showPaymentErrorDialog('Payment not completed yet. Please try again.');
   }
 
   /// Show Stripe card entry and confirm

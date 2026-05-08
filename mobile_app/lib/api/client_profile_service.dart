@@ -40,6 +40,8 @@ class ProfileService {
     String? fullName,
     String? phone,
     String? defaultAddress,
+    String? societyName,
+    String? fiscalNumber,
   }) async {
     await ApiService.patch(
       'users/me/profile',
@@ -47,6 +49,8 @@ class ProfileService {
         if (fullName != null) 'fullName': fullName,
         if (phone != null) 'phone': phone,
         if (defaultAddress != null) 'defaultAddress': defaultAddress,
+        if (societyName != null) 'societyName': societyName,
+        if (fiscalNumber != null) 'fiscalNumber': fiscalNumber,
       },
       headers: {'Authorization': 'Bearer $jwt'},
     );

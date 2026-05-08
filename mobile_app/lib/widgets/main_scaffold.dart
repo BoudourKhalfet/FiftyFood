@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../screens/client/profile.dart';
+import '../../screens/client/transactions.dart';
 import '../api/api_service.dart';
 import '../api/auth_storage.dart';
 import '../screens/notifications/notifications_page.dart';
@@ -143,6 +144,15 @@ class _MainScaffoldState extends State<MainScaffold> {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const ClientProfileScreen(),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: Icon(Icons.receipt_long),
+                title: Text('Transactions'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ClientTransactionsScreen(),
                   ),
                 ),
               ),

@@ -636,6 +636,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         reference: true,
         orderCode: true,
         status: true,
+        paymentMethod: true,
         collectionMethod: true,
         total: true,
         items: true,
@@ -693,6 +694,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             order.collectionMethod,
           ),
           status: order.status,
+          paymentMethod: order.paymentMethod,
           collectionMethod: order.collectionMethod,
           total: order.total,
           mealName: order.offer?.description ?? '',
@@ -942,7 +944,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       .findMany({
         where: {
           livreurId: delivererId,
-          status: 'DELIVERED',
+          // Show all orders from CONFIRMED onwards (not just DELIVERED)
+          status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
         },
         include: {
           restaurant: { include: { restaurantProfile: true } },
@@ -970,7 +973,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             order.restaurant?.restaurantProfile?.restaurantName ?? '',
           customerName: order.client?.clientProfile?.fullName ?? '',
           date: order.updatedAt,
-          amount: order.deliveryFee ?? order.total ?? 0,
+          amount: 2.5,  // Deliverer earns a fixed amount per order
+          total: 2.5,
+          deliveryFee: 0,
           rating: order.reviews?.[0]?.rating ?? null,
           status: order.status,
           deliveryAddress: order.deliveryAddress ?? '',
@@ -1073,6 +1078,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           status: order.status,
           method: order.collectionMethod,
           customerName: order.client?.clientProfile?.fullName ?? '',
+          paymentMethod: order.paymentMethod ?? '',
           amount: order.total,
           pickupTime: order.offer?.pickupTime ?? '',
           pickupDateTime: order.offer?.pickupDateTime?.toISOString() ?? '',

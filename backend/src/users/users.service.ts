@@ -144,6 +144,7 @@ export class UsersService {
             fullName: true,
             phone: true,
             defaultAddress: true,
+            clientType: true,
             cuisinePreferences: true,
             submittedAt: true,
             joinedAt: true,
@@ -153,6 +154,8 @@ export class UsersService {
             lastLatitude: true,
             lastLongitude: true,
             lastLocationAt: true,
+            societyName: true,
+            fiscalNumber: true,
           },
         },
         accountHistory: {
@@ -177,6 +180,8 @@ export class UsersService {
         fullName: dto.fullName,
         phone: dto.phone,
         defaultAddress: dto.defaultAddress,
+        societyName: dto.societyName,
+        fiscalNumber: dto.fiscalNumber,
       },
     });
 
@@ -185,6 +190,8 @@ export class UsersService {
       'fullName',
       'phone',
       'defaultAddress',
+      'societyName',
+      'fiscalNumber',
     ];
     for (const field of fieldsToTrack) {
       if (
