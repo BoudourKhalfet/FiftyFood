@@ -59,6 +59,10 @@ export class CreateStripeIntentDto {
 
 export class CreateStripeCheckoutDto {
   @IsString()
+  @IsOptional()
+  orderId?: string;
+
+  @IsString()
   restaurantId!: string;
 
   @IsString()

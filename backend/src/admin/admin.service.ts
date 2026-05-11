@@ -135,6 +135,8 @@ export class AdminService {
             vehicleOwnershipDocUrl: true,
             vehiclePhotoUrl: true,
             submittedAt: true,
+            payoutMethod: true,
+            payoutDetails: true,
           },
         },
         clientProfile: {
@@ -150,9 +152,94 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
     });
 
-    console.log('Returning these users:', users);
+    // Calculate performance metrics for each user
+    const usersWithStats = await Promise.all(
+      users.map(async (user) => {
+        if (user.role === Role.RESTAURANT && user.restaurantProfile) {
+          // Get offers count
+          const offersCount = await this.prisma.offer.count({
+            where: { restaurantId: user.id },
+          });
 
-    return users;
+          // Get orders and calculate stats
+          const orders = await this.prisma.order.findMany({
+            where: {
+              restaurantId: user.id,
+              status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+            },
+            select: {
+              total: true,
+              deliveryFee: true,
+              reviews: {
+                select: { rating: true },
+                take: 1,
+              },
+            },
+          });
+
+          const ordersCompleted = orders.length;
+          const commissionRate = (user.restaurantProfile.commissionRate ?? 15) / 100;
+
+          // Calculate net sales after commission
+          const totalSales = orders.reduce((sum, order) => {
+            const orderPrice = order.total - (order.deliveryFee || 0);
+            const commission = Math.floor(orderPrice * commissionRate * 100) / 100;
+            return sum + (order.total - commission);
+          }, 0);
+
+          // Calculate trust score based on completed orders (simplified)
+          // Could be enhanced with reviews, complaint history, etc.
+          const trustScore = Math.min(100, ordersCompleted * 5); // 20 orders = 100 score
+
+          return {
+            ...user,
+            restaurantProfile: {
+              ...user.restaurantProfile,
+              trustScore,
+              offersCount,
+              ordersCompleted,
+              totalSales,
+            },
+          };
+        }
+
+        if (user.role === Role.LIVREUR && user.livreurProfile) {
+          // Get deliverer orders count
+          const completedOrders = await this.prisma.order.count({
+            where: {
+              livreurId: user.id,
+              status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+            },
+          });
+
+          // Get deliverer reviews directly
+          const delivererReviews = await this.prisma.review.findMany({
+            where: { delivererId: user.id },
+            select: { rating: true },
+          });
+
+          // Calculate average rating from deliverer reviews
+          const avgRating = delivererReviews.length > 0
+            ? delivererReviews.reduce((sum, r) => sum + r.rating, 0) / delivererReviews.length
+            : 0;
+
+          return {
+            ...user,
+            livreurProfile: {
+              ...user.livreurProfile,
+              completedOrders,
+              avgRating,
+            },
+          };
+        }
+
+        return user;
+      }),
+    );
+
+    console.log('Returning these users with stats:', usersWithStats);
+
+    return usersWithStats;
   }
 
   async logHistory({

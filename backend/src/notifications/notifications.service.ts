@@ -157,9 +157,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     await this.createNotification(order.clientId, {
       type: NotificationType.ORDER_STATUS_UPDATED,
       orderId: order.id,
-      title: 'Order received',
-      message: `Your order ${this.displayOrderCode(order.orderCode, order.collectionMethod, order.reference)} has been received. Complete your payment to confirm it.`,
-      payload: { status: 'PENDING', orderId: order.id },
+      title: 'Order confirmed',
+      message: `Your order ${this.displayOrderCode(order.orderCode, order.collectionMethod, order.reference)} has been confirmed and paid.`,
+      payload: { status: 'CONFIRMED', orderId: order.id },
     });
 
     if (order.collectionMethod === 'DELIVERY') {

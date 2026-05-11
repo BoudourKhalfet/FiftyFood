@@ -53,6 +53,45 @@
   "labelCategories": "Catégories",
   "btnJoinAsDeliverer": "Rejoindre en tant que livreur",
   "btnBackToHome": "← Retour à l'accueil",
+  "errorEmailNotVerified": "Vous devez vérifier votre e-mail avant de continuer. Veuillez consulter votre boîte de réception (et les spams) et vérifier votre e-mail.",
+  "errorUnauthorized": "E-mail ou mot de passe invalide. Veuillez réessayer.",
+  "errorForbidden": "Ce compte n'est pas encore autorisé à se connecter. Veuillez contacter le support.",
+  "errorNetwork": "Erreur réseau. Veuillez réessayer plus tard.",
+  "errorRoleMismatch": "Cet e-mail est enregistré en tant que {role}, pas {targetRole}. Veuillez vous connecter depuis le bon portail ou créer un nouveau compte.",
+  "@errorRoleMismatch": {
+    "placeholders": {
+      "role": { "type": "String" },
+      "targetRole": { "type": "String" }
+    }
+  },
+  "errorOnboardingNeeded": "Le compte nécessite une configuration. Veuillez compléter votre profil d'inscription.",
+  "errorLoginNoToken": "Échec de la connexion : aucun jeton retourné.",
+  "infoVerificationResent": "E-mail de vérification renvoyé ! Veuillez consulter votre boîte de réception (et les spams).",
+  "errorResendFailed": "Impossible de renvoyer l'e-mail de vérification.",
+  "errorResendException": "Erreur lors du renvoi de l'e-mail : {error}",
+  "@errorResendException": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "labelAlreadyHaveAccount": "Vous avez déjà un compte ? ",
+  "btnSignUp": "S'inscrire",
+  "labelNoAccount": "Vous n'avez pas de compte ? ",
+  "dialogAlmostThere": "Presque là !",
+  "infoRegistrationSuccess": "Inscription réussie.\n\nVeuillez consulter votre boîte de réception (et les spams) et vérifier votre e-mail pour continuer.",
+  "btnOkay": "D'accord",
+  "errorRegistrationFailed": "Échec de l'inscription (exception) : {error}",
+  "@errorRegistrationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "errorAgreeTerms": "Vous devez accepter les conditions d'utilisation.",
+  "errorInvalidEmail": "Format d'e-mail invalide",
+  "errorPasswordsNotMatch": "Les mots de passe ne correspondent pas",
+  "btnFacebook": "Facebook",
+  "labelAlreadyAccount": "Vous avez déjà un compte ? ",
+  "btnSignInSmall": "Se connecter",
   "labelDescription": "Description",
   "hintDescription": "ex : Sac de pâtes surprise, Sélection du chef...",
   "btnSelectCategories": "Sélectionner les catégories",

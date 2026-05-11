@@ -11,6 +11,7 @@ import {
   FaPlay,
   FaTrash,
   FaPlus,
+  FaHistory,
 } from "react-icons/fa";
 import { StatusBadge } from "../components/StatusBadge";
 import { RestaurantModal } from "../components/UsersViewModals/RestaurantModal";
@@ -479,8 +480,11 @@ export default function Restaurants() {
                         >
                           <FaEye className="text-gray-700" />
                         </button>
-                        <button title="Docs">
-                          <FaFileAlt className="text-gray-700" />
+                        <button
+                          title="Transactions"
+                          onClick={() => navigate(`/admin/restaurants/${r.id}`)}
+                        >
+                          <FaHistory className="text-blue-600" />
                         </button>
                         {normalizedStatus === "pending" && (
                           <>

@@ -270,7 +270,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     const deadline = new Date(pickupDateTime);
-    deadline.setHours(hour, minute, 0, 0);
+    deadline.setUTCHours(hour, minute, 0, 0);
     return deadline;
   }
 
@@ -852,6 +852,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
     const responseObject = {
       id: order.id,
+      orderCode: order.orderCode ?? order.reference ?? '',
       status: order.status,
       collectionMethod: order.collectionMethod,
       restaurantName: order.restaurant?.restaurantProfile?.restaurantName ?? '',
@@ -1042,12 +1043,66 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       data: { status: 'DELIVERED' },
     });
 
+    // Payout deliverer after successful delivery
+    if (updated.livreurId && updated.deliveryFee && updated.deliveryFee > 0) {
+      await this.processDelivererPayout(updated.livreurId, orderId, updated.deliveryFee);
+    }
+
     await this.notificationsService.notifyOrderDelivered(updated.id);
     return updated;
   }
 
+  /**
+   * Trigger payout to deliverer after order delivery
+   * Records pending payout for Stripe/PayPal/Konnect to process
+   */
+  private async processDelivererPayout(
+    delivererId: string,
+    orderId: string,
+    amount: number,
+  ): Promise<void> {
+    try {
+      // Get deliverer payout info
+      const delivererProfile = await this.prisma.livreurProfile.findUnique({
+        where: { userId: delivererId },
+        select: {
+          payoutMethod: true,
+          payoutDetails: true,
+          fullName: true,
+        },
+      });
+
+      if (!delivererProfile?.payoutMethod || !delivererProfile?.payoutDetails) {
+        this.logger.warn(
+          `Deliverer ${delivererId} has no payout info. Payout queued for manual processing. Order: ${orderId}`,
+        );
+        return;
+      }
+
+      // Log for now - Stripe/PayPal/Konnect will handle actual transfer
+      this.logger.log(
+        `[PAYOUT QUEUED] Deliverer: ${delivererId}, Order: ${orderId}, Amount: €${amount}, Method: ${delivererProfile.payoutMethod}`,
+      );
+
+      // TODO: Call Stripe Connect, PayPal Payouts, or Konnect API here
+      // await this.paymentsService.createPayout({...})
+    } catch (error: any) {
+      this.logger.error(
+        `Payout logging failed for deliverer ${delivererId}, order ${orderId}: ${error?.message || error}`,
+      );
+      // Don't throw - delivery confirmation should succeed even if payout logging fails
+    }
+  }
+
   async findByRestaurant(restaurantId: string) {
     await this.expirePendingOrdersPastPickupTime();
+
+    // Get restaurant commission rate
+    const restaurantProfile = await this.prisma.restaurantProfile.findUnique({
+      where: { userId: restaurantId },
+      select: { commissionRate: true },
+    });
+    const commissionRate = (restaurantProfile?.commissionRate ?? 15) / 100;
 
     return this.prisma.order
       .findMany({

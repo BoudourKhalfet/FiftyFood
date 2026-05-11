@@ -57,8 +57,9 @@ class PaymentService {
     }
   }
 
-  /// Create Stripe Checkout session (web) — no order created yet
+  /// Create Stripe Checkout session (web)
   static Future<Map<String, dynamic>> createStripeCheckoutSession({
+    String? orderId,
     required String restaurantId,
     required String offerId,
     required Map<String, dynamic> items,
@@ -86,6 +87,7 @@ class PaymentService {
           'Authorization': 'Bearer $jwt',
         },
         body: jsonEncode({
+          if (orderId != null && orderId.isNotEmpty) 'orderId': orderId,
           'restaurantId': restaurantId,
           'offerId': offerId,
           'items': items,

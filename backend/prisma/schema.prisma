@@ -188,6 +188,13 @@ model LivreurProfile {
 
   avgRating Float @default(0)
 
+  cinBackPhotoUrl        String?
+  cinFrontPhotoUrl       String?
+  cinVerificationStatus  String?       @default("PENDING")
+  cinVerifiedAt          DateTime?
+  identityVerified       Boolean       @default(false)
+  identityVerifiedAt     DateTime?
+
   locationConsentGiven Boolean @default(false)
   locationConsentGivenAt DateTime?
   lastLatitude  Float?

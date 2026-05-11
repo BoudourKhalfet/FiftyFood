@@ -167,15 +167,15 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get errorEmailNotVerified =>
-      'You must verify your email before you can continue. Please check your inbox (and spam) and verify your email.';
+      'يجب التحقق من بريدك الإلكتروني قبل المتابعة. يرجى مراجعة صندوق الوارد (والبريد المزعج) والتحقق من بريدك.';
 
   @override
   String get errorUnauthorized =>
-      'Invalid email or password. Please try again.';
+      'البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.';
 
   @override
   String get errorForbidden =>
-      'This account is not allowed to login yet. Please contact support.';
+      'لا يُسمح لهذا الحساب بتسجيل الدخول بعد. يرجى التواصل مع الدعم.';
 
   @override
   String get errorAccountDoesNotExist => 'هذا الحساب غير موجود.';
@@ -184,73 +184,73 @@ class AppLocalizationsAr extends AppLocalizations {
   String get errorAccountSuspended => 'تم تعليق حسابك.';
 
   @override
-  String get errorNetwork => 'Network error. Please try again later.';
+  String get errorNetwork => 'خطأ في الشبكة. يرجى المحاولة مرة أخرى لاحقاً.';
 
   @override
   String errorRoleMismatch(String role, String targetRole) {
-    return 'This email is registered as a $role, not a $targetRole. Please sign in from the correct portal or register a new account.';
+    return 'هذا البريد الإلكتروني مسجل كـ $role، وليس كـ $targetRole. يرجى تسجيل الدخول من البوابة الصحيحة أو إنشاء حساب جديد.';
   }
 
   @override
   String get errorOnboardingNeeded =>
-      'Account needs onboarding. Please complete your registration profile.';
+      'الحساب يحتاج إلى إعداد. يرجى إكمال ملف تعريف التسجيل.';
 
   @override
-  String get errorLoginNoToken => 'Login failed: No token returned.';
+  String get errorLoginNoToken => 'فشل تسجيل الدخول: لم يتم إرجاع أي رمز.';
 
   @override
   String get infoVerificationResent =>
-      'Verification email resent! Please check your inbox (and spam).';
+      'تم إعادة إرسال بريد التحقق! يرجى مراجعة صندوق الوارد (والبريد المزعج).';
 
   @override
-  String get errorResendFailed => 'Couldn\'t resend verification email.';
+  String get errorResendFailed => 'تعذّر إعادة إرسال بريد التحقق.';
 
   @override
   String errorResendException(String error) {
-    return 'Error resending email: $error';
+    return 'خطأ في إعادة إرسال البريد: $error';
   }
 
   @override
-  String get labelAlreadyHaveAccount => 'Already have an account? ';
+  String get labelAlreadyHaveAccount => 'لديك حساب بالفعل؟ ';
 
   @override
-  String get btnSignUp => 'Sign up';
+  String get btnSignUp => 'إنشاء حساب';
 
   @override
-  String get labelNoAccount => 'Don\'t have an account? ';
+  String get labelNoAccount => 'ليس لديك حساب؟ ';
 
   @override
-  String get dialogAlmostThere => 'Almost there!';
+  String get dialogAlmostThere => 'على وشك الانتهاء!';
 
   @override
   String get infoRegistrationSuccess =>
-      'Registration successful.\n\nPlease check your email inbox (and spam) and verify your email to continue.';
+      'تم التسجيل بنجاح.\n\nيرجى مراجعة صندوق الوارد (والبريد المزعج) والتحقق من بريدك الإلكتروني للمتابعة.';
 
   @override
-  String get btnOkay => 'Okay';
+  String get btnOkay => 'حسناً';
 
   @override
   String errorRegistrationFailed(String error) {
-    return 'Registration failed (exception): $error';
+    return 'فشل التسجيل (استثناء): $error';
   }
 
   @override
-  String get errorAgreeTerms => 'You must agree to terms of service.';
+  String get errorAgreeTerms => 'يجب الموافقة على شروط الخدمة.';
 
   @override
-  String get errorInvalidEmail => 'Invalid email format';
+  String get errorInvalidEmail => 'صيغة البريد الإلكتروني غير صحيحة';
 
   @override
-  String get errorPasswordsNotMatch => 'Passwords do not match';
+  String get errorPasswordsNotMatch => 'كلمتا المرور غير متطابقتين';
 
   @override
-  String get btnFacebook => 'Facebook';
+  String get btnFacebook => 'فيسبوك';
 
   @override
-  String get labelAlreadyAccount => 'Already have an account? ';
+  String get labelAlreadyAccount => 'لديك حساب بالفعل؟ ';
 
   @override
-  String get btnSignInSmall => 'Sign in';
+  String get btnSignInSmall => 'تسجيل الدخول';
 
   @override
   String get labelDescription => 'الوصف';

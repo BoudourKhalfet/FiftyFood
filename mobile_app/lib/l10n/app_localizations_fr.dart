@@ -170,15 +170,15 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get errorEmailNotVerified =>
-      'You must verify your email before you can continue. Please check your inbox (and spam) and verify your email.';
+      'Vous devez vérifier votre e-mail avant de continuer. Veuillez consulter votre boîte de réception (et les spams) et vérifier votre e-mail.';
 
   @override
   String get errorUnauthorized =>
-      'Invalid email or password. Please try again.';
+      'E-mail ou mot de passe invalide. Veuillez réessayer.';
 
   @override
   String get errorForbidden =>
-      'This account is not allowed to login yet. Please contact support.';
+      'Ce compte n\'est pas encore autorisé à se connecter. Veuillez contacter le support.';
 
   @override
   String get errorAccountDoesNotExist => 'Ce compte n\'existe pas.';
@@ -187,73 +187,76 @@ class AppLocalizationsFr extends AppLocalizations {
   String get errorAccountSuspended => 'Votre compte est suspendu.';
 
   @override
-  String get errorNetwork => 'Network error. Please try again later.';
+  String get errorNetwork => 'Erreur réseau. Veuillez réessayer plus tard.';
 
   @override
   String errorRoleMismatch(String role, String targetRole) {
-    return 'This email is registered as a $role, not a $targetRole. Please sign in from the correct portal or register a new account.';
+    return 'Cet e-mail est enregistré en tant que $role, pas $targetRole. Veuillez vous connecter depuis le bon portail ou créer un nouveau compte.';
   }
 
   @override
   String get errorOnboardingNeeded =>
-      'Account needs onboarding. Please complete your registration profile.';
+      'Le compte nécessite une configuration. Veuillez compléter votre profil d\'inscription.';
 
   @override
-  String get errorLoginNoToken => 'Login failed: No token returned.';
+  String get errorLoginNoToken =>
+      'Échec de la connexion : aucun jeton retourné.';
 
   @override
   String get infoVerificationResent =>
-      'Verification email resent! Please check your inbox (and spam).';
+      'E-mail de vérification renvoyé ! Veuillez consulter votre boîte de réception (et les spams).';
 
   @override
-  String get errorResendFailed => 'Couldn\'t resend verification email.';
+  String get errorResendFailed =>
+      'Impossible de renvoyer l\'e-mail de vérification.';
 
   @override
   String errorResendException(String error) {
-    return 'Error resending email: $error';
+    return 'Erreur lors du renvoi de l\'e-mail : $error';
   }
 
   @override
-  String get labelAlreadyHaveAccount => 'Already have an account? ';
+  String get labelAlreadyHaveAccount => 'Vous avez déjà un compte ? ';
 
   @override
-  String get btnSignUp => 'Sign up';
+  String get btnSignUp => 'S\'inscrire';
 
   @override
-  String get labelNoAccount => 'Don\'t have an account? ';
+  String get labelNoAccount => 'Vous n\'avez pas de compte ? ';
 
   @override
-  String get dialogAlmostThere => 'Almost there!';
+  String get dialogAlmostThere => 'Presque là !';
 
   @override
   String get infoRegistrationSuccess =>
-      'Registration successful.\n\nPlease check your email inbox (and spam) and verify your email to continue.';
+      'Inscription réussie.\n\nVeuillez consulter votre boîte de réception (et les spams) et vérifier votre e-mail pour continuer.';
 
   @override
-  String get btnOkay => 'Okay';
+  String get btnOkay => 'D\'accord';
 
   @override
   String errorRegistrationFailed(String error) {
-    return 'Registration failed (exception): $error';
+    return 'Échec de l\'inscription (exception) : $error';
   }
 
   @override
-  String get errorAgreeTerms => 'You must agree to terms of service.';
+  String get errorAgreeTerms =>
+      'Vous devez accepter les conditions d\'utilisation.';
 
   @override
-  String get errorInvalidEmail => 'Invalid email format';
+  String get errorInvalidEmail => 'Format d\'e-mail invalide';
 
   @override
-  String get errorPasswordsNotMatch => 'Passwords do not match';
+  String get errorPasswordsNotMatch => 'Les mots de passe ne correspondent pas';
 
   @override
   String get btnFacebook => 'Facebook';
 
   @override
-  String get labelAlreadyAccount => 'Already have an account? ';
+  String get labelAlreadyAccount => 'Vous avez déjà un compte ? ';
 
   @override
-  String get btnSignInSmall => 'Sign in';
+  String get btnSignInSmall => 'Se connecter';
 
   @override
   String get labelDescription => 'Description';

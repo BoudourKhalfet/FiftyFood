@@ -239,6 +239,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
         final orderDetails = widget.orderDetails;
         final sessionData = await PaymentService.createStripeCheckoutSession(
+          orderId: widget.orderId.isNotEmpty ? widget.orderId : null,
           restaurantId: orderDetails['restaurantId'] as String,
           offerId: orderDetails['offerId'] as String,
           items: orderDetails['items'] as Map<String, dynamic>,

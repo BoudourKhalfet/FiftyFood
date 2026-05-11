@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../api/api_service.dart';
@@ -136,12 +137,37 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
   String _payoutMethodLabel() {
     final method = _profile?['payoutMethod']?.toString();
     if (method == null || method.isEmpty) return 'Not set';
-    return method;
+    switch (method) {
+      case 'BANK_TRANSFER':
+        return 'Bank Transfer';
+      case 'PAYPAL':
+        return 'PayPal';
+      default:
+        return method;
+    }
   }
 
   String _payoutDetailsLabel() {
     final details = _profile?['payoutDetails'];
     if (details == null) return 'Not set';
+    if (details is Map) {
+      // Check if PayPal
+      final paypalEmail = details['paypalEmail']?.toString() ?? '';
+      if (paypalEmail.isNotEmpty) {
+        return paypalEmail;
+      }
+      // Bank transfer
+      final accountHolder = details['accountHolder']?.toString() ?? '';
+      final bankName = details['bankName']?.toString() ?? '';
+      final iban = details['iban']?.toString() ?? '';
+      final maskedIban = iban.length >= 4
+          ? '•••• ${iban.substring(iban.length - 4)}'
+          : '••••';
+      if (accountHolder.isNotEmpty) {
+        return '$accountHolder\n$bankName · $maskedIban';
+      }
+      return bankName.isNotEmpty ? '$bankName · $maskedIban' : maskedIban;
+    }
     final text = details.toString().trim();
     return text.isEmpty ? 'Not set' : text;
   }
@@ -769,10 +795,25 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
   }
 
   Future<void> _openPaymentDialog() async {
-    String? selectedMethod = _profile?['payoutMethod']?.toString();
-    final detailsController = TextEditingController(
-      text: _profile?['payoutDetails']?.toString() ?? '',
-    );
+    // Default to BANK_TRANSFER if null or invalid value
+    final validMethods = ['BANK_TRANSFER', 'PAYPAL'];
+    final rawMethod = _profile?['payoutMethod']?.toString();
+    String? selectedMethod = validMethods.contains(rawMethod) ? rawMethod : 'BANK_TRANSFER';
+    final accountHolderController = TextEditingController();
+    final bankNameController = TextEditingController();
+    final ibanController = TextEditingController();
+    final paypalEmailController = TextEditingController();
+
+    // Parse existing payout details if available
+    final existingDetails = _profile?['payoutDetails'];
+    if (existingDetails is Map) {
+      accountHolderController.text = existingDetails['accountHolder']?.toString() ?? '';
+      bankNameController.text = existingDetails['bankName']?.toString() ?? '';
+      ibanController.text = existingDetails['iban']?.toString() ?? '';
+      paypalEmailController.text = existingDetails['paypalEmail']?.toString() ?? '';
+    } else if (existingDetails is String && existingDetails.isNotEmpty) {
+      accountHolderController.text = existingDetails;
+    }
 
     await showDialog<void>(
       context: context,
@@ -789,6 +830,7 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     DropdownButtonFormField<String>(
                       value: selectedMethod,
@@ -801,22 +843,50 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
                           child: Text('Bank Transfer'),
                         ),
                         DropdownMenuItem(
-                          value: 'MOBILE_WALLET',
-                          child: Text('Mobile Wallet'),
+                          value: 'PAYPAL',
+                          child: Text('PayPal'),
                         ),
-                        DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                        DropdownMenuItem(value: 'OTHER', child: Text('Other')),
                       ],
                       onChanged: (value) =>
                           setLocalState(() => selectedMethod = value),
                     ),
-                    TextField(
-                      controller: detailsController,
-                      decoration: const InputDecoration(
-                        labelText: 'Payment Details',
+                    const SizedBox(height: 16),
+                    if (selectedMethod == 'BANK_TRANSFER') ...[
+                      TextField(
+                        controller: accountHolderController,
+                        decoration: const InputDecoration(
+                          labelText: 'Account Holder Name',
+                          hintText: 'Full name on account',
+                        ),
                       ),
-                      maxLines: 3,
-                    ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: bankNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Bank Name',
+                          hintText: 'e.g. Attijari Bank',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: ibanController,
+                        decoration: const InputDecoration(
+                          labelText: 'IBAN / Account Number',
+                          hintText: 'TN59 1234 5678 9012 3456 7890 1234',
+                        ),
+                        keyboardType: TextInputType.text,
+                      ),
+                    ],
+                    if (selectedMethod == 'PAYPAL') ...[
+                      TextField(
+                        controller: paypalEmailController,
+                        decoration: const InputDecoration(
+                          labelText: 'PayPal Email',
+                          hintText: 'email@example.com',
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -831,13 +901,42 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
                   onPressed: saving
                       ? null
                       : () async {
+                          // Validate fields
+                          if (selectedMethod == 'BANK_TRANSFER') {
+                            if (accountHolderController.text.trim().isEmpty ||
+                                ibanController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please fill account holder name and IBAN.'),
+                                ),
+                              );
+                              return;
+                            }
+                          } else if (selectedMethod == 'PAYPAL') {
+                            if (paypalEmailController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please fill PayPal email.'),
+                                ),
+                              );
+                              return;
+                            }
+                          }
+
                           setLocalState(() => saving = true);
                           try {
+                            final paymentDetails = selectedMethod == 'PAYPAL'
+                                ? {'paypalEmail': paypalEmailController.text.trim()}
+                                : {
+                                    'accountHolder': accountHolderController.text.trim(),
+                                    'bankName': bankNameController.text.trim(),
+                                    'iban': ibanController.text.trim().replaceAll(' ', ''),
+                                  };
                             await ApiService.patch(
                               'livreur/onboarding/me/payment',
                               {
                                 'payoutMethod': selectedMethod,
-                                'payoutDetails': detailsController.text.trim(),
+                                'payoutDetails': paymentDetails,
                               },
                             );
                             if (!mounted) return;
@@ -1319,6 +1418,54 @@ class _DelivererProfilePageState extends State<DelivererProfilePage> {
               )
             : _buildContent(),
       ),
+    );
+  }
+}
+
+class _CardNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.replaceAll(' ', '');
+    if (text.length > 16) {
+      text = text.substring(0, 16);
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      buffer.write(text[i]);
+      if ((i + 1) % 4 == 0 && i != text.length - 1) {
+        buffer.write(' ');
+      }
+    }
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
+    );
+  }
+}
+
+class _ExpiryDateFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.replaceAll('/', '');
+    if (text.length > 4) {
+      text = text.substring(0, 4);
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      buffer.write(text[i]);
+      if (i == 1 && i != text.length - 1) {
+        buffer.write('/');
+      }
+    }
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
     );
   }
 }

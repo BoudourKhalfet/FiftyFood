@@ -10,6 +10,7 @@ import {
   FaSearch,
   FaTrash,
   FaPlus,
+  FaHistory,
 } from "react-icons/fa";
 import { StatusBadge } from "../components/StatusBadge";
 import { DelivererModal } from "../components/UsersViewModals/DelivererModal.tsx";
@@ -434,6 +435,12 @@ export default function Deliverers() {
                           }}
                         >
                           <FaEye className="text-gray-700" />
+                        </button>
+                        <button
+                          title="Transactions"
+                          onClick={() => navigate(`/admin/livreurs/${d.id}`)}
+                        >
+                          <FaHistory className="text-blue-600" />
                         </button>
                         {normalizedStatus === "pending" && (
                           <>

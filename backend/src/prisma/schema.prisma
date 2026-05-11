@@ -34,6 +34,7 @@ model RestaurantProfile {
   termsAcceptedAt                 DateTime?
   termsAcceptedName               String?
   avgRating                       Float?             @default(0)
+  commissionRate                  Float              @default(15)
   latitude                        Float?
   longitude                       Float?
   commissionRate                  Float              @default(15)
@@ -375,8 +376,10 @@ enum OwnershipType {
 
 enum PayoutMethod {
   BANK_TRANSFER
+  PAYPAL
   MOBILE_WALLET
   CASH
+  CREDIT_CARD
   OTHER
 }
 

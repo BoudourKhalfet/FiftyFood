@@ -564,16 +564,27 @@ export class RestaurantsService {
       }, 0);
     };
 
-    // Total stats
-    const totalOrderData = await this.prisma.order.aggregate({
-      where: { restaurantId: userId, status: { in: ['DELIVERED'] } },
-      _sum: { total: true },
+    // Helper to calculate net amount after commission (truncated)
+    const calculateNetAfterCommission = (orders: { total: number; deliveryFee: number | null }[]): number => {
+      const commissionRate = (profile.commissionRate ?? 15) / 100;
+      return orders.reduce((sum, order) => {
+        const orderPrice = order.total - (order.deliveryFee || 0);
+        const commission = Math.floor(orderPrice * commissionRate * 100) / 100; // Truncated to 2 decimals
+        return sum + (order.total - commission);
+      }, 0);
+    };
+
+    // Total stats - fetch all paid orders for net sales calculation
+    const totalCompletedOrdersData = await this.prisma.order.findMany({
+      where: { restaurantId: userId, status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] } },
+      select: { total: true, deliveryFee: true, items: true },
     });
-    const totalCompletedOrders = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: completedStatuses },
+    const totalNetSales = calculateNetAfterCommission(totalCompletedOrdersData);
+    const totalMealsSavedData = await this.prisma.order.findMany({
+      where: { restaurantId: userId, status: { in: ['PICKED_UP', 'DELIVERED'] } },
       select: { items: true },
     });
-    const totalMealsSaved = sumItemQuantities(totalCompletedOrders);
+    const totalMealsSaved = sumItemQuantities(totalMealsSavedData);
     const totalOrders = await this.prisma.order.count({
       where: { restaurantId: userId },
     });
@@ -581,16 +592,13 @@ export class RestaurantsService {
       where: { restaurantId: userId, status: 'ACTIVE', pickupDateTime: { gte: now } },
     });
 
-    // Last 7 days
-    const data7d = await this.prisma.order.aggregate({
-      where: { restaurantId: userId, status: { in: ['DELIVERED'] }, createdAt: { gte: d7ago } },
-      _sum: { total: true },
-      _count: { id: true },
-    });
+    // Last 7 days - fetch orders for net revenue calculation
     const completedOrders7d = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: completedStatuses, createdAt: { gte: d7ago } },
-      select: { items: true },
+      where: { restaurantId: userId, status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] }, createdAt: { gte: d7ago } },
+      select: { total: true, deliveryFee: true, items: true, id: true },
     });
+    const revenue7d = calculateNetAfterCommission(completedOrders7d);
+    const orders7d = completedOrders7d.length;
     const meals7d = sumItemQuantities(completedOrders7d);
     const completedOrdersPrev7d = await this.prisma.order.findMany({
       where: { restaurantId: userId, status: completedStatuses, createdAt: { gte: d14ago, lt: d7ago } },
@@ -599,11 +607,12 @@ export class RestaurantsService {
     const mealsPrev7d = sumItemQuantities(completedOrdersPrev7d);
 
     // Previous 7 days (for % change)
-    const dataPrev7d = await this.prisma.order.aggregate({
-      where: { restaurantId: userId, status: { in: ['DELIVERED'] }, createdAt: { gte: d14ago, lt: d7ago } },
-      _sum: { total: true },
-      _count: { id: true },
+    const completedOrdersPrev7dData = await this.prisma.order.findMany({
+      where: { restaurantId: userId, status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] }, createdAt: { gte: d14ago, lt: d7ago } },
+      select: { total: true, deliveryFee: true, items: true },
     });
+    const prevRevenue = calculateNetAfterCommission(completedOrdersPrev7dData);
+    const prevOrders = completedOrdersPrev7dData.length;
 
     // Avg rating: current 7d vs previous 7d from reviews
     const ratingCurr = await this.prisma.review.aggregate({
@@ -615,10 +624,6 @@ export class RestaurantsService {
       _avg: { rating: true },
     });
 
-    const revenue7d = data7d._sum?.total || 0;
-    const orders7d = data7d._count?.id || 0;
-    const prevRevenue = dataPrev7d._sum?.total || 0;
-    const prevOrders = dataPrev7d._count?.id || 0;
     const avgCurr = ratingCurr._avg?.rating ?? null;
     const avgPrev = ratingPrev._avg?.rating ?? null;
 
@@ -628,9 +633,9 @@ export class RestaurantsService {
       curr === null || prev === null ? 0 : Math.round((curr - prev) * 10) / 10;
 
     return {
-      totalSales: totalOrderData._sum?.total || 0,
+      totalSales: totalNetSales,
       totalOrders,
-      totalMealsSaved,
+      mealsSaved: totalMealsSaved,
       restaurantName: profile.restaurantName || '',
       avgRating: profile.avgRating || 0,
       activeOffers: activeOffersCount,

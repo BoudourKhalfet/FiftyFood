@@ -519,6 +519,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           _activeOffers = response['activeOffers'] ?? 0;
           _commissionRate = (response['commissionRate'] ?? 15).toDouble();
           _loadingStats = false;
+          _tabViews[0] = PartnerOffersTab(
+            key: _offersTabKey,
+            commissionRate: _commissionRate,
+          );
         });
       }
     } catch (e) {
@@ -1715,7 +1719,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               const SizedBox(height: 6),
                               TextField(
                                 keyboardType: TextInputType.number,
-                                onChanged: (v) => _originalPrice = v,
+                                onChanged: (v) {
+                                  modalSetState(() => _originalPrice = v);
+                                },
                                 decoration: modalInputDecoration('18.50'),
                               ),
                             ],
@@ -1738,7 +1744,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               const SizedBox(height: 6),
                               TextField(
                                 keyboardType: TextInputType.number,
-                                onChanged: (v) => _discountedPrice = v,
+                                onChanged: (v) {
+                                  modalSetState(() => _discountedPrice = v);
+                                },
                                 decoration: modalInputDecoration('6.90'),
                               ),
                             ],
@@ -1746,6 +1754,109 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         ),
                       ],
                     ),
+                    if (_originalPrice.isNotEmpty && _discountedPrice.isNotEmpty) ...[                    
+                      const SizedBox(height: 6),
+                      Builder(
+                        builder: (_) {
+                          final orig = double.tryParse(_originalPrice) ?? 0;
+                          final disc = double.tryParse(_discountedPrice) ?? 0;
+                          if (orig > 0 && disc > 0 && disc < orig) {
+                            final pct = ((orig - disc) / orig * 100).round();
+                            if (pct < 20) {
+                              return Text(
+                                '⚠️ Discount must be at least 20%',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.orange[700],
+                                ),
+                              );
+                            } else if (pct > 60) {
+                              return Text(
+                                '⚠️ Discount cannot exceed 60%',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.orange[700],
+                                ),
+                              );
+                            }
+                            return Text(
+                              '✅ $pct% discount applied',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF10B981),
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                    ],
+                    if (_discountedPrice.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (_) {
+                          final disc = double.tryParse(_discountedPrice) ?? 0;
+                          if (disc <= 0) return const SizedBox.shrink();
+                          final fee = disc * _commissionRate / 100;
+                          final payout = disc - fee;
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5F0),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: const Color(0xFF1F9D7A).withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  size: 16,
+                                  color: Color(0xFF1F9D7A),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: RichText(
+                                    text: TextSpan(
+                                      style: const TextStyle(fontSize: 13),
+                                      children: [
+                                        const TextSpan(
+                                          text: 'You will receive: ',
+                                          style: TextStyle(
+                                            color: Color(0xFF374151),
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text:
+                                              '€${payout.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            color: Color(0xFF1F9D7A),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text:
+                                              '  (after ${_commissionRate.toStringAsFixed(0)}% fee: −€${fee.toStringAsFixed(2)})',
+                                          style: const TextStyle(
+                                            color: Color(0xFF6B7280),
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
                     // Quantity & Pickup Time
@@ -1818,53 +1929,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                       modalSetState,
                     ),
                     const SizedBox(height: 18),
-
-                    // Discount validation feedback (optional, as before)
-                    if (_originalPrice.isNotEmpty &&
-                        _discountedPrice.isNotEmpty)
-                      Builder(
-                        builder: (_) {
-                          final orig = double.tryParse(_originalPrice) ?? 0;
-                          final disc = double.tryParse(_discountedPrice) ?? 0;
-                          if (orig > 0 && disc > 0 && disc < orig) {
-                            final pct = ((orig - disc) / orig * 100).round();
-                            if (pct < 10) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  '⚠️ Discount must be at least 10%',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.orange[700],
-                                  ),
-                                ),
-                              );
-                            } else if (pct > 90) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  '⚠️ Discount seems unrealistic (>90%)',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.orange[700],
-                                  ),
-                                ),
-                              );
-                            }
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                '✅ $pct% discount applied',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF10B981),
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        },
-                      ),
 
                     // Buttons
                     Row(

@@ -4,7 +4,7 @@ import { StripeService } from './services/stripe.service';
 import { KonnectService } from './services/konnect.service';
 import { PayPalService } from './services/paypal.service';
 import { OrderStatus } from '@prisma/client';
-import { OrdersService } from '../orders/orders.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PaymentsService {
@@ -15,7 +15,7 @@ export class PaymentsService {
     private stripeService: StripeService,
     private konnectService: KonnectService,
     private paypalService: PayPalService,
-    private ordersService: OrdersService,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async findAndAuthorizeOrder(orderId: string, userId: string) {
@@ -170,7 +170,7 @@ export class PaymentsService {
   }
 
   // =========================
-  // STRIPE CHECKOUT SESSION (no order yet — created after payment)
+  // STRIPE CHECKOUT SESSION
   // =========================
   async createStripeCheckoutSession(params: {
     clientId: string;
@@ -185,6 +185,7 @@ export class PaymentsService {
     email?: string;
     successUrl?: string;
     cancelUrl?: string;
+    orderId?: string;
   }) {
     const verifiedTotal = await this.getVerifiedTotal(params.offerId, params.items, params.deliveryFee);
 
@@ -199,11 +200,13 @@ export class PaymentsService {
         deliveryAddress: params.deliveryAddress,
         deliveryPhone: params.deliveryPhone,
         deliveryFee: params.deliveryFee,
+        orderId: params.orderId,
       },
       amount: verifiedTotal,
       email: params.email,
       successUrl: params.successUrl,
       cancelUrl: params.cancelUrl,
+      orderId: params.orderId,
     });
 
     return session;
@@ -221,10 +224,52 @@ export class PaymentsService {
     const confirmation = await this.stripeService.confirmCheckoutSession(sessionId);
 
     if (confirmation.status === 'paid') {
-      // For checkout session fallback, we don't have orderId, so we just return status
-      // The webhook will handle order creation
-    } else if (confirmation.status === 'unpaid') {
-      // Cannot update order status without orderId in this flow
+      let order = null;
+
+      // First: try to find order by ID from metadata (if pre-created)
+      if (confirmation.metadata?.orderId) {
+        order = await this.prisma.order.findUnique({
+          where: { id: confirmation.metadata.orderId },
+        });
+      }
+
+      // Second: try to find by stripeSessionId in paymentDetails (webhook created)
+      if (!order) {
+        order = await this.prisma.order.findFirst({
+          where: { paymentDetails: { path: ['stripeSessionId'], equals: sessionId } },
+        });
+      }
+
+      if (order) {
+        // If order is not confirmed yet, confirm it now (webhook might have missed it)
+        if (order.status !== 'CONFIRMED') {
+          this.logger.log(`Confirming order ${order.id} via Stripe polling`);
+          try {
+            await this.updateOrderStatus(order.id, 'CONFIRMED');
+          } catch (err) {
+            this.logger.error(`Failed to confirm order ${order.id}: ${err}`);
+            return { status: 'error', orderId: order.id, orderStatus: order.status };
+          }
+          // Refresh order to get updated status
+          const refreshed = await this.prisma.order.findUnique({ where: { id: order.id } });
+          return {
+            status: 'paid',
+            orderId: order.id,
+            orderStatus: refreshed?.status ?? 'CONFIRMED',
+            amount: confirmation.amount,
+          };
+        }
+        return {
+          status: 'paid',
+          orderId: order.id,
+          orderStatus: order.status,
+          amount: confirmation.amount,
+        };
+      }
+
+      // Payment succeeded but order not found/created
+      this.logger.warn(`Stripe payment paid but order not found for session ${sessionId}`);
+      return { status: 'order_not_found' };
     }
 
     return { status: confirmation.status };
@@ -379,11 +424,14 @@ export class PaymentsService {
       throw new BadRequestException('Invalid Stripe webhook signature');
     }
 
+    this.logger.log(`Stripe webhook received: ${event.type}`);
+
     switch (event.type) {
       case 'payment_intent.succeeded': {
         const intent = event.data.object;
         if (intent.metadata?.orderId) {
           // Order was pre-created — just confirm it
+          this.logger.log(`Order ${intent.metadata.orderId} confirmed via Stripe webhook (payment_intent)`);
           await this.updateOrderStatus(intent.metadata.orderId, 'CONFIRMED');
           await this.prisma.order.update({
             where: { id: intent.metadata.orderId },
@@ -395,27 +443,49 @@ export class PaymentsService {
             },
           });
         } else {
-          const existing = await this.prisma.order.findFirst({
-            where: { paymentDetails: { path: ['stripePaymentIntentId'], equals: intent.id } },
-          });
-          if (!existing) {
-            await this.createOrderFromSessionMetadata(
-              intent.metadata,
-              intent.id,
-              'stripePaymentIntentId',
-            );
-          }
+          this.logger.warn(`Stripe webhook: No orderId in payment_intent ${intent.id}`);
         }
         break;
       }
       case 'checkout.session.completed': {
         const session = event.data.object;
+        this.logger.log(`checkout.session.completed: payment_status=${session.payment_status}, metadata.orderId=${session.metadata?.orderId}`);
         if (session.payment_status === 'paid') {
-          const existing = await this.prisma.order.findFirst({
-            where: { paymentDetails: { path: ['stripeSessionId'], equals: session.id } },
-          });
-          if (!existing) {
-            await this.createOrderFromSessionMetadata(session.metadata, session.id);
+          // First: check if order was pre-created by orderId from metadata
+          let order = null;
+          if (session.metadata?.orderId) {
+            order = await this.prisma.order.findUnique({
+              where: { id: session.metadata.orderId },
+            });
+            this.logger.log(`Found order by metadata.orderId: ${order ? order.id : 'null'}`);
+          }
+
+          // Second: check by stripeSessionId in paymentDetails
+          if (!order) {
+            order = await this.prisma.order.findFirst({
+              where: { paymentDetails: { path: ['stripeSessionId'], equals: session.id } },
+            });
+            this.logger.log(`Found order by stripeSessionId: ${order ? order.id : 'null'}`);
+          }
+
+          if (!order) {
+            // No existing order found - this shouldn't happen with new flow
+            this.logger.warn(`Stripe webhook: No order found for session ${session.id}`);
+          } else if (order.status !== 'CONFIRMED') {
+            // Order exists but not confirmed - confirm it (will decrement quantity and send notification)
+            this.logger.log(`Order ${order.id} confirmed via Stripe webhook (checkout.session)`);
+            await this.updateOrderStatus(order.id, 'CONFIRMED');
+            // Update payment details separately
+            await this.prisma.order.update({
+              where: { id: order.id },
+              data: {
+                paymentDetails: {
+                  ...(order.paymentDetails as object),
+                  stripeSessionId: session.id,
+                  provider: 'stripe',
+                } as any,
+              },
+            });
           }
         }
         break;
@@ -425,46 +495,6 @@ export class PaymentsService {
     }
 
     return { received: true };
-  }
-
-  private async createOrderFromSessionMetadata(
-    metadata: any,
-    stripeRef: string,
-    refKey: 'stripeSessionId' | 'stripePaymentIntentId' = 'stripeSessionId',
-  ): Promise<{ id: string } | null> {
-    if (!metadata?.orderData) {
-      this.logger.warn(`Stripe ref ${stripeRef} missing orderData metadata`);
-      return null;
-    }
-
-    let orderData: any;
-    try {
-      orderData = JSON.parse(metadata.orderData);
-    } catch {
-      this.logger.error(`Failed to parse orderData from ${stripeRef}`);
-      return null;
-    }
-
-    try {
-      const order = await this.ordersService.createConfirmed({
-        clientId: orderData.clientId,
-        restaurantId: orderData.restaurantId,
-        offerId: orderData.offerId,
-        items: orderData.items,
-        total: orderData.total,
-        collectionMethod: orderData.collectionMethod ?? 'PICKUP',
-        deliveryAddress: orderData.deliveryAddress,
-        deliveryPhone: orderData.deliveryPhone,
-        deliveryFee: orderData.deliveryFee,
-        paymentMethod: 'CARD',
-        paymentDetails: { [refKey]: stripeRef, provider: 'stripe' },
-      });
-      this.logger.log(`Order ${order.id} created after Stripe payment ${stripeRef}`);
-      return order;
-    } catch (err) {
-      this.logger.error(`Failed to create order from ${stripeRef}: ${err}`);
-      return null;
-    }
   }
 
   // =========================
@@ -496,10 +526,57 @@ export class PaymentsService {
   // CORE STATUS UPDATE
   // =========================
   private async updateOrderStatus(orderId: string, orderStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING') {
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: orderStatus },
-    });
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) return;
+
+    // Only update if status is actually changing
+    if (order.status === orderStatus) return;
+
+    // When confirming, decrement offer quantity first
+    if (orderStatus === 'CONFIRMED') {
+      let quantityOrdered = 1;
+      try {
+        const parsed: any = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+        const mainItem = Array.isArray(parsed) ? parsed[0] : parsed;
+        if (typeof mainItem?.quantity === 'number') {
+          quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
+        }
+      } catch { /* default quantity 1 */ }
+
+      this.logger.log(`Decrementing offer ${order.offerId} quantity by ${quantityOrdered}`);
+      await this.prisma.$transaction(async (tx) => {
+        // Decrement offer quantity
+        const reserved = await tx.offer.updateMany({
+          where: { id: order.offerId, status: 'ACTIVE', quantity: { gte: quantityOrdered } },
+          data: { quantity: { decrement: quantityOrdered } },
+        });
+        if (reserved.count === 0) {
+          throw new BadRequestException('Offer no longer available');
+        }
+        this.logger.log(`Offer ${order.offerId} quantity decremented by ${quantityOrdered}`);
+        // Update order status
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'CONFIRMED' },
+        });
+        // Mark as sold out if quantity reaches 0
+        const soldOut = await tx.offer.updateMany({
+          where: { id: order.offerId, quantity: { lte: 0 } },
+          data: { status: 'SOLD_OUT' },
+        });
+        if (soldOut.count > 0) {
+          this.logger.log(`Offer ${order.offerId} marked as SOLD_OUT`);
+        }
+      });
+
+      this.logger.log(`Order ${orderId} confirmed - sending notification`);
+      void this.notificationsService.notifyOrderCreated(orderId);
+    } else {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: orderStatus },
+      });
+    }
   }
 
   // =========================

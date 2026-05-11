@@ -53,6 +53,45 @@
   "labelCategories": "الفئات",
   "btnJoinAsDeliverer": "انضم كعامل توصيل",
   "btnBackToHome": "← العودة للرئيسية",
+  "errorEmailNotVerified": "يجب التحقق من بريدك الإلكتروني قبل المتابعة. يرجى مراجعة صندوق الوارد (والبريد المزعج) والتحقق من بريدك.",
+  "errorUnauthorized": "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.",
+  "errorForbidden": "لا يُسمح لهذا الحساب بتسجيل الدخول بعد. يرجى التواصل مع الدعم.",
+  "errorNetwork": "خطأ في الشبكة. يرجى المحاولة مرة أخرى لاحقاً.",
+  "errorRoleMismatch": "هذا البريد الإلكتروني مسجل كـ {role}، وليس كـ {targetRole}. يرجى تسجيل الدخول من البوابة الصحيحة أو إنشاء حساب جديد.",
+  "@errorRoleMismatch": {
+    "placeholders": {
+      "role": { "type": "String" },
+      "targetRole": { "type": "String" }
+    }
+  },
+  "errorOnboardingNeeded": "الحساب يحتاج إلى إعداد. يرجى إكمال ملف تعريف التسجيل.",
+  "errorLoginNoToken": "فشل تسجيل الدخول: لم يتم إرجاع أي رمز.",
+  "infoVerificationResent": "تم إعادة إرسال بريد التحقق! يرجى مراجعة صندوق الوارد (والبريد المزعج).",
+  "errorResendFailed": "تعذّر إعادة إرسال بريد التحقق.",
+  "errorResendException": "خطأ في إعادة إرسال البريد: {error}",
+  "@errorResendException": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "labelAlreadyHaveAccount": "لديك حساب بالفعل؟ ",
+  "btnSignUp": "إنشاء حساب",
+  "labelNoAccount": "ليس لديك حساب؟ ",
+  "dialogAlmostThere": "على وشك الانتهاء!",
+  "infoRegistrationSuccess": "تم التسجيل بنجاح.\n\nيرجى مراجعة صندوق الوارد (والبريد المزعج) والتحقق من بريدك الإلكتروني للمتابعة.",
+  "btnOkay": "حسناً",
+  "errorRegistrationFailed": "فشل التسجيل (استثناء): {error}",
+  "@errorRegistrationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "errorAgreeTerms": "يجب الموافقة على شروط الخدمة.",
+  "errorInvalidEmail": "صيغة البريد الإلكتروني غير صحيحة",
+  "errorPasswordsNotMatch": "كلمتا المرور غير متطابقتين",
+  "btnFacebook": "فيسبوك",
+  "labelAlreadyAccount": "لديك حساب بالفعل؟ ",
+  "btnSignInSmall": "تسجيل الدخول",
   "labelDescription": "الوصف",
   "hintDescription": "مثال: كيس مفاجئات من المعكرونة، تحديد الشيف...",
   "btnSelectCategories": "حدد الفئات",

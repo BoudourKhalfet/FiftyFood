@@ -2,71 +2,45 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmbeddingService } from './embedding.service';
 
-/**
- * Hybrid Recommendation Engine
- *
- * Combines:
- * 1. Collaborative filtering (AI)  — "clients who ordered similar offers also liked …"
- * 2. Semantic similarity (NLP/AI)  — cosine similarity between client taste vector and offer embeddings
- * 3. Implicit interest tracking    — offer/restaurant views boost similar items
- * 4. Price sensitivity             — matches client's typical spending range
- * 5. Exploration factor            — surfaces unseen restaurants for discovery
- * 6. Rule-based scoring            — cuisine preferences, proximity, rating, discount
- *
- * Embeddings: sentence-transformers/all-MiniLM-L6-v2 via Hugging Face Inference API (free).
- */
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface ScoredOffer {
   offer: Record<string, any>;
   score: number;
   reasons: string[];
+
+  primaryFactors?: string[];
+  secondaryFactors?: string[];
+  confidence?: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 interface ClientSignals {
   cuisinePreferences: string[];
-  orderedCategories: Map<string, number>;   // category → order count
-  orderedRestaurants: Map<string, number>;  // restaurantId → order count
+  orderedCategories: Map<string, number>;   
+  orderedRestaurants: Map<string, number>; 
   orderedOfferIds: Set<string>;
   latitude: number | null;
   longitude: number | null;
-  // Implicit interest signals
-  viewedCategories: Map<string, number>;    // category → view count
-  viewedRestaurants: Map<string, number>;   // restaurantId → view count
+
+  viewedCategories: Map<string, number>;  
+  viewedRestaurants: Map<string, number>;   
   viewedOfferIds: Set<string>;
-  // Price sensitivity
+
   avgOrderPrice: number | null;
-  // Semantic taste vector (average of ordered offer embeddings)
-  tasteVector: number[] | null;
+  tasteVector: number[] | null;             
 }
 
-// ---------------------------------------------------------------------------
-// Weights (tunable) — must sum to 1.0
-// ---------------------------------------------------------------------------
+
+
 
 const W = {
-  // --- AI: collaborative filtering ---
-  COLLABORATIVE:        0.20,  // item-based collaborative filtering
-  // --- AI: semantic NLP similarity ---
-  SEMANTIC_SIMILARITY:  0.16,  // cosine similarity between client taste vector and offer embedding
-  // --- Order history category match ---
-  HISTORY_CAT_MATCH:    0.06,  // offer category ∩ categories from past orders (log-weighted)
-  // --- Implicit interest ---
-  VIEWED_CATEGORY:      0.08,  // offer category matches recently viewed categories
-  VIEWED_RESTAURANT:    0.07,  // offer from a restaurant the client browsed
-  // --- Price sensitivity ---
-  PRICE_MATCH:          0.07,  // offer price close to client's typical spending
-  // --- Rule-based ---
-  CUISINE_PREF_MATCH:   0.20,  // offer category ∩ client cuisinePreferences
-  RESTAURANT_REPEAT:    0.05,  // client has ordered from this restaurant before
-  PROXIMITY:            0.04,  // closer = higher
-  RATING:               0.05,  // restaurant avgRating
-  DISCOUNT:             0.01,  // higher discount % = higher
-  // --- Exploration ---
-  EXPLORATION:          0.01,  // subtle nudge for undiscovered restaurants
+  COLLABORATIVE:  0.15,  // users-who-ordered-similarly
+  SEMANTIC:       0.25,  // embedding cosine similarity
+  CUISINE_PREF:   0.24,  // explicit cuisine preferences
+  VIEWED:         0.10,  // viewed categories/restaurants
+  PRICE:          0.10,  // price proximity to user average
+  PROXIMITY:      0.01,  // geographic distance
+  RATING:         0.10,  // restaurant quality rating
+  DISCOUNT:       0.05,  // promotional discount
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -124,6 +98,22 @@ export class RecommendationService {
     }
   }
 
+  private buildExplanation(score: number, reasons: string[]) {
+  const primaryFactors = reasons.slice(0, 3);
+  const secondaryFactors = reasons.slice(3);
+
+  let confidence: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+
+  if (score >= 0.7) confidence = 'HIGH';
+  else if (score >= 0.4) confidence = 'MEDIUM';
+
+  return {
+    primaryFactors,
+    secondaryFactors,
+    confidence,
+  };
+}
+
   // =======================================================================
   // Public API — Personalised recommendations
   // =======================================================================
@@ -136,27 +126,42 @@ export class RecommendationService {
     const offers = await this.fetchActiveOffers();
     if (!offers.length) return [];
 
-    // 2. Build client signal profile (orders + views + price)
+      const vec = await this.embeddingService.embed("test pizza pasta");
+  console.log("EMBED RESULT:", vec);
+
+    // 2. Build client signal profile
     const signals = await this.buildClientSignals(clientId);
 
-    // 3. Collaborative filtering: find offers liked by similar clients
-    const collaborativeScores = await this.computeCollaborativeScores(
-      clientId,
-      signals,
-      offers,
-    );
+    // 3. Compute collaborative scores (simple co-occurrence)
+    const collaborativeScores = await this.computeCollaborativeScores(clientId, signals, offers);
 
-    // 4. Score every offer
+    // 4. Score every offer (order-independent)
     const scored = offers.map((offer) =>
       this.scoreOffer(offer, signals, collaborativeScores),
     );
 
-    // 5. Sort descending by score, cap at limit
+    // 5. Sort descending by score
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit).map(({ offer, score, reasons }) => {
-      const { descriptionEmbedding: _emb, ...offerWithoutEmbedding } = offer;
-      return { offer: offerWithoutEmbedding, score, reasons };
-    });
+
+    // 6. Apply diversity penalty (single-pass post-ranking adjustment)
+    this.applyDiversityPenalty(scored, limit);
+
+    // Logging
+    this.logger.debug(
+      `Recommendations for ${clientId}: ${offers.length} offers, collabSignals=${collaborativeScores.size}`,
+    );
+
+    // Return without embeddings and without scoreBreakdown (simplified for academic clarity)
+    return scored.slice(0, limit).map(({ offer, score, reasons }, index) => {
+  const { descriptionEmbedding: _emb, ...offerWithoutEmbedding } = offer;
+
+  return {
+    rank: index + 1,
+    offer: offerWithoutEmbedding,
+    score,
+    reasons,
+  };
+});
   }
 
   // -----------------------------------------------------------------------
@@ -169,7 +174,23 @@ export class RecommendationService {
         status: 'ACTIVE',
         quantity: { gt: 0 },
       },
-      include: {
+      select: {
+        id: true,
+        description: true,
+        descriptionEmbedding: true,
+        originalPrice: true,
+        discountedPrice: true,
+        quantity: true,
+        pickupTime: true,
+        pickupDateTime: true,
+        categories: true,
+        restaurantId: true,
+        createdAt: true,
+        updatedAt: true,
+        status: true,
+        visibility: true,
+        deliveryAvailable: true,
+        photoUrl: true,
         restaurant: {
           select: {
             id: true,
@@ -236,21 +257,25 @@ export class RecommendationService {
         (orderedRestaurants.get(order.restaurantId) ?? 0) + 1,
       );
       totalSpent += order.total ?? 0;
-      // Note: offer categories would need to be fetched via offerId relationship
-      // For now, we'll skip category aggregation from orders
-      // TODO: Add offer relationship to order or fetch offer data separately
+      // Aggregate categories from order.offer.categories
+      const orderCategories = (order as any).offer?.categories as string[] | undefined;
+      if (orderCategories && Array.isArray(orderCategories)) {
+        for (const cat of orderCategories) {
+          orderedCategories.set(cat, (orderedCategories.get(cat) ?? 0) + 1);
+        }
+      }
     }
 
     const avgOrderPrice = orders.length > 0 ? totalSpent / orders.length : null;
 
     // --- Semantic taste vector: average embedding of ordered offers ---
-    // Note: offer embeddings would need to be fetched via offerId relationship
-    // For now, we'll use empty embeddings since offer data is not directly available
-    const orderedEmbeddings: number[][] = [];
+    const orderedEmbeddings: number[][] = orders
+      .map((o) => (o as any).offer?.descriptionEmbedding as number[] | undefined)
+      .filter((emb): emb is number[] => Array.isArray(emb) && emb.length > 0);
 
     const tasteVector = this.embeddingService.averageVectors(orderedEmbeddings);
 
-    // --- Implicit interest: recent views (last 30 days) ---
+    // --- Implicit interest: recent views (last 30 days, simple counts only) ---
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const interactions = await this.prisma.clientInteraction.findMany({
@@ -272,6 +297,7 @@ export class RecommendationService {
     const viewedRestaurants = new Map<string, number>();
     const viewedOfferIds = new Set<string>();
 
+    // Simple count-based accumulation (no time decay for academic clarity)
     for (const interaction of interactions) {
       if (interaction.interactionType === 'OFFER_VIEW' && interaction.offerId) {
         viewedOfferIds.add(interaction.offerId);
@@ -357,7 +383,7 @@ export class RecommendationService {
   }
 
   // -----------------------------------------------------------------------
-  // Score an individual offer
+  // Score an individual offer (academic simplified version)
   // -----------------------------------------------------------------------
 
   private scoreOffer(
@@ -372,102 +398,72 @@ export class RecommendationService {
     const restaurantId = offer.restaurantId as string;
     const restaurantProfile = (offer as any).restaurant?.restaurantProfile;
 
-    // ---- COLLABORATIVE FILTERING (AI) ----
+    // Simple threshold for including a reason (contribution > 5% of its weight)
+    const REASON_THRESHOLD = 0.05;
+
+    // ---- 1. COLLABORATIVE FILTERING ----
     const collabRaw = collaborativeScores.get(offer.id as string) ?? 0;
     if (collabRaw > 0) {
-      const collabNorm = collabRaw / (collabRaw + 5);
-      score += W.COLLABORATIVE * collabNorm;
-      reasons.push('Popular with similar customers');
+      // Simple normalization: count / (count + 5)
+      const collabScore = collabRaw / (collabRaw + 5);
+      score += W.COLLABORATIVE * collabScore;
+      if (collabScore > REASON_THRESHOLD) reasons.push('Popular with similar customers');
     }
 
-    // ---- SEMANTIC SIMILARITY (NLP/AI) ----
+    // ---- 2. SEMANTIC SIMILARITY ----
     const offerEmbedding: number[] | undefined = (offer as any).descriptionEmbedding;
-    if (
-      signals.tasteVector &&
-      Array.isArray(offerEmbedding) &&
-      offerEmbedding.length > 0
-    ) {
+    const hasValidEmbedding = Array.isArray(offerEmbedding) && offerEmbedding.length > 0;
+
+    if (signals.tasteVector && hasValidEmbedding) {
+      // Cosine similarity normalized to [0,1]
       const similarity = this.embeddingService.cosineSimilarity(
         signals.tasteVector,
         offerEmbedding,
       );
-      // similarity ∈ [-1, 1] for MiniLM; normalise to [0, 1]
       const normSim = (similarity + 1) / 2;
-      score += W.SEMANTIC_SIMILARITY * normSim;
-      if (normSim >= 0.75) reasons.push('Closely matches your taste profile');
-      else if (normSim >= 0.55) reasons.push('Similar to what you usually enjoy');
-    }
-
-    // ---- IMPLICIT INTEREST: viewed categories ----
-    let viewedCatScore = 0;
-    for (const cat of categories) {
-      const views = signals.viewedCategories.get(cat) ?? 0;
-      if (views > 0) {
-        viewedCatScore += Math.log2(views + 1);
+      score += W.SEMANTIC * normSim;
+      if (normSim > 0.7) reasons.push('Matches your taste profile');
+    } else if (signals.tasteVector && !hasValidEmbedding) {
+      // Simple fallback: ordered category overlap (capped at 0.5)
+      const orderedOverlap = categories.filter(c => signals.orderedCategories.has(c)).length;
+      if (categories.length > 0) {
+        const fallbackScore = Math.min(orderedOverlap / categories.length, 0.5);
+        score += W.SEMANTIC * fallbackScore; // Use same weight slot
       }
     }
-    if (viewedCatScore > 0) {
-      const maxViewCat = categories.length * Math.log2(20);
-      const normViewCat = Math.min(viewedCatScore / Math.max(maxViewCat, 1), 1);
-      score += W.VIEWED_CATEGORY * normViewCat;
-      reasons.push('Similar to offers you\'ve been browsing');
+
+    // ---- 3. CUISINE PREFERENCES ----
+    const prefMatches = categories.filter(c => signals.cuisinePreferences.includes(c));
+    if (prefMatches.length > 0 && signals.cuisinePreferences.length > 0) {
+      const matchRatio = prefMatches.length / signals.cuisinePreferences.length;
+      score += W.CUISINE_PREF * Math.min(matchRatio, 1);
+      if (matchRatio > REASON_THRESHOLD) reasons.push(`Matches preferences: ${prefMatches.join(', ')}`);
     }
 
-    // ---- IMPLICIT INTEREST: viewed restaurant ----
-    const restaurantViews = signals.viewedRestaurants.get(restaurantId) ?? 0;
-    if (restaurantViews > 0) {
-      const viewRestNorm = Math.min(restaurantViews / 5, 1);
-      score += W.VIEWED_RESTAURANT * viewRestNorm;
-      reasons.push('From a restaurant you checked out');
+    // ---- 4. VIEWED CATEGORIES (simple count-based) ----
+    let viewCount = 0;
+    for (const cat of categories) {
+      viewCount += signals.viewedCategories.get(cat) ?? 0;
+    }
+    if (viewCount > 0) {
+      // Binary boost: any views = full weight contribution
+      score += W.VIEWED * Math.min(viewCount / 3, 1); // Max at 3 views
+      if (viewCount >= 2) reasons.push('Based on your browsing');
     }
 
-    // ---- PRICE SENSITIVITY ----
+    // ---- 5. PRICE SENSITIVITY ----
     if (signals.avgOrderPrice != null) {
       const offerPrice = (offer.discountedPrice as number) ?? 0;
       if (offerPrice > 0) {
-        // Score higher when offer price is close to client's avg spending
         const diff = Math.abs(offerPrice - signals.avgOrderPrice);
         const range = Math.max(signals.avgOrderPrice * 0.5, 1);
         const priceScore = Math.max(0, 1 - diff / range);
-        score += W.PRICE_MATCH * priceScore;
-        if (priceScore >= 0.7) reasons.push('In your usual price range');
+        score += W.PRICE * priceScore;
+        if (priceScore > 0.7) reasons.push('In your price range');
       }
     }
 
-    // ---- CUISINE PREFERENCE MATCH ----
-    const prefMatches = categories.filter((c) =>
-      signals.cuisinePreferences.includes(c),
-    );
-    if (prefMatches.length > 0) {
-      const prefScore = Math.min(prefMatches.length / Math.max(signals.cuisinePreferences.length, 1), 1);
-      score += W.CUISINE_PREF_MATCH * prefScore;
-      reasons.push(`Matches your preferences: ${prefMatches.join(', ')}`);
-    }
-
-    // ---- ORDER HISTORY CATEGORY MATCH ----
-    let historyCatScore = 0;
-    for (const cat of categories) {
-      const count = signals.orderedCategories.get(cat) ?? 0;
-      if (count > 0) {
-        historyCatScore += Math.log2(count + 1);
-      }
-    }
-    if (historyCatScore > 0) {
-      const maxPossible = Math.log2(11); // log2(10+1) — single well-ordered category ceiling
-      const normHistoryScore = Math.min(historyCatScore / Math.max(maxPossible, 1), 1);
-      score += W.HISTORY_CAT_MATCH * normHistoryScore;
-      reasons.push('Similar to your past orders');
-    }
-
-    // ---- RESTAURANT REPEAT ----
-    const restaurantOrderCount = signals.orderedRestaurants.get(restaurantId) ?? 0;
-    if (restaurantOrderCount > 0) {
-      const repeatNorm = Math.min(restaurantOrderCount / 5, 1);
-      score += W.RESTAURANT_REPEAT * repeatNorm;
-      reasons.push('You\'ve ordered from this restaurant before');
-    }
-
-    // ---- PROXIMITY ----
+    // ---- 6. PROXIMITY ----
     if (
       signals.latitude != null &&
       signals.longitude != null &&
@@ -482,35 +478,107 @@ export class RecommendationService {
       );
       const proxScore = Math.max(0, 1 - distKm / 20);
       score += W.PROXIMITY * proxScore;
-      if (distKm <= 5) reasons.push('Nearby restaurant');
+      if (distKm <= 5) reasons.push('Nearby');
     }
 
-    // ---- RATING ----
+    // ---- 7. RATING ----
     const avgRating = (restaurantProfile?.avgRating as number) ?? 0;
     if (avgRating > 0) {
-      const ratingNorm = avgRating / 5;
-      score += W.RATING * ratingNorm;
+      const ratingScore = avgRating / 5;
+      score += W.RATING * ratingScore;
       if (avgRating >= 4) reasons.push('Highly rated');
     }
 
-    // ---- DISCOUNT ----
+    // ---- 8. DISCOUNT ----
     const original = (offer.originalPrice as number) ?? 0;
     const discounted = (offer.discountedPrice as number) ?? 0;
     if (original > 0) {
-      const discountPct = (original - discounted) / original;
-      score += W.DISCOUNT * discountPct;
-      if (discountPct >= 0.4) reasons.push('Great deal');
+      const discountScore = (original - discounted) / original;
+      score += W.DISCOUNT * discountScore;
+      if (discountScore >= 0.4) reasons.push('Great deal');
     }
 
-    // ---- EXPLORATION (discovery bonus) ----
-    const neverOrdered = !signals.orderedRestaurants.has(restaurantId);
-    const neverViewed = !signals.viewedRestaurants.has(restaurantId);
-    if (neverOrdered && neverViewed) {
-      score += W.EXPLORATION;
-      reasons.push('New restaurant to discover');
+    // ---- NEGATIVE SIGNALS (simplified flat penalties) ----
+    let penalty = 0;
+
+    // 1. Distance > 15km → -0.1
+    if (
+      signals.latitude != null &&
+      signals.longitude != null &&
+      restaurantProfile?.latitude != null &&
+      restaurantProfile?.longitude != null
+    ) {
+      const distKm = this.haversineKm(
+        signals.latitude,
+        signals.longitude,
+        restaurantProfile.latitude,
+        restaurantProfile.longitude,
+      );
+      if (distKm > 15) penalty += 0.1;
     }
 
-    return { offer, score: Math.round(score * 10000) / 10000, reasons };
+    // 2. Price > 2x average → -0.1
+    if (signals.avgOrderPrice != null && signals.avgOrderPrice > 0) {
+      const offerPrice = (offer.discountedPrice as number) ?? 0;
+      if (offerPrice > signals.avgOrderPrice * 2) penalty += 0.1;
+    }
+
+    // 3. Viewed but never ordered (≥3 views, 0 orders) → -0.05
+    const views = signals.viewedRestaurants.get(restaurantId) ?? 0;
+    const orders = signals.orderedRestaurants.get(restaurantId) ?? 0;
+    if (views >= 3 && orders === 0) penalty += 0.05;
+
+    // Apply penalties (capped at 0.2 total)
+    score *= (1 - Math.min(penalty, 0.2));
+
+    // Final bounds and NaN protection
+    score = Math.max(0, Math.min(1, score));
+    if (Number.isNaN(score)) score = 0;
+
+    this.logger.debug(`
+=== SCORE BREAKDOWN for offer ${offer.id} ===
+tasteVector: ${signals.tasteVector ? 'EXISTS' : 'NULL'}
+avgOrderPrice: ${signals.avgOrderPrice}
+userLat: ${signals.latitude}, userLon: ${signals.longitude}
+restaurantLat: ${restaurantProfile?.latitude}, restaurantLon: ${restaurantProfile?.longitude}
+cuisinePrefs: ${signals.cuisinePreferences}
+offerCategories: ${categories}
+prefMatches: ${categories.filter(c => signals.cuisinePreferences.includes(c))}
+viewCount: ${viewCount}
+orderedCategories: ${JSON.stringify([...signals.orderedCategories.entries()])}
+collabRaw: ${collaborativeScores.get(offer.id as string) ?? 0}
+hasEmbedding: ${hasValidEmbedding}
+FINAL SCORE: ${score}
+`);
+
+    return { offer, score: Math.round(score * 1000) / 1000, reasons };
+  }
+
+  // -----------------------------------------------------------------------
+  // Diversity re-ranking: apply additional penalty after initial sort
+  // -----------------------------------------------------------------------
+
+  private applyDiversityPenalty(scored: ScoredOffer[], topN: number): void {
+    // Track restaurant frequency in top N results
+    const restaurantCount = new Map<string, number>();
+    const diversityFactor = 0.15; // 15% penalty per duplicate
+
+    for (let i = 0; i < Math.min(scored.length, topN * 2); i++) {
+      const offer = scored[i].offer as any;
+      const restaurantId = offer.restaurantId as string;
+      const count = restaurantCount.get(restaurantId) ?? 0;
+
+      if (count > 0 && i < topN) {
+        // Apply penalty only to top N results
+        const penalty = Math.min(count * diversityFactor, 0.4); // Max 40% penalty
+        scored[i].score *= (1 - penalty);
+      }
+
+      restaurantCount.set(restaurantId, count + 1);
+    }
+
+    // Re-sort after diversity adjustment
+    scored.sort((a, b) => b.score - a.score);
   }
 
   // -----------------------------------------------------------------------

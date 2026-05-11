@@ -100,6 +100,7 @@ export class PaymentsController {
       email: dto.email,
       successUrl: dto.successUrl,
       cancelUrl: dto.cancelUrl,
+      orderId: dto.orderId,
     });
   }
 

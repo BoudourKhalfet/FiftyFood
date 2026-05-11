@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../api/auth_storage.dart';
 import '../../api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
   String? pendingEmail;
   String phone = "";
   String address = "";
+  String city = "";
   String? payoutMethod;
   dynamic payoutDetails;
   String? businessRegistrationUrl;
@@ -62,6 +64,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         pendingEmail = profileResp['pendingEmail']?.toString();
         phone = rest['phone'] ?? '';
         address = rest['address'] ?? '';
+        city = rest['city'] ?? '';
         payoutMethod = rest['payoutMethod']?.toString();
         payoutDetails = rest['payoutDetails'];
         businessRegistrationUrl = rest['businessRegistrationDocumentUrl'];
@@ -92,6 +95,8 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
     switch ((payoutMethod ?? '').toUpperCase()) {
       case 'BANK_TRANSFER':
         return 'Bank Transfer';
+      case 'PAYPAL':
+        return 'PayPal';
       case 'MOBILE_WALLET':
         return 'Mobile Wallet';
       case 'CASH':
@@ -107,18 +112,47 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
     final details = payoutDetails;
     if (details == null) return 'Not set';
     if (details is Map) {
-      return jsonEncode(details);
+      // Check if PayPal
+      final paypalEmail = details['paypalEmail']?.toString() ?? '';
+      if (paypalEmail.isNotEmpty) {
+        return paypalEmail;
+      }
+      // Bank transfer
+      final accountHolder = details['accountHolder']?.toString() ?? '';
+      final bankName = details['bankName']?.toString() ?? '';
+      final iban = details['iban']?.toString() ?? '';
+      final maskedIban = iban.length >= 4
+          ? '•••• ${iban.substring(iban.length - 4)}'
+          : '••••';
+      if (accountHolder.isNotEmpty) {
+        return '$accountHolder\n$bankName · $maskedIban';
+      }
+      return bankName.isNotEmpty ? '$bankName · $maskedIban' : maskedIban;
     }
     if (details is String && details.trim().isEmpty) return 'Not set';
     return details.toString();
   }
 
   Future<void> _showPaymentDialog() async {
-    final detailsController = TextEditingController(
-      text: _formatPayoutDetails(),
-    );
-    String? selectedMethod = payoutMethod;
+    // Default to BANK_TRANSFER if null or invalid value
+    final validMethods = ['BANK_TRANSFER', 'PAYPAL'];
+    String? selectedMethod = validMethods.contains(payoutMethod) ? payoutMethod : 'BANK_TRANSFER';
+    final accountHolderController = TextEditingController();
+    final bankNameController = TextEditingController();
+    final ibanController = TextEditingController();
+    final paypalEmailController = TextEditingController();
     bool saving = false;
+
+    // Parse existing payout details if available
+    final existingDetails = payoutDetails;
+    if (existingDetails is Map) {
+      accountHolderController.text = existingDetails['accountHolder']?.toString() ?? '';
+      bankNameController.text = existingDetails['bankName']?.toString() ?? '';
+      ibanController.text = existingDetails['iban']?.toString() ?? '';
+      paypalEmailController.text = existingDetails['paypalEmail']?.toString() ?? '';
+    } else if (existingDetails is String && existingDetails.isNotEmpty) {
+      accountHolderController.text = existingDetails;
+    }
 
     await showDialog<void>(
       context: context,
@@ -135,6 +169,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     DropdownButtonFormField<String>(
                       value: selectedMethod,
@@ -144,11 +179,9 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                           child: Text('Bank Transfer'),
                         ),
                         DropdownMenuItem(
-                          value: 'MOBILE_WALLET',
-                          child: Text('Mobile Wallet'),
+                          value: 'PAYPAL',
+                          child: Text('PayPal'),
                         ),
-                        DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                        DropdownMenuItem(value: 'OTHER', child: Text('Other')),
                       ],
                       onChanged: (value) => setLocalState(() {
                         selectedMethod = value;
@@ -157,13 +190,43 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                         labelText: 'Payment Method',
                       ),
                     ),
-                    TextField(
-                      controller: detailsController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Payment Details',
+                    const SizedBox(height: 16),
+                    if (selectedMethod == 'BANK_TRANSFER') ...[
+                      TextField(
+                        controller: accountHolderController,
+                        decoration: const InputDecoration(
+                          labelText: 'Account Holder Name',
+                          hintText: 'Full name on account',
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: bankNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Bank Name',
+                          hintText: 'e.g. Attijari Bank',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: ibanController,
+                        decoration: const InputDecoration(
+                          labelText: 'IBAN / Account Number',
+                          hintText: 'TN59 1234 5678 9012 3456 7890 1234',
+                        ),
+                        keyboardType: TextInputType.text,
+                      ),
+                    ],
+                    if (selectedMethod == 'PAYPAL') ...[
+                      TextField(
+                        controller: paypalEmailController,
+                        decoration: const InputDecoration(
+                          labelText: 'PayPal Email',
+                          hintText: 'email@example.com',
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -178,23 +241,40 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                   onPressed: saving
                       ? null
                       : () async {
-                          if (selectedMethod == null ||
-                              selectedMethod!.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please select a payment method.',
+                          // Validate fields
+                          if (selectedMethod == 'BANK_TRANSFER') {
+                            if (accountHolderController.text.trim().isEmpty ||
+                                ibanController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please fill account holder name and IBAN.'),
                                 ),
-                              ),
-                            );
-                            return;
+                              );
+                              return;
+                            }
+                          } else if (selectedMethod == 'PAYPAL') {
+                            if (paypalEmailController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please fill PayPal email.'),
+                                ),
+                              );
+                              return;
+                            }
                           }
 
                           setLocalState(() => saving = true);
                           try {
+                            final paymentDetails = selectedMethod == 'PAYPAL'
+                                ? {'paypalEmail': paypalEmailController.text.trim()}
+                                : {
+                                    'accountHolder': accountHolderController.text.trim(),
+                                    'bankName': bankNameController.text.trim(),
+                                    'iban': ibanController.text.trim().replaceAll(' ', ''),
+                                  };
                             await ApiService.patch('restaurants/me/payout', {
                               'payoutMethod': selectedMethod,
-                              'payoutDetails': detailsController.text.trim(),
+                              'payoutDetails': paymentDetails,
                             });
                             if (!mounted) return;
                             await _loadProfile();
@@ -591,6 +671,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                 _ProfileField(label: "Email", value: email),
                 _ProfileField(label: "Phone", value: phone),
                 _ProfileField(label: "Address", value: address),
+                _ProfileField(label: "City", value: city),
                 if (pendingEmail != null)
                   _ProfileField(label: "Pending Email", value: pendingEmail!),
               ],
@@ -843,6 +924,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
     final emailCtrl = TextEditingController(text: email);
     final phoneCtrl = TextEditingController(text: phone);
     final addressCtrl = TextEditingController(text: address);
+    final cityCtrl = TextEditingController(text: city);
     bool saving = false;
 
     showDialog(
@@ -919,6 +1001,11 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                       controller: addressCtrl,
                       decoration: fieldDecoration("Address"),
                     ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: cityCtrl,
+                      decoration: fieldDecoration("City"),
+                    ),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -930,11 +1017,13 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                                 final newEmail = emailCtrl.text.trim();
                                 final phone = phoneCtrl.text.trim();
                                 final address = addressCtrl.text.trim();
+                                final city = cityCtrl.text.trim();
                                 if (name.isEmpty ||
                                     newEmail.isEmpty ||
                                     !newEmail.contains('@') ||
                                     phone.isEmpty ||
-                                    address.isEmpty) {
+                                    address.isEmpty ||
+                                    city.isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -953,6 +1042,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                                       'restaurantName': name,
                                       'phone': phone,
                                       'address': address,
+                                      'city': city,
                                     },
                                     headers: {'Authorization': 'Bearer $token'},
                                   );
@@ -971,6 +1061,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                                     restaurantName = name;
                                     this.phone = phone;
                                     this.address = address;
+                                    this.city = city;
                                     if (emailChangeRequested) {
                                       pendingEmail = newEmail;
                                     }
@@ -1283,6 +1374,54 @@ class _ProfileField extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CardNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.replaceAll(' ', '');
+    if (text.length > 16) {
+      text = text.substring(0, 16);
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      buffer.write(text[i]);
+      if ((i + 1) % 4 == 0 && i != text.length - 1) {
+        buffer.write(' ');
+      }
+    }
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
+    );
+  }
+}
+
+class _ExpiryDateFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.replaceAll('/', '');
+    if (text.length > 4) {
+      text = text.substring(0, 4);
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      buffer.write(text[i]);
+      if (i == 1 && i != text.length - 1) {
+        buffer.write('/');
+      }
+    }
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
     );
   }
 }

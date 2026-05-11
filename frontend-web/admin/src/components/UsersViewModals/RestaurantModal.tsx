@@ -300,7 +300,7 @@ export function RestaurantModal({
           </InfoRow>
 
           {/* BANK TRANSFER */}
-          {restaurant.payoutMethod === "bank" && (
+          {restaurant.payoutMethod === "bank_transfer" && (
             <>
               <InfoRow icon={<FaRegFileAlt />} label="IBAN">
                 {restaurant.payoutIban || (
@@ -321,7 +321,7 @@ export function RestaurantModal({
           )}
 
           {/* PAYPAL */}
-          {restaurant.payoutMethod === "paypal" && (
+          {(restaurant.payoutMethod === "paypal" || restaurant.payoutMethod === "PAYPAL") && (
             <InfoRow icon={<FaEnvelope />} label="PayPal Email">
               {restaurant.payoutPaypalEmail || (
                 <span className="text-gray-400">N/A</span>
@@ -386,7 +386,7 @@ export function RestaurantModal({
           )}
 
           {/* CASH (if you support cash payout) */}
-          {restaurant.payoutMethod === "cash" && (
+          {restaurant.payoutMethod === "cash" || restaurant.payoutMethod === "CASH" && (
             <InfoRow icon={<FaRegFileAlt />} label="Details">
               <span>Cash — see accounting</span>
             </InfoRow>

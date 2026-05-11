@@ -492,6 +492,26 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
     }
   }
 
+  Future<void> _startFaceVerificationOnly() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => LivenessVerificationScreen(
+          cinFrontImage: _cinFrontImage,
+          cinNumber: _cinController.text.trim(),
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      setState(() => _faceVerified = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Face verification completed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
   Future<void> _onSubmit() async {
     // Check identity verification first
     if (!_cinVerified || !_faceVerified) {
@@ -727,7 +747,7 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                         child: TextFormField(
                           controller: _cinController,
                           decoration: InputDecoration(
-                            labelText: "CIN or Passport Number",
+                            labelText: "CIN",
                             border: const OutlineInputBorder(),
                             prefixIcon: const Icon(Icons.badge),
                             suffixIcon: (_cinVerified && _faceVerified)
@@ -783,7 +803,9 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                   ElevatedButton.icon(
                     onPressed: (_cinVerified && _faceVerified) || _loading || _cinVerifying
                         ? null
-                        : _startIdentityVerification,
+                        : _cinVerified
+                            ? _startFaceVerificationOnly
+                            : _startIdentityVerification,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: (_cinVerified && _faceVerified)

@@ -72,6 +72,7 @@ this.stripe = new Stripe(secretKey, {
     email?: string;
     successUrl?: string;
     cancelUrl?: string;
+    orderId?: string;
   }) {
     this.ensureStripe();
 
@@ -85,6 +86,14 @@ this.stripe = new Stripe(secretKey, {
 
     const cancelUrl =
       params.cancelUrl || `${baseUrl}/payments/stripe/checkout/cancel`;
+
+    // Build metadata with orderId if provided
+    const metadata: Record<string, string> = {
+      orderData: JSON.stringify(params.orderData),
+    };
+    if (params.orderId) {
+      metadata.orderId = params.orderId;
+    }
 
     // Only set customer_email if valid
     const sessionConfig: any = {
@@ -105,9 +114,7 @@ this.stripe = new Stripe(secretKey, {
       success_url: successUrl,
       cancel_url: cancelUrl,
       ...(params.email ? { customer_email: params.email } : {}),
-      metadata: {
-        orderData: JSON.stringify(params.orderData),
-      },
+      metadata,
     };
 
     // Only add customer_email if it's a valid non-empty string
@@ -133,6 +140,7 @@ this.stripe = new Stripe(secretKey, {
       orderId: session.metadata?.orderId,
       paymentIntentId: session.payment_intent,
       metadata: session.metadata,
+      amount: session.amount_total ? session.amount_total / 100 : undefined,
     };
   }
 

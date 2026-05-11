@@ -4,7 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/api_service.dart';
 
 class PartnerOffersTab extends StatefulWidget {
-  const PartnerOffersTab({Key? key}) : super(key: key);
+  final double commissionRate;
+  const PartnerOffersTab({Key? key, this.commissionRate = 15.0}) : super(key: key);
 
   @override
   State<PartnerOffersTab> createState() => PartnerOffersTabState();
@@ -390,6 +391,7 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        onChanged: (_) => setDialogState(() {}),
                         decoration: fieldDecoration(
                           'Original Price',
                           Icons.payments_outlined,
@@ -401,10 +403,123 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        onChanged: (_) => setDialogState(() {}),
                         decoration: fieldDecoration(
                           'Discounted Price',
                           Icons.local_offer_outlined,
                         ),
+                      ),
+                      Builder(
+                        builder: (_) {
+                          final orig = double.tryParse(originalPriceController.text) ?? 0;
+                          final disc = double.tryParse(discountedPriceController.text) ?? 0;
+                          if (orig > 0 && disc > 0 && disc < orig) {
+                            final pct = ((orig - disc) / orig * 100).round();
+                            if (pct < 20) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4, bottom: 2),
+                                child: Text(
+                                  '⚠️ Discount must be at least 20%',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.orange[700],
+                                  ),
+                                ),
+                              );
+                            } else if (pct > 60) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4, bottom: 2),
+                                child: Text(
+                                  '⚠️ Discount cannot exceed 60%',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.orange[700],
+                                  ),
+                                ),
+                              );
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 4, bottom: 2),
+                              child: Text(
+                                '✅ $pct% discount applied',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF10B981),
+                                ),
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                      Builder(
+                        builder: (_) {
+                          final orig = double.tryParse(originalPriceController.text) ?? 0;
+                          final disc = double.tryParse(discountedPriceController.text) ?? 0;
+                          if (disc <= 0 || orig <= 0 || disc >= orig) return const SizedBox.shrink();
+                          final pct = ((orig - disc) / orig * 100).round();
+                          if (pct < 20 || pct > 60) return const SizedBox.shrink();
+                          final rate = widget.commissionRate;
+                          final fee = disc * rate / 100;
+                          final payout = disc - fee;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5F0),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFF1F9D7A).withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.account_balance_wallet_outlined,
+                                    size: 16,
+                                    color: Color(0xFF1F9D7A),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: RichText(
+                                      text: TextSpan(
+                                        style: const TextStyle(fontSize: 13),
+                                        children: [
+                                          const TextSpan(
+                                            text: 'You will receive: ',
+                                            style: TextStyle(
+                                              color: Color(0xFF374151),
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: '€${payout.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              color: Color(0xFF1F9D7A),
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text:
+                                                '  (after ${rate.toStringAsFixed(0)}% fee: −€${fee.toStringAsFixed(2)})',
+                                            style: const TextStyle(
+                                              color: Color(0xFF6B7280),
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 10),
                       TextField(

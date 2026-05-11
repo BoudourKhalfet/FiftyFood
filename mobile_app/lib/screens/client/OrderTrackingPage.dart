@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/client_order.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -80,12 +81,22 @@ Future<void> openLiveMap(BuildContext context, ClientOrder order) async {
   }
 }
 
-class OrderTrackingScreen extends StatelessWidget {
+class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
   const OrderTrackingScreen({required this.orderId, Key? key})
     : super(key: key);
 
-  // Status mapping
+  @override
+  State<OrderTrackingScreen> createState() => _OrderTrackingScreenState();
+}
+
+class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
+  static const _pollInterval = Duration(seconds: 15);
+
+  ClientOrder? _order;
+  bool _loading = true;
+  Timer? _timer;
+
   int statusIndexFor(String status) {
     switch (status.toUpperCase()) {
       case 'ORDER_CONFIRMED':
@@ -105,57 +116,77 @@ class OrderTrackingScreen extends StatelessWidget {
     }
   }
 
-  Future<ClientOrder> fetchTracking(String orderId) async {
-    print('fetchTracking called for $orderId');
-    final token = await getJwt();
-    final response = await http.get(
-      Uri.parse(apiUrl('orders/$orderId/tracking')),
-      headers: {if (token != null) "Authorization": "Bearer $token"},
-    );
-    print('HTTP response: ${response.statusCode} ${response.body}');
-    if (response.statusCode == 200) {
-      print("TRACKING ORDER RAW: ${response.body}");
-      return ClientOrder.fromJson(jsonDecode(response.body));
+  Future<void> _fetchTracking({bool silent = false}) async {
+    print('fetchTracking called for ${widget.orderId}');
+    try {
+      final token = await getJwt();
+      final response = await http.get(
+        Uri.parse(apiUrl('orders/${widget.orderId}/tracking')),
+        headers: {if (token != null) "Authorization": "Bearer $token"},
+      );
+      print('HTTP response: ${response.statusCode} ${response.body}');
+      if (response.statusCode == 200) {
+        print("TRACKING ORDER RAW: ${response.body}");
+        final order = ClientOrder.fromJson(jsonDecode(response.body));
+        if (!mounted) return;
+        setState(() {
+          _order = order;
+          _loading = false;
+        });
+        if (order.status.toUpperCase() == 'DELIVERED') {
+          _timer?.cancel();
+        }
+      }
+    } catch (e) {
+      print('fetchTracking error: $e');
+      if (!silent && mounted) {
+        setState(() => _loading = false);
+      }
     }
-    throw Exception('Failed to load tracking');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTracking();
+    _timer = Timer.periodic(_pollInterval, (_) => _fetchTracking(silent: true));
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     print('OrderTrackingScreen build called');
-    return FutureBuilder<ClientOrder>(
-      future: fetchTracking(orderId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        if (!snapshot.hasData) {
-          return Scaffold(
-            body: Center(child: Text('Order not found or failed to load')),
-          );
-        }
-        final order = snapshot.data!;
-        print(
-          "### UI DEBUG - name: ${order.restaurantName}, img: ${order.imageUrl}, label: ${order.partnerLabel}, price: ${order.price}, qty: ${order.quantity}",
-        );
-        LatLng? clientLatLng = parseLatLng(order.clientLocation);
-        LatLng? driverLatLng = parseLatLng(order.delivererLocation);
-        final driverDistanceText = getDistanceText(clientLatLng, driverLatLng);
-        final driverEtaText = getEtaText(clientLatLng, driverLatLng);
-        final etaSummary = driverEtaText.isNotEmpty
-            ? driverEtaText
-            : (order.timeSlot.isNotEmpty
-                  ? order.timeSlot
-                  : 'Not available yet');
+    if (_loading) {
+      return Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_order == null) {
+      return Scaffold(
+        body: Center(child: Text('Order not found or failed to load')),
+      );
+    }
+    final order = _order!;
+    print(
+      "### UI DEBUG - name: ${order.restaurantName}, img: ${order.imageUrl}, label: ${order.partnerLabel}, price: ${order.price}, qty: ${order.quantity}",
+    );
+    final clientLatLng = parseLatLng(order.clientLocation);
+    final driverLatLng = parseLatLng(order.delivererLocation);
+    final driverDistanceText = getDistanceText(clientLatLng, driverLatLng);
+    final driverEtaText = getEtaText(clientLatLng, driverLatLng);
+    final etaSummary = driverEtaText.isNotEmpty
+        ? driverEtaText
+        : (order.timeSlot.isNotEmpty ? order.timeSlot : 'Not available yet');
 
-        return OrderTrackingPage(
-          order: order,
-          statusIndex: statusIndexFor(order.status),
-          driverEtaText: driverEtaText,
-          driverDistanceText: driverDistanceText,
-          etaSummary: etaSummary,
-        );
-      },
+    return OrderTrackingPage(
+      order: order,
+      statusIndex: statusIndexFor(order.status),
+      driverEtaText: driverEtaText,
+      driverDistanceText: driverDistanceText,
+      etaSummary: etaSummary,
     );
   }
 }
@@ -365,7 +396,9 @@ class OrderTrackingPage extends StatelessWidget {
                       SizedBox(width: 7),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: primary,
+                          backgroundColor: statusIndex >= steps.length - 1
+                              ? Colors.grey[300]
+                              : primary,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(9),
                           ),
@@ -377,16 +410,22 @@ class OrderTrackingPage extends StatelessWidget {
                         icon: Icon(
                           Icons.open_in_new,
                           size: 19,
-                          color: Colors.white,
+                          color: statusIndex >= steps.length - 1
+                              ? Colors.grey[500]
+                              : Colors.white,
                         ),
                         label: Text(
                           'Open Map',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: statusIndex >= steps.length - 1
+                                ? Colors.grey[500]
+                                : Colors.white,
                           ),
                         ),
-                        onPressed: () => openLiveMap(context, order),
+                        onPressed: statusIndex >= steps.length - 1
+                            ? null
+                            : () => openLiveMap(context, order),
                       ),
                     ],
                   ),
@@ -545,7 +584,32 @@ class OrderTrackingPage extends StatelessWidget {
                 child: Column(
                   children: [
                     if (statusIndex < steps.length - 1) ...[
+                      // Show warning if order not picked up yet
+                      if (statusIndex < 1) ...[
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          margin: EdgeInsets.only(bottom: 11),
+                          decoration: BoxDecoration(
+                            color: Color(0xFFE3F2FD),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Color(0xFF90CAF9)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Color(0xFF1976D2), size: 20),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Order must be picked up by deliverer before you can confirm delivery",
+                                  style: TextStyle(color: Color(0xFF1565C0), fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       _confirmDeliveryGradientButton(
+                        enabled: statusIndex >= 1,
                         onPressed: () async {
                           try {
                             await _confirmDelivery(context);
@@ -636,15 +700,17 @@ class OrderTrackingPage extends StatelessWidget {
     );
   }
 
-  Widget _confirmDeliveryGradientButton({required VoidCallback onPressed}) {
+  Widget _confirmDeliveryGradientButton({required VoidCallback onPressed, bool enabled = true}) {
     return GestureDetector(
-      onTap: onPressed,
+      onTap: enabled ? onPressed : null,
       child: Container(
         width: double.infinity,
         height: 51,
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [primaryGradientLeft, primary],
+            colors: enabled
+                ? [primaryGradientLeft, primary]
+                : [Colors.grey.shade400, Colors.grey.shade500],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),

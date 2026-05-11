@@ -6,10 +6,10 @@ import { StripeService } from './services/stripe.service';
 import { KonnectService } from './services/konnect.service';
 import { PayPalService } from './services/paypal.service';
 import { PrismaModule } from '../prisma/prisma.module';
-import { OrdersModule } from '../orders/orders.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, OrdersModule],
+  imports: [PrismaModule, NotificationsModule],
   controllers: [PaymentsController, PayPalController],
   providers: [PaymentsService, StripeService, KonnectService, PayPalService],
   exports: [PaymentsService],

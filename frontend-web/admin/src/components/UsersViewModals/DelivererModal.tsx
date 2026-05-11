@@ -268,7 +268,7 @@ export function DelivererModal({
           </InfoRow>
 
           {/* BANK TRANSFER */}
-          {deliverer.payoutMethod === "bank" && (
+          {deliverer.payoutMethod === "bank_transfer" && (
             <>
               <InfoRow icon={<FaRegFileAlt />} label="IBAN">
                 {deliverer.payoutIban || (
@@ -289,7 +289,7 @@ export function DelivererModal({
           )}
 
           {/* PAYPAL */}
-          {deliverer.payoutMethod === "paypal" && (
+          {(deliverer.payoutMethod === "paypal" || deliverer.payoutMethod === "PAYPAL") && (
             <InfoRow icon={<FaEnvelope />} label="PayPal Email">
               {deliverer.payoutPaypalEmail || (
                 <span className="text-gray-400">N/A</span>
@@ -354,7 +354,7 @@ export function DelivererModal({
           )}
 
           {/* CASH (if you support cash payout) */}
-          {deliverer.payoutMethod === "cash" && (
+          {deliverer.payoutMethod === "cash" || deliverer.payoutMethod === "CASH" && (
             <InfoRow icon={<FaRegFileAlt />} label="Details">
               <span>Cash — see accounting</span>
             </InfoRow>
@@ -374,14 +374,10 @@ export function DelivererModal({
           <PerfBox value={deliverer.completedOrders ?? 0} label="Orders" />
           <PerfBox
             value={
-              deliverer.avgRating ? (
-                <span>
-                  {deliverer.avgRating.toFixed(1)}{" "}
-                  <FaStar className="inline -mt-1 text-yellow-400" />
-                </span>
-              ) : (
-                "N/A"
-              )
+              <span>
+                {(deliverer.avgRating ?? 0).toFixed(1)}{" "}
+                <FaStar className="inline -mt-1 text-yellow-400" />
+              </span>
             }
             label="Avg Rating"
           />

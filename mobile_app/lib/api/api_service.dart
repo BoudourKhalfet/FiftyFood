@@ -29,9 +29,9 @@ class ApiService {
       final res = await http
           .post(url, headers: mergedHeaders, body: jsonEncode(data))
           .timeout(
-            Duration(seconds: 30),
+            Duration(seconds: 90),
             onTimeout: () {
-              throw TimeoutException('Request timeout after 30 seconds');
+              throw TimeoutException('Request timeout after 90 seconds');
             },
           );
       print('POST RESPONSE: ${res.statusCode} ${res.body}');

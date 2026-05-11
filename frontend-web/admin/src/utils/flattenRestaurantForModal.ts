@@ -23,6 +23,19 @@ export function flattenRestaurantForModal(user: any) {
     }));
   }
 
+  // Extract payout details from JSON
+  const profile = user.restaurantProfile || user.livreurProfile;
+  if (profile?.payoutMethod) {
+    base.payoutMethod = profile.payoutMethod.toLowerCase();
+  }
+  if (profile?.payoutDetails && typeof profile.payoutDetails === 'object') {
+    const details = profile.payoutDetails;
+    base.payoutIban = details.iban || null;
+    base.payoutHolderName = details.accountHolder || null;
+    base.payoutBankName = details.bankName || null;
+    base.payoutPaypalEmail = details.paypalEmail || null;
+  }
+
   if (user.accountHistory) {
     base.accountHistory = user.accountHistory
       .slice()

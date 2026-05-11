@@ -180,9 +180,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     const crossesMidnight = endMinutes <= startMinutes;
 
     if (crossesMidnight) {
-      normalized.setDate(normalized.getDate() + 1);
+      normalized.setUTCDate(normalized.getUTCDate() + 1);
     }
-    normalized.setHours(range.endHour, range.endMinute, 0, 0);
+    normalized.setUTCHours(range.endHour, range.endMinute, 0, 0);
     return normalized;
   }
 
@@ -209,10 +209,10 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
     const now = new Date();
     let start = new Date(now);
-    start.setHours(range.startHour, range.startMinute, 0, 0);
+    start.setUTCHours(range.startHour, range.startMinute, 0, 0);
 
     let end = new Date(now);
-    end.setHours(range.endHour, range.endMinute, 0, 0);
+    end.setUTCHours(range.endHour, range.endMinute, 0, 0);
 
     if (end.getTime() <= start.getTime()) {
       end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
@@ -628,9 +628,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     // Validate discount is between 10-90%
     const discountPct =
       ((dto.originalPrice - dto.discountedPrice) / dto.originalPrice) * 100;
-    if (discountPct < 10 || discountPct > 90) {
+    if (discountPct < 20 || discountPct > 60) {
       throw new ForbiddenException(
-        'Discount must be between 10% and 90% of the original price.',
+        'Discount must be between 20% and 60% of the original price.',
       );
     }
 
@@ -762,9 +762,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
     const discountPct =
       ((nextOriginalPrice - nextDiscountedPrice) / nextOriginalPrice) * 100;
-    if (discountPct < 10 || discountPct > 90) {
+    if (discountPct < 20 || discountPct > 60) {
       throw new ForbiddenException(
-        'Discount must be between 10% and 90% of the original price.',
+        'Discount must be between 20% and 60% of the original price.',
       );
     }
 
