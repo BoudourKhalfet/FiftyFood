@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsEnum, IsOptional, IsObject } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsObject, IsEmail } from 'class-validator';
 
 export enum PaymentMethod {
   CARD = 'CARD',
@@ -103,14 +103,17 @@ export class CreateStripeCheckoutDto {
   cancelUrl?: string;
 }
 
-export class CreateKonnectPaymentDto extends CreatePaymentIntentDto {
+export class CreateKonnectPaymentDto {
+  @IsString()
+  orderId!: string;
+
   @IsString()
   firstName!: string;
 
   @IsString()
   lastName!: string;
 
-  @IsString()
+  @IsEmail()
   email!: string;
 
   @IsString()
@@ -118,7 +121,14 @@ export class CreateKonnectPaymentDto extends CreatePaymentIntentDto {
   phone?: string;
 }
 
-export class CreatePayPalPaymentDto extends CreatePaymentIntentDto {
+export class CreatePayPalPaymentDto {
+  @IsString()
+  orderId!: string;
+
+  @IsNumber()
+  @IsOptional()
+  amount?: number;
+
   @IsString()
   @IsOptional()
   returnUrl?: string;

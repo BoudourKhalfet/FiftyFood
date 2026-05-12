@@ -298,24 +298,99 @@ class PaymentService {
     }
   }
 
+  /// Create Konnect payment (D17 / e-dinar)
+  static Future<Map<String, dynamic>> createKonnectPayment({
+    required String orderId,
+    required String firstName,
+    required String lastName,
+    required String email,
+    String? phone,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+
+      if (jwt == null) {
+        throw Exception('No authentication token found');
+      }
+
+      debugPrint('Konnect: Creating payment for order $orderId');
+
+      final response = await http.post(
+        Uri.parse(apiUrl('payments/konnect')),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: jsonEncode({
+          'orderId': orderId,
+          'firstName': firstName,
+          'lastName': lastName,
+          'email': email,
+          'phone': phone,
+        }),
+      );
+
+      debugPrint('Konnect: Response status: ${response.statusCode}');
+      debugPrint('Konnect: Response body: ${response.body}');
+
+      if (response.statusCode != 201 && response.statusCode != 200) {
+        throw Exception('Failed to create Konnect payment: ${response.body}');
+      }
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint('Konnect: Error occurred: $e');
+      throw Exception('Konnect payment error: $e');
+    }
+  }
+
+  /// Verify Konnect payment
+  static Future<Map<String, dynamic>> verifyKonnectPayment({
+    required String paymentId,
+    required String orderId,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+
+      if (jwt == null) {
+        throw Exception('No authentication token found');
+      }
+
+      final response = await http.get(
+        Uri.parse(apiUrl('payments/konnect/$paymentId/verify/$orderId')),
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to verify Konnect payment: ${response.body}');
+      }
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      throw Exception('Konnect verification error: $e');
+    }
+  }
+
   /// Open URL (for Konnect and PayPal redirects)
   static Future<void> openPaymentUrl(String url) async {
-  try {
-    final uri = Uri.parse(url);
+    try {
+      final uri = Uri.parse(url);
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(
-        uri,
-        mode: kIsWeb
-            ? LaunchMode.platformDefault
-            : LaunchMode.externalApplication,
-        webOnlyWindowName: kIsWeb ? '_blank' : '_self',
-      );
-    } else {
-      throw Exception('Could not launch payment URL');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: kIsWeb
+              ? LaunchMode.platformDefault
+              : LaunchMode.externalApplication,
+          webOnlyWindowName: kIsWeb ? '_blank' : '_self',
+        );
+      } else {
+        throw Exception('Could not launch payment URL');
+      }
+    } catch (e) {
+      throw Exception('URL launch error: $e');
     }
-  } catch (e) {
-    throw Exception('URL launch error: $e');
   }
-}
 }

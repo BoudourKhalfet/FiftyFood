@@ -497,7 +497,7 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                                             ),
                                           ),
                                           TextSpan(
-                                            text: '€${payout.toStringAsFixed(2)}',
+                                            text: '${payout.toStringAsFixed(2)} DT',
                                             style: const TextStyle(
                                               color: Color(0xFF1F9D7A),
                                               fontWeight: FontWeight.w700,
@@ -505,7 +505,7 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                                           ),
                                           TextSpan(
                                             text:
-                                                '  (after ${rate.toStringAsFixed(0)}% fee: −€${fee.toStringAsFixed(2)})',
+                                                '  (after ${rate.toStringAsFixed(0)}% fee: −${fee.toStringAsFixed(2)} DT)',
                                             style: const TextStyle(
                                               color: Color(0xFF6B7280),
                                               fontSize: 11,
@@ -1036,7 +1036,7 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                                 text: TextSpan(
                                   children: [
                                     TextSpan(
-                                      text: '€${discounted.toStringAsFixed(2)}',
+                                      text: '${discounted.toStringAsFixed(2)} DT',
                                       style: const TextStyle(
                                         color: Color(0xFF1F9D7A),
                                         fontWeight: FontWeight.w800,
@@ -1044,7 +1044,7 @@ class PartnerOffersTabState extends State<PartnerOffersTab> {
                                       ),
                                     ),
                                     TextSpan(
-                                      text: ' €${original.toStringAsFixed(2)}',
+                                      text: ' ${original.toStringAsFixed(2)} DT',
                                       style: const TextStyle(
                                         color: Color(0xFF9CA3AF),
                                         decoration: TextDecoration.lineThrough,

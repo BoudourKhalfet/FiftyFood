@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum AppPaymentMethod { card, paypal }
+enum AppPaymentMethod { card, paypal, konnect }
 
 class PaymentMethodSelector extends StatefulWidget {
   final Function(AppPaymentMethod) onMethodSelected;
@@ -53,6 +53,15 @@ class _PaymentMethodSelectorState extends State<PaymentMethodSelector> {
           description: 'Fast and secure PayPal checkout',
           icon: Icons.payment,
           iconColor: Colors.amber,
+        ),
+        const SizedBox(height: 12),
+
+        _buildPaymentOption(
+          method: AppPaymentMethod.konnect,
+          title: 'Pay with D17 / Konnect',
+          description: 'Tunisian e-dinar payment (Carte e-dinar, D17)',
+          icon: Icons.account_balance,
+          iconColor: const Color(0xFF1F9D7A),
         ),
 
         const SizedBox(height: 24),

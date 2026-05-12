@@ -24,7 +24,7 @@ const getOpenRouterVerificationKey = () => {
 };
 
 const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_VERIFICATION_MODEL = process.env.OPENROUTER_VERIFICATION_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free';
+const OPENROUTER_VERIFICATION_MODEL = process.env.OPENROUTER_VERIFICATION_MODEL || 'google/gemini-2.0-flash-lite-001';
 const OPENROUTER_DESCRIPTION_MODEL =
   process.env.OPENROUTER_DESCRIPTION_MODEL || 'google/gemini-2.0-flash-lite-001';
 const OPENROUTER_DESCRIPTION_FALLBACK_MODELS = [
@@ -68,9 +68,10 @@ Create:
 Respond ONLY with:
 {
   "title": string,
-  "description": string,
-  "highlights": string[],
-  "suggestedPrice": string
+  "description"8-12 DT" based on what you see
+
+IMPORTANT: If you see thin vermicelli noodles with chicken and vegetables, call it "Cheveux d'ange" not "Tagine". If you see couscous, specify if it's "Couscous au poisson" or "Couscous viande".
+ring
 }`;
 
 const DESCRIPTION_PROMPT_FR = `Vous êtes un rédacteur de menus pour restaurants (application FiftyFood).

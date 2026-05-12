@@ -916,7 +916,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                         Text(
 
-                          '€${discounted.toStringAsFixed(2)}',
+                          '${discounted.toStringAsFixed(2)} DT',
 
                           style: const TextStyle(
 
@@ -934,7 +934,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                         Text(
 
-                          '€${original.toStringAsFixed(2)}',
+                          '${original.toStringAsFixed(2)} DT',
 
                           style: const TextStyle(
 
@@ -970,7 +970,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                           child: Text(
 
-                            'Save €${save.toStringAsFixed(2)}',
+                            'Save ${save.toStringAsFixed(2)} DT',
 
                             style: const TextStyle(
 
@@ -1284,7 +1284,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                         Text(
 
-                          '€${(quantity * discounted).toStringAsFixed(2)}',
+                          '${(quantity * discounted).toStringAsFixed(2)} DT',
 
                           style: const TextStyle(
 
@@ -1796,7 +1796,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                           subtitle:
 
-                              "+€${deliveryFee.toStringAsFixed(2)} - Delivered to your door",
+                              "+${deliveryFee.toStringAsFixed(2)} DT - Delivered to your door",
 
                         )
 
@@ -1998,7 +1998,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                                 Text(
 
-                                  '€${subtotal.toStringAsFixed(2)}',
+                                  '${subtotal.toStringAsFixed(2)} DT',
 
                                   style: TextStyle(
 
@@ -2044,7 +2044,7 @@ class _OfferDetailsPageState extends State<OfferDetails> {
 
                                 Text(
 
-                                  '€${(subtotal + (selectedMethod == 'delivery' ? deliveryFee : 0)).toStringAsFixed(2)}',
+                                  '${(subtotal + (selectedMethod == 'delivery' ? deliveryFee : 0)).toStringAsFixed(2)} DT',
 
                                   style: TextStyle(
 

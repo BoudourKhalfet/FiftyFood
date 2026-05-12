@@ -385,7 +385,7 @@ class OrderCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      "€${price.toStringAsFixed(2)}",
+                      "${price.toStringAsFixed(2)} DT",
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 21.5,

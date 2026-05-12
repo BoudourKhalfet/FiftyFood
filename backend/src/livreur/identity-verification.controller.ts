@@ -667,4 +667,3 @@ export class IdentityVerificationController {
   }
 
 }
-

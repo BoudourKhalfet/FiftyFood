@@ -263,10 +263,10 @@ class AppLocalizationsAr extends AppLocalizations {
   String get btnSelectCategories => 'حدد الفئات';
 
   @override
-  String get labelOriginalPrice => 'السعر الأصلي (€)';
+  String get labelOriginalPrice => 'السعر الأصلي (DT)';
 
   @override
-  String get labelDiscountedPrice => 'السعر المخفض (€)';
+  String get labelDiscountedPrice => 'السعر المخفض (DT)';
 
   @override
   String get labelQuantity => 'الكمية';

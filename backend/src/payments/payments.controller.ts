@@ -113,11 +113,12 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateKonnectPaymentDto,
   ) {
+    console.log('[KONNECT CONTROLLER] Received request:', dto);
     if (!dto.orderId || !dto.firstName || !dto.lastName || !dto.email) {
       throw new BadRequestException('Missing required fields');
     }
 
-    return this.paymentsService.createKonnectPayment({
+    const result = await this.paymentsService.createKonnectPayment({
       orderId: dto.orderId,
       userId: req.user.sub,
       firstName: dto.firstName,
@@ -125,6 +126,8 @@ export class PaymentsController {
       email: dto.email,
       phone: dto.phone,
     });
+    console.log('[KONNECT CONTROLLER] Result:', result);
+    return result;
   }
 
   // =========================

@@ -180,12 +180,27 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _userEmail = prefs.getString('email') ?? '';
-      _userFirstName = prefs.getString('firstName') ?? '';
-      _userLastName = prefs.getString('lastName') ?? '';
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
+      if (jwt == null) return;
+      final response = await http.get(
+        Uri.parse(apiUrl('auth/me')),
+        headers: {'Authorization': 'Bearer $jwt'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final fullName = ((data['clientProfile']?['fullName'] as String?) ??
+            (data['livreurProfile']?['fullName'] as String?) ??
+            '').split(' ');
+        if (!mounted) return;
+        setState(() {
+          _userEmail = data['email'] as String? ?? '';
+          _userFirstName = fullName.isNotEmpty ? fullName.first : '';
+          _userLastName = fullName.length > 1 ? fullName.sublist(1).join(' ') : _userFirstName;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _processPayment() async {
@@ -208,6 +223,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           break;
         case AppPaymentMethod.paypal:
           await _processPayPalPayment();
+          break;
+        case AppPaymentMethod.konnect:
+          await _processKonnectPayment();
           break;
         default:
           throw Exception('Unknown payment method');
@@ -504,6 +522,101 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       });
       rethrow;
     }
+  }
+
+  /// Handle Konnect Payment (D17 / e-dinar)
+  Future<void> _processKonnectPayment() async {
+    try {
+      if (_userFirstName == null ||
+          _userLastName == null ||
+          _userEmail == null) {
+        throw Exception('User profile information is required for Konnect payment');
+      }
+
+      final paymentData = await PaymentService.createKonnectPayment(
+        orderId: widget.orderId,
+        firstName: _userFirstName!,
+        lastName: _userLastName!,
+        email: _userEmail!,
+      );
+
+      final paymentUrl = paymentData['paymentUrl'] as String?;
+      final paymentId = paymentData['paymentId'] as String?;
+
+      if (paymentUrl == null || paymentId == null) {
+        throw Exception('Failed to create Konnect payment');
+      }
+
+      if (!mounted) return;
+
+      // Show waiting state
+      setState(() {
+        _isWaitingForPayPal = true;
+      });
+
+      // Open Konnect in browser
+      await PaymentService.openPaymentUrl(paymentUrl);
+
+      // Poll for payment status
+      await _pollKonnectPayment(paymentId);
+    } catch (e) {
+      setState(() {
+        _isWaitingForPayPal = false;
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> _pollKonnectPayment(String paymentId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Waiting for Konnect payment...'),
+          ],
+        ),
+      ),
+    );
+
+    const maxAttempts = 30;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final verification = await PaymentService.verifyKonnectPayment(
+          paymentId: paymentId,
+          orderId: widget.orderId,
+        );
+
+        if (!mounted) return;
+
+        final status = verification['status'] as String?;
+        final isSuccessful = verification['isSuccessful'] as bool? ?? false;
+
+        if (isSuccessful || status == 'completed') {
+          Navigator.of(context).pop(); // Close loading
+          _showPaymentSuccessDialog('D17 / Konnect');
+          return;
+        }
+
+        if (status == 'failed' || status == 'cancelled') {
+          Navigator.of(context).pop();
+          _showPaymentErrorDialog('Payment was cancelled or failed. Please try again.');
+          return;
+        }
+      } catch (_) {
+        // Keep polling
+      }
+
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    _showPaymentErrorDialog('Payment not completed yet. Please check your Konnect/D17 app and try again.');
   }
 
   Future<void> _pollStripeCheckoutStatus(String sessionId) async {
@@ -932,7 +1045,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                     children: [
                       const Text('Total Amount:'),
                       Text(
-                        '€${widget.totalAmount.toStringAsFixed(2)}',
+                        '${widget.totalAmount.toStringAsFixed(2)} DT',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -1085,8 +1198,10 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     switch (method) {
       case AppPaymentMethod.card:
         return 'Pay with Card';
-            case AppPaymentMethod.paypal:
+      case AppPaymentMethod.paypal:
         return 'Pay with PayPal';
+      case AppPaymentMethod.konnect:
+        return 'Pay with D17 / Konnect';
     }
   }
 
@@ -1094,8 +1209,10 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     switch (method) {
       case AppPaymentMethod.card:
         return Icons.credit_card;
-            case AppPaymentMethod.paypal:
+      case AppPaymentMethod.paypal:
         return Icons.payment;
+      case AppPaymentMethod.konnect:
+        return Icons.account_balance;
     }
   }
 
@@ -1103,8 +1220,10 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     switch (method) {
       case AppPaymentMethod.card:
         return Colors.blue;
-            case AppPaymentMethod.paypal:
+      case AppPaymentMethod.paypal:
         return Colors.amber;
+      case AppPaymentMethod.konnect:
+        return const Color(0xFF1F9D7A);
     }
   }
 }

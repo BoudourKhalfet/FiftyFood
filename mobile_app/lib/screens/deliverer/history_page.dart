@@ -154,7 +154,7 @@ class _DelivererHistoryPageState extends State<DelivererHistoryPage> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '+€${amount.toStringAsFixed(2)}',
+                '+${amount.toStringAsFixed(2)} DT',
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,

@@ -847,7 +847,7 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                               Row(
                                 children: [
                                   Text(
-                                    '€${discounted.toStringAsFixed(2)}',
+                                    '${discounted.toStringAsFixed(2)} DT',
                                     style: const TextStyle(
                                       color: Color(0xFF3D9176),
                                       fontWeight: FontWeight.w800,
@@ -856,7 +856,7 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '€${original.toStringAsFixed(2)}',
+                                    '${original.toStringAsFixed(2)} DT',
                                     style: const TextStyle(
                                       decoration: TextDecoration.lineThrough,
                                       color: Colors.grey,

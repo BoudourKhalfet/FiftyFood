@@ -263,10 +263,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get btnSelectCategories => 'Select categories';
 
   @override
-  String get labelOriginalPrice => 'Original Price (€)';
+  String get labelOriginalPrice => 'Original Price (DT)';
 
   @override
-  String get labelDiscountedPrice => 'Discounted Price (€)';
+  String get labelDiscountedPrice => 'Discounted Price (DT)';
 
   @override
   String get labelQuantity => 'Quantity';

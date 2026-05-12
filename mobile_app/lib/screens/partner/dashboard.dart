@@ -1832,8 +1832,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                           ),
                                         ),
                                         TextSpan(
-                                          text:
-                                              '€${payout.toStringAsFixed(2)}',
+                                          text: '${payout.toStringAsFixed(2)} DT',
                                           style: const TextStyle(
                                             color: Color(0xFF1F9D7A),
                                             fontWeight: FontWeight.w700,
@@ -1841,7 +1840,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                         ),
                                         TextSpan(
                                           text:
-                                              '  (after ${_commissionRate.toStringAsFixed(0)}% fee: −€${fee.toStringAsFixed(2)})',
+                                              '  (after ${_commissionRate.toStringAsFixed(0)}% fee: −${fee.toStringAsFixed(2)} DT)',
                                           style: const TextStyle(
                                             color: Color(0xFF6B7280),
                                             fontSize: 11,
@@ -2172,8 +2171,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           children: [
             _buildStatCard(
               title: "Total Sales",
-              value: _loadingStats ? "-" : _totalSales.toStringAsFixed(2),
-              icon: Icons.euro,
+              value: _loadingStats ? "-" : "${_totalSales.toStringAsFixed(2)} DT",
+              icon: Icons.account_balance_wallet,
               iconColor: const Color(0xFF1F9D7A),
               iconBg: const Color(0xFFE8F5F1),
               badgeLabel: _loadingStats ? null : "${_commissionRate.toStringAsFixed(0)}% fee",

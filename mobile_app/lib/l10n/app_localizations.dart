@@ -583,13 +583,13 @@ abstract class AppLocalizations {
   /// No description provided for @labelOriginalPrice.
   ///
   /// In en, this message translates to:
-  /// **'Original Price (€)'**
+  /// **'Original Price (DT)'**
   String get labelOriginalPrice;
 
   /// No description provided for @labelDiscountedPrice.
   ///
   /// In en, this message translates to:
-  /// **'Discounted Price (€)'**
+  /// **'Discounted Price (DT)'**
   String get labelDiscountedPrice;
 
   /// No description provided for @labelQuantity.

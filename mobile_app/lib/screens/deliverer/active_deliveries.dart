@@ -171,7 +171,7 @@ class _ActiveDeliveriesState extends State<ActiveDeliveries> {
               ),
               const SizedBox(height: 7),
               Text(
-                '${price.toStringAsFixed(2)} DT', // or € if you're in euro
+                '${price.toStringAsFixed(2)} DT', // DT currency
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 16,

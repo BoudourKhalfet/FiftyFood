@@ -269,10 +269,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get btnSelectCategories => 'Sélectionner les catégories';
 
   @override
-  String get labelOriginalPrice => 'Prix original (€)';
+  String get labelOriginalPrice => 'Prix original (DT)';
 
   @override
-  String get labelDiscountedPrice => 'Prix réduit (€)';
+  String get labelDiscountedPrice => 'Prix réduit (DT)';
 
   @override
   String get labelQuantity => 'Quantité';

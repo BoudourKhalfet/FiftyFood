@@ -133,7 +133,7 @@ class _DelivererTransactionsPageState extends State<DelivererTransactionsPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                '€${totalRevenue.toStringAsFixed(2)}',
+                '${totalRevenue.toStringAsFixed(2)} DT',
                 style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w900,
@@ -211,7 +211,7 @@ class _DelivererTransactionsPageState extends State<DelivererTransactionsPage> {
                           ),
                         ),
                         Text(
-                          '+€${net.toStringAsFixed(2)}',
+                          '+${net.toStringAsFixed(2)} DT',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -241,7 +241,7 @@ class _DelivererTransactionsPageState extends State<DelivererTransactionsPage> {
                                 ),
                               ),
                               Text(
-                                '€${total.toStringAsFixed(2)}',
+                                '${total.toStringAsFixed(2)} DT',
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
@@ -261,7 +261,7 @@ class _DelivererTransactionsPageState extends State<DelivererTransactionsPage> {
                                 ),
                               ),
                               Text(
-                                '-€${delivererFee.toStringAsFixed(2)}',
+                                '-${delivererFee.toStringAsFixed(2)} DT',
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
@@ -289,7 +289,7 @@ class _DelivererTransactionsPageState extends State<DelivererTransactionsPage> {
                                   ),
                                 ),
                                 Text(
-                                  '€${net.toStringAsFixed(2)}',
+                                  '${net.toStringAsFixed(2)} DT',
                                   style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w800,

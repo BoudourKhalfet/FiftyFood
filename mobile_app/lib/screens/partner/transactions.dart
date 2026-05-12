@@ -153,7 +153,7 @@ class _PartnerTransactionsScreenState extends State<PartnerTransactionsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Amount: ${amount.toStringAsFixed(2)}',
+                              'Amount: ${amount.toStringAsFixed(2)} DT',
                               style: const TextStyle(fontSize: 13),
                             ),
                             const SizedBox(height: 4),
