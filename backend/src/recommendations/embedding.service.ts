@@ -30,7 +30,9 @@ export class EmbeddingService {
       });
 
       if (!response.ok) {
-        this.logger.warn(`HF API returned ${response.status}: ${await response.text()}`);
+        this.logger.warn(
+          `HF API returned ${response.status}: ${await response.text()}`,
+        );
         return null;
       }
 
@@ -52,7 +54,9 @@ export class EmbeddingService {
   // -----------------------------------------------------------------------
 
   buildOfferText(description: string, categories: string[]): string {
-    const cats = categories.map((c) => c.replace(/_/g, ' ').toLowerCase()).join(', ');
+    const cats = categories
+      .map((c) => c.replace(/_/g, ' ').toLowerCase())
+      .join(', ');
     return `${description} [${cats}]`.trim();
   }
 

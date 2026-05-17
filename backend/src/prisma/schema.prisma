@@ -37,7 +37,6 @@ model RestaurantProfile {
   commissionRate                  Float              @default(15)
   latitude                        Float?
   longitude                       Float?
-  commissionRate                  Float              @default(15)
   user                            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -335,7 +334,6 @@ enum AccountStatus {
 
 enum CuisinePreference {
   BAKERY
-  CAFE
   GRILL
   FAST_FOOD
   VEGETARIAN
@@ -354,6 +352,10 @@ enum CuisinePreference {
   BREAKFAST
   FINE_DINING
   BRUNCH
+  TUNISIAN
+  ITALIAN
+  CHINESE
+  FRIED_FOOD
 }
 
 enum EstablishmentType {
@@ -380,6 +382,7 @@ enum PayoutMethod {
   MOBILE_WALLET
   CASH
   CREDIT_CARD
+  EDINAR
   OTHER
 }
 
@@ -447,7 +450,6 @@ enum OfferStatus {
 
 enum Category {
   BAKERY
-  CAFE
   GRILL
   FAST_FOOD
   VEGETARIAN
@@ -466,6 +468,10 @@ enum Category {
   BREAKFAST
   FINE_DINING
   BRUNCH
+  TUNISIAN
+  ITALIAN
+  CHINESE
+  FRIED_FOOD
 }
 
 enum DevicePlatform {

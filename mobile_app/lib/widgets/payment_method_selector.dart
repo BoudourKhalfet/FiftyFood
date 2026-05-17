@@ -58,8 +58,8 @@ class _PaymentMethodSelectorState extends State<PaymentMethodSelector> {
 
         _buildPaymentOption(
           method: AppPaymentMethod.konnect,
-          title: 'Pay with D17 / Konnect',
-          description: 'Tunisian e-dinar payment (Carte e-dinar, D17)',
+          title: 'Pay with e-Dinar / bank account',
+          description: 'Processed securely via Konnect',
           icon: Icons.account_balance,
           iconColor: const Color(0xFF1F9D7A),
         ),

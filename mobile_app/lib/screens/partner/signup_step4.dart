@@ -12,61 +12,42 @@ class PartnerSignupStep4 extends StatefulWidget {
 class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
   final _formKey = GlobalKey<FormState>();
   String? _payoutMethod;
-  final _payoutDetailsController = TextEditingController();
+  final _bankAccountHolderController = TextEditingController();
+  final _bankNameController = TextEditingController();
+  final _ibanController = TextEditingController();
+  final _paypalEmailController = TextEditingController();
+  final _cardHolderNameController = TextEditingController();
+  final _cardNumberController = TextEditingController();
+  final _cardExpiryController = TextEditingController();
+  final _edinarHolderNameController = TextEditingController();
+  final _edinarNumberController = TextEditingController();
   bool _loading = false;
   String? _error;
 
   final Map<String, String> _methodLabels = {
     'BANK_TRANSFER': 'Bank Transfer',
-    'MOBILE_WALLET': 'Mobile Wallet',
-    'CASH': 'Cash',
-    'OTHER': 'Other',
+    'PAYPAL': 'PayPal',
+    'CREDIT_CARD': 'Credit / Visa Card',
+    'EDINAR': 'e-Dinar',
   };
   final List<String> _methods = [
     'BANK_TRANSFER',
-    'MOBILE_WALLET',
-    'CASH',
-    //'OTHER',
+    'PAYPAL',
+    'CREDIT_CARD',
+    'EDINAR',
   ];
-
-  final List<String> _walletProviders = [
-    'Paymee',
-    'D17',
-    'Orange Money',
-    'Flouci',
-    'Yassir',
-    'Other',
-  ];
-  String? _selectedWalletProvider;
-
-  String get _detailsLabel {
-    switch (_payoutMethod) {
-      case 'BANK_TRANSFER':
-        return "Bank Account Number (IBAN)";
-      case 'MOBILE_WALLET':
-        return "Wallet Number or Phone";
-      case 'CASH':
-        return "Notes or further instructions (optional)";
-      case 'OTHER':
-        return "Describe payout method";
-      default:
-        return "Payout Details";
-    }
-  }
-
-  String? _detailsValidator(String? v) {
-    if (_payoutMethod == 'CASH') return null;
-    if (v == null || v.trim().isEmpty) return "Required";
-    if (_payoutMethod == 'BANK_TRANSFER' && v.length < 10)
-      return "Enter a valid IBAN/account number";
-    if (_payoutMethod == 'MOBILE_WALLET' && v.length < 6)
-      return "Enter a valid wallet or phone number";
-    return null;
-  }
 
   @override
   void dispose() {
-    _payoutDetailsController.dispose();
+    _bankAccountHolderController.dispose();
+    _bankNameController.dispose();
+    _ibanController.dispose();
+    _paypalEmailController.dispose();
+    _cardHolderNameController.dispose();
+    _cardNumberController.dispose();
+    _cardExpiryController.dispose();
+    _edinarHolderNameController.dispose();
+    _edinarNumberController.dispose();
     super.dispose();
   }
 
@@ -88,17 +69,32 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
       if (jwt == null) throw "Not logged in.";
 
       dynamic payoutDetails;
-      if (_payoutMethod == 'BANK_TRANSFER') {
-        payoutDetails = {'iban': _payoutDetailsController.text.trim()};
-      } else if (_payoutMethod == 'MOBILE_WALLET') {
-        payoutDetails = {
-          'provider': _selectedWalletProvider ?? '',
-          'number': _payoutDetailsController.text.trim(),
-        };
-      } else if (_payoutMethod == 'CASH') {
-        payoutDetails = {'notes': _payoutDetailsController.text.trim()};
-      } else {
-        payoutDetails = {'other': _payoutDetailsController.text.trim()};
+      switch (_payoutMethod) {
+        case 'BANK_TRANSFER':
+          payoutDetails = {
+            'accountHolder': _bankAccountHolderController.text.trim(),
+            'bankName': _bankNameController.text.trim(),
+            'iban': _ibanController.text.trim().replaceAll(' ', ''),
+          };
+          break;
+        case 'PAYPAL':
+          payoutDetails = {'paypalEmail': _paypalEmailController.text.trim()};
+          break;
+        case 'CREDIT_CARD':
+          payoutDetails = {
+            'cardHolderName': _cardHolderNameController.text.trim(),
+            'cardNumber': _cardNumberController.text.trim().replaceAll(' ', ''),
+            'expiryDate': _cardExpiryController.text.trim(),
+          };
+          break;
+        case 'EDINAR':
+          payoutDetails = {
+            'cardHolderName': _edinarHolderNameController.text.trim(),
+            'edinarNumber': _edinarNumberController.text.trim().replaceAll(' ', ''),
+          };
+          break;
+        default:
+          payoutDetails = {};
       }
 
       await ApiService.patch(
@@ -140,6 +136,127 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
       setState(() => _error = 'Error: $e');
     } finally {
       setState(() => _loading = false);
+    }
+  }
+
+  Widget _buildPaymentFields() {
+    switch (_payoutMethod) {
+      case 'BANK_TRANSFER':
+        return Column(
+          children: [
+            TextFormField(
+              controller: _bankAccountHolderController,
+              decoration: const InputDecoration(
+                labelText: 'Account Holder Name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _bankNameController,
+              decoration: const InputDecoration(
+                labelText: 'Bank Name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _ibanController,
+              decoration: const InputDecoration(
+                labelText: 'IBAN / Account Number',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.text,
+              validator: (v) =>
+                  (v == null || v.trim().length < 10)
+                      ? 'Enter a valid IBAN/account number'
+                      : null,
+            ),
+          ],
+        );
+      case 'PAYPAL':
+        return TextFormField(
+          controller: _paypalEmailController,
+          decoration: const InputDecoration(
+            labelText: 'PayPal Email',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.emailAddress,
+          validator: (v) =>
+              (v == null || v.trim().isEmpty) ? 'Required' : null,
+        );
+      case 'CREDIT_CARD':
+        return Column(
+          children: [
+            TextFormField(
+              controller: _cardHolderNameController,
+              decoration: const InputDecoration(
+                labelText: 'Cardholder Name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _cardNumberController,
+              decoration: const InputDecoration(
+                labelText: 'Card Number',
+                hintText: 'Visa / MasterCard number',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: (v) =>
+                  (v == null || v.trim().length < 12)
+                      ? 'Enter a valid card number'
+                      : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _cardExpiryController,
+              decoration: const InputDecoration(
+                labelText: 'Expiry Date',
+                hintText: 'MM/YY',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+          ],
+        );
+      case 'EDINAR':
+        return Column(
+          children: [
+            TextFormField(
+              controller: _edinarHolderNameController,
+              decoration: const InputDecoration(
+                labelText: 'Cardholder Name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _edinarNumberController,
+              decoration: const InputDecoration(
+                labelText: 'e-Dinar Card Number',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: (v) =>
+                  (v == null || v.trim().length < 8)
+                      ? 'Enter a valid e-Dinar number'
+                      : null,
+            ),
+          ],
+        );
+      default:
+        return const SizedBox.shrink();
     }
   }
 
@@ -299,8 +416,15 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
                     onChanged: (v) {
                       setState(() {
                         _payoutMethod = v;
-                        _selectedWalletProvider = null;
-                        _payoutDetailsController.clear();
+                        _bankAccountHolderController.clear();
+                        _bankNameController.clear();
+                        _ibanController.clear();
+                        _paypalEmailController.clear();
+                        _cardHolderNameController.clear();
+                        _cardNumberController.clear();
+                        _cardExpiryController.clear();
+                        _edinarHolderNameController.clear();
+                        _edinarNumberController.clear();
                       });
                     },
                     decoration: const InputDecoration(
@@ -312,48 +436,8 @@ class _PartnerSignupStep4State extends State<PartnerSignupStep4> {
                         (v == null || v.isEmpty) ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
-                  if (_payoutMethod == 'MOBILE_WALLET') ...[
-                    DropdownButtonFormField<String>(
-                      value: _selectedWalletProvider,
-                      items: _walletProviders
-                          .map(
-                            (w) => DropdownMenuItem(value: w, child: Text(w)),
-                          )
-                          .toList(),
-                      onChanged: (w) =>
-                          setState(() => _selectedWalletProvider = w),
-                      decoration: const InputDecoration(
-                        labelText: "Select Wallet Provider",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.account_balance_wallet),
-                      ),
-                      validator: (v) =>
-                          (_payoutMethod == 'MOBILE_WALLET' &&
-                              (v == null || v.isEmpty))
-                          ? 'Choose wallet'
-                          : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _payoutDetailsController,
-                      validator: _detailsValidator,
-                      decoration: const InputDecoration(
-                        labelText: "Wallet Number or Phone",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.phone_android),
-                      ),
-                      keyboardType: TextInputType.phone,
-                    ),
-                  ] else if (_payoutMethod != null) ...[
-                    TextFormField(
-                      controller: _payoutDetailsController,
-                      validator: _detailsValidator,
-                      decoration: InputDecoration(
-                        labelText: _detailsLabel,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.info),
-                      ),
-                    ),
+                  if (_payoutMethod != null) ...[
+                    _buildPaymentFields(),
                   ],
                   const SizedBox(height: 28),
                   Row(

@@ -77,8 +77,18 @@ export class ProfileCompleteGuard implements CanActivate {
         message:
           'Client must complete profile step 2 before accessing this resource.',
         required: isPro
-          ? ['societyName', 'fiscalNumber', 'proPhone', 'cuisinePreferences (min 1)']
-          : ['fullName', 'phone', 'defaultAddress', 'cuisinePreferences (min 1)'],
+          ? [
+              'societyName',
+              'fiscalNumber',
+              'proPhone',
+              'cuisinePreferences (min 1)',
+            ]
+          : [
+              'fullName',
+              'phone',
+              'defaultAddress',
+              'cuisinePreferences (min 1)',
+            ],
       });
     }
 

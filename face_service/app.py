@@ -452,6 +452,12 @@ def extract_barcode():
         img = decode_base64_image(data['image'])
         if img is None:
             return jsonify({"error": "Could not decode image"}), 400
+
+        # Attempt to deskew/rotate the image to correct for phone tilt
+        try:
+            img = deskew_image(img)
+        except Exception as e:
+            print(f"[FlagDetect] Deskew failed: {e}")
         
         # Save temp image for barcode scanning
         temp_path = None
@@ -619,9 +625,10 @@ def detect_tunisian_features():
 
         img_h, img_w = img.shape[:2]
 
-        # The Tunisian flag is in the top-left corner of the ID card front.
-        # Crop to left 30% width, top 60% height to focus on that region.
-        flag_roi = img[:int(img_h * 0.6), :int(img_w * 0.30)]
+        # The Tunisian flag is usually in the top-left corner of the ID card front.
+        # Expand the crop slightly to be more tolerant to framing/rotation issues.
+        # Crop to left 40% width, top 60% height to focus on that region.
+        flag_roi = img[:int(img_h * 0.6), :int(img_w * 0.40)]
 
         # Convert ROI to HSV for color analysis
         hsv = cv2.cvtColor(flag_roi, cv2.COLOR_BGR2HSV)
@@ -641,8 +648,10 @@ def detect_tunisian_features():
         red_ratio = red_pixels / roi_pixels if roi_pixels > 0 else 0.0
 
         # White crescent sits inside the red area
-        lower_white = np.array([0,   0, 180])
-        upper_white = np.array([180, 40, 255])
+        # Loosen white detection to tolerate slightly saturated highlights
+        # which can happen under indoor lighting or phone cameras.
+        lower_white = np.array([0,   0, 160])
+        upper_white = np.array([180, 100, 255])
         white_mask = cv2.inRange(hsv, lower_white, upper_white)
         white_ratio = float(np.sum(white_mask > 0)) / roi_pixels if roi_pixels > 0 else 0.0
 

@@ -1,5 +1,5 @@
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://192.168.1.15:3000";
+  import.meta.env.VITE_API_URL || "http://192.168.100.6:3000";
 
 export interface RestaurantStats {
   restaurantName: string;

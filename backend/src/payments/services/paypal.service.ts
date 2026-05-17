@@ -77,7 +77,8 @@ export class PayPalService {
       err.headers?.['paypal-debug-id'];
 
     return {
-      message: description || parsed?.message || err.message || fallback.message,
+      message:
+        description || parsed?.message || err.message || fallback.message,
       issue,
       debugId,
       statusCode: err.statusCode,
@@ -86,7 +87,9 @@ export class PayPalService {
 
   private ensureClient(): paypal.core.PayPalHttpClient {
     if (!this.client) {
-      throw new BadRequestException('PayPal is not configured');
+      throw new BadRequestException(
+        'PayPal payment is currently unavailable. Please use another payment method.',
+      );
     }
     return this.client;
   }
@@ -114,15 +117,15 @@ export class PayPalService {
               params.description || `FiftyFood Order ${params.orderId}`,
           },
         ],
-          application_context: {
-    return_url: params.returnUrl?.startsWith('fiftyfood://')
-      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?orderId=${params.orderId}&returnUrl=${encodeURIComponent(params.returnUrl)}`
-      : `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?orderId=${params.orderId}`,
-    cancel_url: params.cancelUrl?.startsWith('fiftyfood://')
-      ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?orderId=${params.orderId}&cancelUrl=${encodeURIComponent(params.cancelUrl)}`
-      : `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?orderId=${params.orderId}`,
-    user_action: 'PAY_NOW',
-  },
+        application_context: {
+          return_url: params.returnUrl?.startsWith('fiftyfood://')
+            ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?orderId=${params.orderId}&returnUrl=${encodeURIComponent(params.returnUrl)}`
+            : `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/success?orderId=${params.orderId}`,
+          cancel_url: params.cancelUrl?.startsWith('fiftyfood://')
+            ? `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?orderId=${params.orderId}&cancelUrl=${encodeURIComponent(params.cancelUrl)}`
+            : `${process.env.PUBLIC_BACKEND_URL || 'http://localhost:3000'}/payments/paypal/cancel?orderId=${params.orderId}`,
+          user_action: 'PAY_NOW',
+        },
       });
 
       const response = await this.ensureClient().execute(request);
@@ -132,9 +135,9 @@ export class PayPalService {
       };
 
       // Find the approval link
-const approvalLink =
-  data.links?.find((link) => link.rel === 'approve') ||
-  data.links?.find((link) => link.href?.includes('checkoutnow'));
+      const approvalLink =
+        data.links?.find((link) => link.rel === 'approve') ||
+        data.links?.find((link) => link.href?.includes('checkoutnow'));
 
       return {
         paypalOrderId: data.id,
@@ -147,12 +150,9 @@ const approvalLink =
         `PayPal order error: status=${details.statusCode ?? 'unknown'} issue=${details.issue ?? 'unknown'} debugId=${details.debugId ?? 'n/a'} message=${details.message}`,
       );
 
-      throw new BadRequestException({
-        message: 'Failed to create PayPal order',
-        paypalIssue: details.issue,
-        paypalMessage: details.message,
-        paypalDebugId: details.debugId,
-      });
+      throw new BadRequestException(
+        'Unable to process PayPal payment. Please try again or use another payment method.',
+      );
     }
   }
 
@@ -172,8 +172,7 @@ const approvalLink =
 
       // Check if payment was successful
       const isSuccessful = data.status === 'COMPLETED';
-      const orderId =
-        data.purchase_units?.[0]?.reference_id;
+      const orderId = data.purchase_units?.[0]?.reference_id;
       const amount = data.purchase_units?.[0]?.amount?.value;
 
       return {
@@ -207,12 +206,9 @@ const approvalLink =
         `PayPal capture error: status=${details.statusCode ?? 'unknown'} issue=${details.issue ?? 'unknown'} debugId=${details.debugId ?? 'n/a'} message=${details.message}`,
       );
 
-      throw new BadRequestException({
-        message: 'Failed to capture PayPal payment',
-        paypalIssue: details.issue,
-        paypalMessage: details.message,
-        paypalDebugId: details.debugId,
-      });
+      throw new BadRequestException(
+        'Payment could not be completed. Please contact support if this problem persists.',
+      );
     }
   }
 }

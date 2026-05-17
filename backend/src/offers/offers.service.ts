@@ -19,30 +19,36 @@ const getOpenRouterKey = () => {
   return key;
 };
 const getOpenRouterVerificationKey = () => {
-  const key = process.env.OPENROUTER_VERIFICATION_KEY || process.env.OPENROUTER_API_KEY || '';
+  const key =
+    process.env.OPENROUTER_VERIFICATION_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    '';
   return key;
 };
 
 const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_VERIFICATION_MODEL = process.env.OPENROUTER_VERIFICATION_MODEL || 'google/gemini-2.0-flash-lite-001';
+const OPENROUTER_VERIFICATION_MODEL =
+  process.env.OPENROUTER_VERIFICATION_MODEL ||
+  'google/gemini-2.0-flash-lite-001';
 const OPENROUTER_DESCRIPTION_MODEL =
-  process.env.OPENROUTER_DESCRIPTION_MODEL || 'google/gemini-2.0-flash-lite-001';
+  process.env.OPENROUTER_DESCRIPTION_MODEL ||
+  'google/gemini-2.0-flash-lite-001';
 const OPENROUTER_DESCRIPTION_FALLBACK_MODELS = [
   'google/gemini-2.0-flash-lite-001',
   'google/gemini-2.0-flash-001',
   'google/gemini-1.5-flash',
 ];
 
-// Updated prompts - less strict for food verification
+// Updated prompts - food verification (tighten isGoodQuality rule only)
 const VERIFICATION_PROMPT = `You are a food quality inspector for a restaurant surplus food app.
 Analyze this image carefully and respond ONLY with a valid JSON object (no markdown, no code blocks, just raw JSON).
 
 Evaluate:
 1. isFood: Is there food visible in this image? (true/false)
-2. isGoodQuality: Is the photo visually clear enough to see the food? (true/false - phone photos are fine, but reject if the food itself is blurry or out of focus)
-3. isConsumable: Does the food look consumable/edible? Look for obvious signs it's NOT good: mold, rot, visible pests, extreme contamination, trash mixed with food, food thrown in garbage bin. Be reasonably lenient - slightly imperfect food is fine. Only reject if there are clear signs the food is truly not consumable.
+2. isGoodQuality: Is the photo visually clear enough to see the food? (true/false) Return false for blur, out-of-focus or motion blur, very low light/underexposure, severe noise or compression artifacts, heavy filters obscuring detail, or when the food occupies less than ~30% of the frame.
+3. isConsumable: Does the food look consumable/edible? Look for obvious signs it's NOT good: mold, rot, visible pests, extreme contamination, trash mixed with food, food thrown in garbage bin, burnt/charred food, severely overcooked. Be reasonably lenient - slightly imperfect food is fine. Only reject if there are clear signs the food is truly not consumable.
 4. overallApproved: Should this image be approved for a food surplus sale? (true only if it's food, looks reasonably consumable, AND the plating is clean/presentable). Reject if the plate/bowl is messy, smeared, or looks unappetizing.
-5. rejectionReason: If not approved, a short user-friendly reason (null if approved)
+5. rejectionReason: If not approved, a short user-friendly reason (null if approved). If food is burnt/charred, specifically mention "burnt food" or "charred"
 6. confidenceScore: Your confidence in the assessment 0-100
 
 Respond ONLY with this JSON:
@@ -61,17 +67,14 @@ Respond ONLY with a valid JSON object (no markdown, no code blocks, just raw JSO
 
 Create:
 1. title: The real dish name when possible; otherwise a clear descriptive name (max 60 chars)
-2. description: A menu-style description that sounds like a restaurant menu item (3-4 sentences, 320-420 chars). Highlight taste, texture, key ingredients, and a serving suggestion. Use confident, premium wording without exaggeration.
+2. description: A menu-style description that sounds like a restaurant menu item (3-4 sentences, 320-420 chars). Highlight taste, texture, and key ingredients. Use confident, premium wording without exaggeration.
 3. highlights: Array of 4-5 short menu-style selling points (max 40 chars each)
-4. suggestedPrice: A suggested discount price range like "$8-12" based on what you see (estimate based on dish type)
 
 Respond ONLY with:
 {
   "title": string,
-  "description"8-12 DT" based on what you see
-
-IMPORTANT: If you see thin vermicelli noodles with chicken and vegetables, call it "Cheveux d'ange" not "Tagine". If you see couscous, specify if it's "Couscous au poisson" or "Couscous viande".
-ring
+  "description": string,
+  "highlights": string[]
 }`;
 
 const DESCRIPTION_PROMPT_FR = `Vous êtes un rédacteur de menus pour restaurants (application FiftyFood).
@@ -80,7 +83,7 @@ Analysez la photo et utilisez le NOM AUTHENTIQUE du plat lorsque vous le reconna
 Exigences:
 - Ton menu de restaurant, appétissant et précis
 - 3-4 phrases (320-420 caractères)
-- Mettre en avant goûts, textures, ingrédients clés, et suggestion de service
+- Mettre en avant goûts, textures, et ingrédients clés
 - Pas d'exagération, style premium
 
 Retournez UNIQUEMENT un objet JSON:
@@ -88,7 +91,6 @@ Retournez UNIQUEMENT un objet JSON:
   "title": string,
   "description": string,
   "highlights": string[],
-  "suggestedPrice": string
 }`;
 
 const DESCRIPTION_PROMPT_AR = `أنت كاتب قوائم مطاعم لتطبيق FiftyFood.
@@ -97,7 +99,7 @@ const DESCRIPTION_PROMPT_AR = `أنت كاتب قوائم مطاعم لتطبي�
 المتطلبات:
 - أسلوب قائمة مطعم جذاب ودقيق
 - 3-4 جمل (320-420 حرف)
-- إبراز الطعم والقوام والمكونات الأساسية واقتراح التقديم
+- إبراز الطعم والقوام والمكونات الأساسية 
 - بدون مبالغة، أسلوب راق
 
 أرجع فقط كائن JSON:
@@ -105,7 +107,6 @@ const DESCRIPTION_PROMPT_AR = `أنت كاتب قوائم مطاعم لتطبي�
   "title": string,
   "description": string,
   "highlights": string[],
-  "suggestedPrice": string
 }`;
 
 // --- Add interfaces here ---
@@ -289,7 +290,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://fiftyfood.app',
         'X-Title': 'FiftyFood',
       },
@@ -298,7 +299,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err?.error?.message || `OpenRouter API error: ${response.status}`);
+      throw new Error(
+        err?.error?.message || `OpenRouter API error: ${response.status}`,
+      );
     }
 
     const data = (await response.json()) as {
@@ -325,10 +328,11 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
   }
 
   private buildFallbackTitle(description: string): string {
-    const firstLine = description
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.length > 0) || description.trim();
+    const firstLine =
+      description
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) || description.trim();
     const firstSentence = firstLine.split(/[.!?]/)[0].trim();
     const base = firstSentence.length > 0 ? firstSentence : firstLine;
     return base.length > 50 ? `${base.slice(0, 47).trim()}...` : base;
@@ -402,7 +406,9 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
   async verifyPhoto(imageBase64: string, mimeType: string = 'image/jpeg') {
     const verificationKey = getOpenRouterVerificationKey();
     if (!verificationKey) {
-      this.logger.warn('OPENROUTER_API_KEY is not configured - skipping verification');
+      this.logger.warn(
+        'OPENROUTER_API_KEY is not configured - skipping verification',
+      );
       return {
         passed: true,
         skipped: true,
@@ -443,14 +449,27 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
       if (result.overallApproved) {
         messages.push('✓ Photo approved: Valid food image');
         if (result.isFood) messages.push('✓ Food detected in image');
-        if (result.isGoodQuality) messages.push('✓ Photo quality is acceptable');
+        if (result.isGoodQuality)
+          messages.push('✓ Photo quality is acceptable');
         if (result.isConsumable) messages.push('✓ Food appears consumable');
       } else {
         messages.push('✗ Photo verification failed');
         if (!result.isFood) messages.push('✗ No food detected in image');
         if (!result.isGoodQuality) messages.push('✗ Photo quality too low');
-        if (!result.isConsumable) messages.push('✗ Food does not appear consumable');
-        if (result.rejectionReason) messages.push(`→ ${result.rejectionReason}`);
+        if (!result.isConsumable)
+          messages.push('✗ Food does not appear consumable');
+        if (result.rejectionReason) {
+          // Highlight burnt/charred food specifically
+          if (
+            result.rejectionReason.toLowerCase().includes('burnt') ||
+            result.rejectionReason.toLowerCase().includes('charred') ||
+            result.rejectionReason.toLowerCase().includes('overcooked')
+          ) {
+            messages.push(`⚠️ ${result.rejectionReason}`);
+          } else {
+            messages.push(`→ ${result.rejectionReason}`);
+          }
+        }
       }
 
       // Debug log
@@ -476,19 +495,28 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
       console.error('Photo verification error:', err);
-      if (err.status === 429 || err.status === 402) {
-        return {
-          passed: false,
-          messages: [
-            err.message || 'Verification service temporarily unavailable.',
-          ],
-          freshness_rating: 'unknown',
-          confidence: 0,
-        };
+
+      let userMessage = 'Verification failed. Please try again.';
+
+      if (err.status === 429) {
+        userMessage =
+          'Too many verification requests. Please wait a moment and try again.';
+      } else if (err.status === 402) {
+        userMessage =
+          'Verification service temporarily unavailable. Please try again later.';
+      } else if (err.status === 500 || err.status === 503) {
+        userMessage = 'Server error. Please try again in a moment.';
+      } else if (
+        err.message?.includes('timeout') ||
+        err.message?.includes('ECONNREFUSED')
+      ) {
+        userMessage =
+          'Connection error. Please check your internet and try again.';
       }
+
       return {
         passed: false,
-        messages: ['Verification failed. Please try again.'],
+        messages: [userMessage],
         freshness_rating: 'unknown',
         confidence: 0,
       };
@@ -669,9 +697,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
     const now = new Date();
     if (pickupDate <= now) {
-      throw new BadRequestException(
-        'pickupDateTime must be in the future.',
-      );
+      throw new BadRequestException('pickupDateTime must be in the future.');
     }
 
     const created = await this.prisma.offer.create({
@@ -786,7 +812,10 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
             'pickupDateTime must be in the future.',
           );
         }
-        nextPickupDateTime = this.normalizePickupDateTime(newPickupDate, nextPickupTime);
+        nextPickupDateTime = this.normalizePickupDateTime(
+          newPickupDate,
+          nextPickupTime,
+        );
       } catch (error) {
         if (error instanceof BadRequestException) {
           throw error;
@@ -798,7 +827,10 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
     } else if (offer.status === 'EXPIRED') {
       nextPickupDateTime = this.normalizePickupDateTimeFromNow(nextPickupTime);
     } else {
-      nextPickupDateTime = this.normalizePickupDateTime(offer.pickupDateTime, nextPickupTime);
+      nextPickupDateTime = this.normalizePickupDateTime(
+        offer.pickupDateTime,
+        nextPickupTime,
+      );
     }
 
     // Logic: If offer is SOLD_OUT, quantity is increased, and pickupDateTime is in the future, set status to ACTIVE
@@ -830,11 +862,7 @@ export class OffersService implements OnModuleInit, OnModuleDestroy {
 
     // Re-embed if description changed
     if (dto.description && dto.description !== offer.description) {
-      void this.embedOffer(
-        offerId,
-        dto.description,
-        (updated.categories as string[]),
-      );
+      void this.embedOffer(offerId, dto.description, updated.categories);
     }
 
     return updated;

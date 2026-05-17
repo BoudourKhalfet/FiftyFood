@@ -67,7 +67,9 @@ export class LivenessSessionService {
     };
 
     this.sessions.set(sessionId, session);
-    this.logger.log(`[Session] Issued ${sessionId} for user ${userId} challenges=${JSON.stringify(challenges)}`);
+    this.logger.log(
+      `[Session] Issued ${sessionId} for user ${userId} challenges=${JSON.stringify(challenges)}`,
+    );
 
     return {
       sessionId,
@@ -94,7 +96,9 @@ export class LivenessSessionService {
     }
 
     if (session.userId !== userId) {
-      this.logger.warn(`[Session] User mismatch: expected ${session.userId}, got ${userId}`);
+      this.logger.warn(
+        `[Session] User mismatch: expected ${session.userId}, got ${userId}`,
+      );
       return { valid: false, error: 'Session user mismatch' };
     }
 
@@ -178,7 +182,7 @@ export class LivenessSessionService {
   private generateChallengeSequence(): string[] {
     const all = ['blink', 'turn_left', 'turn_right'];
     const first = all[Math.floor(Math.random() * all.length)];
-    const remaining = all.filter(c => c !== first);
+    const remaining = all.filter((c) => c !== first);
     const second = remaining[Math.floor(Math.random() * remaining.length)];
     return [first, second];
   }

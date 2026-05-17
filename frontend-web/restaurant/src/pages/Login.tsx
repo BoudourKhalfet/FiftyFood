@@ -80,12 +80,21 @@ const Login: React.FC = () => {
             onError={(e) => (e.currentTarget.style.display = "none")}
           />
         </Box>
-        <Typography variant="h4" sx={{ fontWeight: 700, textAlign: "center", mb: 1, color: "#222" }}>
+        <Typography
+          variant="h4"
+          sx={{ fontWeight: 700, textAlign: "center", mb: 1, color: "#222" }}
+        >
           Welcome back
         </Typography>
         <Typography
           variant="subtitle1"
-          sx={{ color: "#818181", fontWeight: 400, textAlign: "center", mb: 2, display: "block" }}
+          sx={{
+            color: "#818181",
+            fontWeight: 400,
+            textAlign: "center",
+            mb: 2,
+            display: "block",
+          }}
         >
           Sign in to access your restaurant dashboard
         </Typography>
@@ -133,7 +142,11 @@ const Login: React.FC = () => {
                     ),
                     endAdornment: (
                       <InputAdornment position="end">
-                        <IconButton onClick={handlePwVisibility} edge="end" size="small">
+                        <IconButton
+                          onClick={handlePwVisibility}
+                          edge="end"
+                          size="small"
+                        >
                           {showPw ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
                       </InputAdornment>

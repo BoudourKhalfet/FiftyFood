@@ -62,14 +62,14 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
   // Valid order status transitions (state machine)
   private static readonly VALID_TRANSITIONS: Record<string, string[]> = {
-    PENDING:   ['CONFIRMED', 'CANCELLED', 'EXPIRED'],
+    PENDING: ['CONFIRMED', 'CANCELLED', 'EXPIRED'],
     CONFIRMED: ['ASSIGNED', 'READY', 'CANCELLED', 'EXPIRED'],
-    ASSIGNED:  ['READY', 'PICKED_UP', 'CANCELLED'],
-    READY:     ['PICKED_UP', 'DELIVERED', 'CANCELLED'],
+    ASSIGNED: ['READY', 'PICKED_UP', 'CANCELLED'],
+    READY: ['PICKED_UP', 'DELIVERED', 'CANCELLED'],
     PICKED_UP: ['DELIVERED'],
     DELIVERED: [],
     CANCELLED: [],
-    EXPIRED:   [],
+    EXPIRED: [],
   };
 
   constructor(
@@ -208,8 +208,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         "pickupQrStatus" = 'NOT_SCANNED'::"QrStatus"
       WHERE "id" = ${order.id}
     `;
-    
-    this.logger.log(`[QR TOKEN] Saved to DB: order=${order.id.substring(0, 8)}, hash=${hash.substring(0, 16)}..., expires=${expiresAt.toISOString()}`);
+
+    this.logger.log(
+      `[QR TOKEN] Saved to DB: order=${order.id.substring(0, 8)}, hash=${hash.substring(0, 16)}..., expires=${expiresAt.toISOString()}`,
+    );
 
     return token;
   }
@@ -354,7 +356,12 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       const unpaidOfferIds = [...new Set(unpaidOrders.map((o) => o.offerId))];
       const unpaidOffers = await this.prisma.offer.findMany({
         where: { id: { in: unpaidOfferIds } },
-        select: { id: true, status: true, pickupTime: true, pickupDateTime: true },
+        select: {
+          id: true,
+          status: true,
+          pickupTime: true,
+          pickupDateTime: true,
+        },
       });
       const unpaidOfferById = new Map(unpaidOffers.map((o) => [o.id, o]));
 
@@ -363,7 +370,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           const offer = unpaidOfferById.get(order.offerId);
           if (!offer) return false;
           if (offer.status === 'EXPIRED') return true;
-          const deadline = this.getPickupDeadline(offer.pickupDateTime, offer.pickupTime);
+          const deadline = this.getPickupDeadline(
+            offer.pickupDateTime,
+            offer.pickupTime,
+          );
           return deadline != null && deadline.getTime() <= Date.now();
         })
         .map((o) => o.id);
@@ -567,7 +577,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     let reference = '';
     while (!unique) {
       reference = nanoid();
-      const found = await this.prisma.order.findUnique({ where: { reference } });
+      const found = await this.prisma.order.findUnique({
+        where: { reference },
+      });
       if (!found) unique = true;
     }
 
@@ -588,11 +600,17 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       if (typeof mainItem?.quantity === 'number') {
         quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const order = await this.prisma.$transaction(async (tx) => {
       const reserved = await tx.offer.updateMany({
-        where: { id: params.offerId, status: 'ACTIVE', quantity: { gte: quantityOrdered } },
+        where: {
+          id: params.offerId,
+          status: 'ACTIVE',
+          quantity: { gte: quantityOrdered },
+        },
         data: { quantity: { decrement: quantityOrdered } },
       });
       if (reserved.count === 0) {
@@ -670,8 +688,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
         // Log QR token decision
         const canIssue = this.canIssueQrForOrder(order);
-        this.logger.log(`[QR TOKEN] Order ${order.id.substring(0, 8)}: canIssue=${canIssue}, status=${order.status}, qrStatus=${order.pickupQrStatus}, expiresAt=${order.pickupQrExpiresAt}`);
-        
+        this.logger.log(
+          `[QR TOKEN] Order ${order.id.substring(0, 8)}: canIssue=${canIssue}, status=${order.status}, qrStatus=${order.pickupQrStatus}, expiresAt=${order.pickupQrExpiresAt}`,
+        );
+
         // Only issue new QR token if one doesn't already exist or has expired
         const pickupQrToken = canIssue
           ? await this.issuePickupQrToken({
@@ -680,9 +700,11 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
               collectionMethod: order.collectionMethod,
             })
           : null;
-        
+
         if (pickupQrToken) {
-          this.logger.log(`[QR TOKEN] Order ${order.id.substring(0, 8)}: Issued new token: ${pickupQrToken.substring(0, 30)}...`);
+          this.logger.log(
+            `[QR TOKEN] Order ${order.id.substring(0, 8)}: Issued new token: ${pickupQrToken.substring(0, 30)}...`,
+          );
         }
 
         return {
@@ -946,7 +968,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         where: {
           livreurId: delivererId,
           // Show all orders from CONFIRMED onwards (not just DELIVERED)
-          status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+          status: {
+            in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'],
+          },
         },
         include: {
           restaurant: { include: { restaurantProfile: true } },
@@ -974,7 +998,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             order.restaurant?.restaurantProfile?.restaurantName ?? '',
           customerName: order.client?.clientProfile?.fullName ?? '',
           date: order.updatedAt,
-          amount: 2.5,  // Deliverer earns a fixed amount per order
+          amount: 2.5, // Deliverer earns a fixed amount per order
           total: 2.5,
           deliveryFee: 0,
           rating: order.reviews?.[0]?.rating ?? null,
@@ -1045,7 +1069,11 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
     // Payout deliverer after successful delivery
     if (updated.livreurId && updated.deliveryFee && updated.deliveryFee > 0) {
-      await this.processDelivererPayout(updated.livreurId, orderId, updated.deliveryFee);
+      await this.processDelivererPayout(
+        updated.livreurId,
+        orderId,
+        updated.deliveryFee,
+      );
     }
 
     await this.notificationsService.notifyOrderDelivered(updated.id);
@@ -1217,7 +1245,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
     // Idempotency: if already confirmed, return as-is (prevents double processing)
     if (order.status === 'CONFIRMED') {
-      this.logger.log(`Order ${orderId} payment already confirmed (idempotent)`);
+      this.logger.log(
+        `Order ${orderId} payment already confirmed (idempotent)`,
+      );
       return order;
     }
 
@@ -1234,12 +1264,13 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           status: 'CONFIRMED',
           paymentMethod: paymentMethod as any,
           paymentDetails: {
-            ...(typeof order.paymentDetails === 'object' && order.paymentDetails !== null
+            ...(typeof order.paymentDetails === 'object' &&
+            order.paymentDetails !== null
               ? (order.paymentDetails as Record<string, unknown>)
               : {}),
             ...paymentDetails,
             confirmedAt: new Date().toISOString(),
-          } as any,
+          },
         },
       });
 
@@ -1293,22 +1324,32 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     orderStatus?: string;
     collectionMethod?: string | null;
   }> {
-    this.logger.log(`[QR DEBUG] Starting QR validation, actor: ${actor.role} (${actor.id})`);
-    this.logger.log(`[QR DEBUG] Raw token received: "${token.substring(0, 50)}..." (length: ${token.length})`);
-    this.logger.log(`[QR DEBUG] Token contains '.': ${token.includes('.')}, split parts: ${token.split('.').length}`);
-    
+    this.logger.log(
+      `[QR DEBUG] Starting QR validation, actor: ${actor.role} (${actor.id})`,
+    );
+    this.logger.log(
+      `[QR DEBUG] Raw token received: "${token.substring(0, 50)}..." (length: ${token.length})`,
+    );
+    this.logger.log(
+      `[QR DEBUG] Token contains '.': ${token.includes('.')}, split parts: ${token.split('.').length}`,
+    );
+
     await this.expirePendingOrdersPastPickupTime();
 
     let parsed: QrPayload;
     try {
       parsed = this.parseAndVerifyQrToken(token);
-      this.logger.log(`[QR DEBUG] Token parsed OK, orderId: ${parsed.oid}, role: ${parsed.role}, exp: ${parsed.exp}`);
+      this.logger.log(
+        `[QR DEBUG] Token parsed OK, orderId: ${parsed.oid}, role: ${parsed.role}, exp: ${parsed.exp}`,
+      );
     } catch (e) {
       this.logger.error(`[QR DEBUG] Token parse/verify failed: ${e}`);
-      this.logger.error(`[QR DEBUG] Failed token content: "${token.substring(0, 100)}..."`);
+      this.logger.error(
+        `[QR DEBUG] Failed token content: "${token.substring(0, 100)}..."`,
+      );
       throw e;
     }
-    
+
     const tokenHash = this.sha256(token);
     this.logger.log(`[QR DEBUG] Token hash: ${tokenHash.substring(0, 16)}...`);
 
@@ -1350,12 +1391,20 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         message: 'Order not found for this QR token',
       });
     }
-    this.logger.log(`[QR DEBUG] Order found: ${order.id}, status: ${order.status}, restaurant: ${order.restaurantId}`);
-    this.logger.log(`[QR DEBUG] Order QR hash: ${order.pickupQrTokenHash?.substring(0, 16)}..., expected: ${tokenHash.substring(0, 16)}...`);
-    this.logger.log(`[QR DEBUG] Order QR status: ${order.pickupQrStatus}, usedAt: ${order.pickupQrUsedAt}, expiresAt: ${order.pickupQrExpiresAt}`);
+    this.logger.log(
+      `[QR DEBUG] Order found: ${order.id}, status: ${order.status}, restaurant: ${order.restaurantId}`,
+    );
+    this.logger.log(
+      `[QR DEBUG] Order QR hash: ${order.pickupQrTokenHash?.substring(0, 16)}..., expected: ${tokenHash.substring(0, 16)}...`,
+    );
+    this.logger.log(
+      `[QR DEBUG] Order QR status: ${order.pickupQrStatus}, usedAt: ${order.pickupQrUsedAt}, expiresAt: ${order.pickupQrExpiresAt}`,
+    );
 
     if (actor.role !== Role.RESTAURANT) {
-      this.logger.error(`[QR DEBUG] Role check failed: actor=${actor.role}, expected=RESTAURANT`);
+      this.logger.error(
+        `[QR DEBUG] Role check failed: actor=${actor.role}, expected=RESTAURANT`,
+      );
       throw new ForbiddenException({
         code: 'QR_ROLE_NOT_ALLOWED',
         message: 'Only restaurant accounts can validate pickup QR',
@@ -1363,7 +1412,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (order.restaurantId !== actor.id) {
-      this.logger.error(`[QR DEBUG] Restaurant mismatch: order.restaurantId=${order.restaurantId}, actor.id=${actor.id}`);
+      this.logger.error(
+        `[QR DEBUG] Restaurant mismatch: order.restaurantId=${order.restaurantId}, actor.id=${actor.id}`,
+      );
       throw new ForbiddenException({
         code: 'QR_RESTAURANT_MISMATCH',
         message: 'This QR does not belong to your restaurant',
@@ -1371,7 +1422,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (order.reference !== parsed.ref) {
-      this.logger.error(`[QR DEBUG] Reference mismatch: order.ref=${order.reference}, parsed.ref=${parsed.ref}`);
+      this.logger.error(
+        `[QR DEBUG] Reference mismatch: order.ref=${order.reference}, parsed.ref=${parsed.ref}`,
+      );
       throw new BadRequestException({
         code: 'QR_REFERENCE_MISMATCH',
         message: 'QR reference mismatch',
@@ -1381,7 +1434,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     const expectedRole =
       order.collectionMethod === 'DELIVERY' ? 'DELIVERER' : 'CLIENT';
     if (parsed.role !== expectedRole) {
-      this.logger.error(`[QR DEBUG] Role mismatch: parsed.role=${parsed.role}, expected=${expectedRole}`);
+      this.logger.error(
+        `[QR DEBUG] Role mismatch: parsed.role=${parsed.role}, expected=${expectedRole}`,
+      );
       throw new BadRequestException({
         code: 'QR_TOKEN_ROLE_MISMATCH',
         message: 'QR token role does not match order collection method',
@@ -1389,7 +1444,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!order.pickupQrTokenHash || order.pickupQrTokenHash !== tokenHash) {
-      this.logger.error(`[QR DEBUG] Token hash mismatch or missing: orderHash=${order.pickupQrTokenHash?.substring(0, 16)}, tokenHash=${tokenHash.substring(0, 16)}`);
+      this.logger.error(
+        `[QR DEBUG] Token hash mismatch or missing: orderHash=${order.pickupQrTokenHash?.substring(0, 16)}, tokenHash=${tokenHash.substring(0, 16)}`,
+      );
       throw new BadRequestException({
         code: 'QR_TOKEN_INVALID',
         message: 'Invalid QR token',
@@ -1589,8 +1646,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             geocodedRestaurantCoords,
           );
           // Always refresh if mismatch is significant (no lastGeocodedAt tracking)
-          const shouldRefreshCoords =
-            mismatchKm > restaurantCoordsMismatchKm;
+          const shouldRefreshCoords = mismatchKm > restaurantCoordsMismatchKm;
 
           console.log('[DELIVERY DEBUG] restaurant coords mismatch check', {
             stored: restaurantCoords,

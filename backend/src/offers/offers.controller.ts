@@ -72,18 +72,27 @@ export class OffersController {
    */
   @Post('ai-verify-photo')
   @HttpCode(200)
-  async aiVerifyPhoto(
-    @Req() req: ReqWithUser,
-    @Body() dto: AiVerifyPhotoDto,
-  ) {
+  async aiVerifyPhoto(@Req() req: ReqWithUser, @Body() dto: AiVerifyPhotoDto) {
     this.ensureRestaurant(req);
-    const result = await this.offers.verifyPhotoFromUrl(dto.imageUrl);
-    return {
-      isValid: result.passed === true,
-      messages: result.messages ?? [],
-      confidence: result.confidence ?? 0,
-      skipped: result.skipped ?? false,
-    };
+    try {
+      const result = await this.offers.verifyPhotoFromUrl(dto.imageUrl);
+      return {
+        isValid: result.passed === true,
+        messages: result.messages ?? [],
+        confidence: result.confidence ?? 0,
+        skipped: result.skipped ?? false,
+      };
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : 'Verification failed';
+      console.error('AI verification error:', errorMsg);
+      return {
+        isValid: false,
+        messages: [errorMsg],
+        confidence: 0,
+        skipped: false,
+      };
+    }
   }
 
   /**
@@ -125,7 +134,10 @@ export class OffersController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     try {
-      if (!file) throw new ForbiddenException('No file uploaded');
+      if (!file) {
+        throw new ForbiddenException('Please select an image to upload');
+      }
+
       const configuredBaseUrl =
         process.env.PUBLIC_BACKEND_URL || process.env.BASE_URL;
       const protocol =
@@ -138,7 +150,10 @@ export class OffersController {
       return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
     } catch (error) {
       console.error('Upload error:', error);
-      throw error;
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new ForbiddenException('Failed to upload image. Please try again.');
     }
   }
 

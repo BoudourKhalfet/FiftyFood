@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../auth/google_auth.dart';
 import '../../api/api_service.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -47,6 +48,45 @@ class _SignupStep1State extends State<SignupStep1> {
     super.initState();
     _signInRecognizer = TapGestureRecognizer()
       ..onTap = () => Navigator.of(context).pushNamed('/signin/client');
+  }
+
+  /// Convert technical error messages to user-friendly messages
+  String _getUserFriendlyErrorMessage(String error) {
+    // Network errors
+    if (error.contains('Connection reset') ||
+        error.contains('Connection refused')) {
+      return 'Connection lost. Please check your internet and try again.';
+    }
+    if (error.contains('SocketException') ||
+        error.contains('timeout') ||
+        error.contains('TimeoutException')) {
+      return 'Network error. Please check your connection and try again.';
+    }
+    if (error.contains('Failed to host')) {
+      return 'Unable to reach the server. Please check your internet connection.';
+    }
+
+    // Authentication/Registration errors
+    if (error.contains('already in use')) {
+      return 'This email is already registered. Please use a different email or sign in.';
+    }
+    if (error.contains('weak password')) {
+      return 'Password is too weak. Use at least 8 characters.';
+    }
+    if (error.contains('invalid email')) {
+      return 'Please enter a valid email address.';
+    }
+
+    // Server errors
+    if (error.contains('500') || error.contains('Internal server')) {
+      return 'Server error. Please try again in a moment.';
+    }
+    if (error.contains('503') || error.contains('Service unavailable')) {
+      return 'Service temporarily unavailable. Please try again later.';
+    }
+
+    // Generic fallback
+    return 'Registration failed. Please try again.';
   }
 
   void _onContinue() async {
@@ -96,15 +136,19 @@ class _SignupStep1State extends State<SignupStep1> {
         } else if (response['success'] == true ||
             response['statusCode'] == 201 ||
             response['status'] == 'ok') {
-          Navigator.of(context).pushNamed('/client/signup2', arguments: _clientType);
+          Navigator.of(
+            context,
+          ).pushNamed('/client/signup2', arguments: _clientType);
         } else {
           setState(() {
-            _error = "${response['message'] ?? response.toString()}";
+            _error = _getUserFriendlyErrorMessage(
+              response['message'] ?? 'Registration failed',
+            );
           });
         }
       } catch (e) {
         setState(() {
-          _error = AppLocalizations.of(context)!.errorRegistrationFailed(e.toString());
+          _error = _getUserFriendlyErrorMessage(e.toString());
         });
       } finally {
         setState(() {
@@ -214,11 +258,14 @@ class _SignupStep1State extends State<SignupStep1> {
                         icon: Icons.email,
                         keyboardType: TextInputType.emailAddress,
                         validator: (v) {
-                          if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
+                          if (v == null || v.isEmpty)
+                            return AppLocalizations.of(context)!.errorRequired;
                           if (!RegExp(
                             r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
                           ).hasMatch(v))
-                            return AppLocalizations.of(context)!.errorInvalidEmail;
+                            return AppLocalizations.of(
+                              context,
+                            )!.errorInvalidEmail;
                           return null;
                         },
                       ),
@@ -230,7 +277,9 @@ class _SignupStep1State extends State<SignupStep1> {
                         obscureText: _obscurePassword,
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                            _obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
                             color: const Color(0xFF9CA3AF),
                           ),
                           onPressed: () {
@@ -240,9 +289,12 @@ class _SignupStep1State extends State<SignupStep1> {
                           },
                         ),
                         validator: (v) {
-                          if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
+                          if (v == null || v.isEmpty)
+                            return AppLocalizations.of(context)!.errorRequired;
                           if (v.length < 8) {
-                            return AppLocalizations.of(context)!.errorPasswordLength;
+                            return AppLocalizations.of(
+                              context,
+                            )!.errorPasswordLength;
                           }
                           return null;
                         },
@@ -250,12 +302,16 @@ class _SignupStep1State extends State<SignupStep1> {
                       const SizedBox(height: 12),
                       _buildTextField(
                         controller: _confirmController,
-                        label: AppLocalizations.of(context)!.labelConfirmPassword,
+                        label: AppLocalizations.of(
+                          context,
+                        )!.labelConfirmPassword,
                         icon: Icons.lock_outline,
                         obscureText: _obscureConfirm,
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                            _obscureConfirm
+                                ? Icons.visibility_off
+                                : Icons.visibility,
                             color: const Color(0xFF9CA3AF),
                           ),
                           onPressed: () {
@@ -265,9 +321,12 @@ class _SignupStep1State extends State<SignupStep1> {
                           },
                         ),
                         validator: (v) {
-                          if (v == null || v.isEmpty) return AppLocalizations.of(context)!.errorRequired;
+                          if (v == null || v.isEmpty)
+                            return AppLocalizations.of(context)!.errorRequired;
                           if (v != _passwordController.text)
-                            return AppLocalizations.of(context)!.errorPasswordsNotMatch;
+                            return AppLocalizations.of(
+                              context,
+                            )!.errorPasswordsNotMatch;
                           return null;
                         },
                       ),
@@ -290,12 +349,17 @@ class _SignupStep1State extends State<SignupStep1> {
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _clientType = 'NORMAL'),
+                              onTap: () =>
+                                  setState(() => _clientType = 'NORMAL'),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 decoration: BoxDecoration(
                                   color: _clientType == 'NORMAL'
-                                      ? const Color(0xFF2D8066).withOpacity(0.08)
+                                      ? const Color(
+                                          0xFF2D8066,
+                                        ).withOpacity(0.08)
                                       : Colors.white,
                                   border: Border.all(
                                     color: _clientType == 'NORMAL'
@@ -342,10 +406,14 @@ class _SignupStep1State extends State<SignupStep1> {
                             child: GestureDetector(
                               onTap: () => setState(() => _clientType = 'PRO'),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 decoration: BoxDecoration(
                                   color: _clientType == 'PRO'
-                                      ? const Color(0xFF2D8066).withOpacity(0.08)
+                                      ? const Color(
+                                          0xFF2D8066,
+                                        ).withOpacity(0.08)
                                       : Colors.white,
                                   border: Border.all(
                                     color: _clientType == 'PRO'
@@ -395,14 +463,16 @@ class _SignupStep1State extends State<SignupStep1> {
                           controller: _societyNameController,
                           label: 'Company Name',
                           icon: Icons.apartment,
-                          validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Required' : null,
                         ),
                         const SizedBox(height: 12),
                         _buildProField(
                           controller: _fiscalNumberController,
                           label: 'Fiscal Number',
                           icon: Icons.numbers,
-                          validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Required' : null,
                         ),
                         const SizedBox(height: 12),
                         _buildProField(
@@ -410,7 +480,8 @@ class _SignupStep1State extends State<SignupStep1> {
                           label: 'Professional Phone',
                           icon: Icons.phone_in_talk,
                           keyboardType: TextInputType.phone,
-                          validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Required' : null,
                         ),
                         const SizedBox(height: 12),
                         _buildProField(
@@ -447,7 +518,8 @@ class _SignupStep1State extends State<SignupStep1> {
                             style: const TextStyle(color: Colors.red),
                           ),
                         ),
-                      if (_loading) const Center(child: CircularProgressIndicator()),
+                      if (_loading)
+                        const Center(child: CircularProgressIndicator()),
                       ElevatedButton(
                         onPressed: _onContinue,
                         style: ElevatedButton.styleFrom(
@@ -456,89 +528,71 @@ class _SignupStep1State extends State<SignupStep1> {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 16.0),
-                          child: Text(AppLocalizations.of(context)!.btnContinue),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        AppLocalizations.of(context)!.labelOrContinueWith,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                          child: Text(
+                            AppLocalizations.of(context)!.btnContinue,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
                       Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(
-                                Icons.g_mobiledata,
-                                color: Color(0xFF1F2937),
-                              ),
-                              label: Text(
-                                AppLocalizations.of(context)!.btnGoogle,
-                                style: const TextStyle(color: Color(0xFF1F2937)),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(
-                                  color: Color(0xFF1F9D7A),
-                                  width: 2,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
+                        children: const [
+                          Expanded(child: Divider()),
+                          SizedBox(width: 8),
+                          Text(
+                            'OR CONTINUE WITH',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF9CA3AF),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(
-                                Icons.facebook,
-                                color: Color(0xFF1F9D7A),
-                              ),
-                              label: Text(
-                                AppLocalizations.of(context)!.btnFacebook,
-                                style: const TextStyle(color: Color(0xFF1F9D7A)),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(
-                                  color: Color(0xFF1F9D7A),
-                                  width: 2,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
+                          SizedBox(width: 8),
+                          Expanded(child: Divider()),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _loading
+                            ? null
+                            : () async {
+                                await GoogleAuth.signInWithGoogle(
+                                  context,
+                                  'CLIENT',
+                                );
+                              },
+                        icon: const Icon(
+                          Icons.g_mobiledata,
+                          color: Color(0xFF1F9D7A),
+                        ),
+                        label: const Text(
+                          'Google',
+                          style: TextStyle(color: Color(0xFF1F9D7A)),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF1F9D7A)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       Center(
                         child: Text.rich(
                           TextSpan(
                             children: [
                               TextSpan(
-                                text: AppLocalizations.of(context)!.labelAlreadyAccount,
+                                text: AppLocalizations.of(
+                                  context,
+                                )!.labelAlreadyAccount,
                                 style: const TextStyle(
                                   color: Color(0xFF6B7280),
                                   fontSize: 13,
                                 ),
                               ),
                               TextSpan(
-                                text: AppLocalizations.of(context)!.btnSignInSmall,
+                                text: AppLocalizations.of(
+                                  context,
+                                )!.btnSignInSmall,
                                 style: const TextStyle(
                                   color: Color(0xFF1F9D7A),
                                   fontWeight: FontWeight.w600,

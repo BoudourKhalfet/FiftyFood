@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:app_links/app_links.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,12 +57,22 @@ class MyApp extends StatefulWidget {
 }
 
 class MyAppState extends State<MyApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _deepLinkSubscription;
   Locale? _locale;
 
   @override
   void initState() {
     super.initState();
     _loadLocale();
+    _initDeepLinks();
+  }
+
+  @override
+  void dispose() {
+    _deepLinkSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadLocale() async {
@@ -81,9 +93,67 @@ class MyAppState extends State<MyApp> {
     });
   }
 
+  void _initDeepLinks() {
+    _deepLinkSubscription = _appLinks.uriLinkStream.listen(
+      _handleIncomingUri,
+      onError: (Object error) {
+        debugPrint('Deep link stream error: $error');
+      },
+    );
+
+    _appLinks.getInitialLink().then(_handleIncomingUri).catchError((
+      Object error,
+    ) {
+      debugPrint('Deep link initial link error: $error');
+    });
+  }
+
+  bool _isResetPasswordUri(Uri uri) {
+    return uri.path == '/reset-password' ||
+        uri.host == 'reset-password' ||
+        uri.pathSegments.contains('reset-password') ||
+        uri.fragment.startsWith('/reset-password') ||
+        uri.fragment.startsWith('reset-password');
+  }
+
+  String? _extractResetToken(Uri uri) {
+    final directToken = uri.queryParameters['token'];
+    if (directToken != null && directToken.isNotEmpty) {
+      return directToken;
+    }
+
+    final fragment = uri.fragment;
+    if (fragment.isEmpty) return null;
+
+    final normalizedFragment = fragment.startsWith('/')
+        ? fragment
+        : '/$fragment';
+    final fragmentUri = Uri.tryParse(normalizedFragment);
+    return fragmentUri?.queryParameters['token'];
+  }
+
+  void _handleIncomingUri(Uri? uri) {
+    if (uri == null || !_isResetPasswordUri(uri)) {
+      return;
+    }
+
+    final token = _extractResetToken(uri);
+    if (token == null || token.isEmpty) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => ResetPasswordPage(token: token)),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'FiftyFood',
       theme: ThemeData(
@@ -106,8 +176,8 @@ class MyAppState extends State<MyApp> {
         final uri = Uri.base;
 
         // ✅ Handle reset password FIRST
-        if (uri.path == '/reset-password') {
-          String? token = uri.queryParameters['token'];
+        if (_isResetPasswordUri(uri)) {
+          String? token = _extractResetToken(uri);
 
           print("DETECTED RESET ROUTE");
           print("TOKEN: $token");
@@ -120,28 +190,26 @@ class MyAppState extends State<MyApp> {
         // ✅ Handle PayPal return URLs (works on both web and mobile)
         if (uri.path.startsWith('/payment/paypal/')) {
           print("DETECTED PAYPAL ROUTE: ${uri.path}");
-          
+
           if (uri.path == '/payment/paypal/return') {
             String? paypalOrderId = uri.queryParameters['token'];
             String? payerId = uri.queryParameters['PayerID'];
-            
-            print("PAYPAL RETURN - Order ID: $paypalOrderId, Payer ID: $payerId");
-            
+
+            print(
+              "PAYPAL RETURN - Order ID: $paypalOrderId, Payer ID: $payerId",
+            );
+
             // TODO: Navigate to order checkout with PayPal success
             // For now, navigate to home screen
-            return MaterialPageRoute(
-              builder: (_) => const HomeScreen(),
-            );
+            return MaterialPageRoute(builder: (_) => const HomeScreen());
           }
-          
+
           if (uri.path == '/payment/paypal/cancel') {
             print("PAYPAL CANCEL - User cancelled payment");
-            
+
             // TODO: Navigate back to offers screen with cancellation message
             // For now, navigate to home screen
-            return MaterialPageRoute(
-              builder: (_) => const HomeScreen(),
-            );
+            return MaterialPageRoute(builder: (_) => const HomeScreen());
           }
         }
 
@@ -254,7 +322,6 @@ class MyAppState extends State<MyApp> {
 
           case '/deliverer/dashboard':
             return MaterialPageRoute(builder: (_) => MainScreen());
-
         }
 
         // ✅ SINGLE fallback
@@ -265,4 +332,3 @@ class MyAppState extends State<MyApp> {
     );
   }
 }
-

@@ -12,7 +12,20 @@
           "package_name": "com.fiftyfood.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "307580063185-n24np0lac8n4il36s80irvaoi0ka927d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fiftyfood.app",
+            "certificate_hash": "7f491b42279a4b4f84bc7590afd16cef4ba6fcfb"
+          }
+        },
+        {
+          "client_id": "307580063185-ci57lfci45pfmsfm1h68e2fg7ris4903.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDaQ4PDa8zX2f2DpQ_58hNvHdpbp4V41f4"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "307580063185-ci57lfci45pfmsfm1h68e2fg7ris4903.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

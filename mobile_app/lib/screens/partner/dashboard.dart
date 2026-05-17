@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../api/api_service.dart';
@@ -186,6 +185,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     'BREAKFAST',
     'FINE_DINING',
     'BRUNCH',
+    'TUNISIAN',
+    'ITALIAN',
+    'CHINESE',
+    'FRIED_FOOD',
   ];
 
   final Map<String, String> _categoryLabels = {
@@ -208,7 +211,71 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     'BREAKFAST': 'Breakfast',
     'FINE_DINING': 'Fine Dining',
     'BRUNCH': 'Brunch',
+    'TUNISIAN': 'Tunisian',
+    'ITALIAN': 'Italian',
+    'CHINESE': 'Chinese',
+    'FRIED_FOOD': 'Fried Food',
   };
+
+  /// Convert technical error messages to user-friendly messages
+  String _getUserFriendlyErrorMessage(String error) {
+    // Network errors
+    if (error.contains('Connection reset')) {
+      return 'Connection lost. Please check your internet and try again.';
+    }
+    if (error.contains('SocketException') || error.contains('timeout')) {
+      return 'Network error. Please check your connection and try again.';
+    }
+    if (error.contains('Failed to authenticate')) {
+      return 'Session expired. Please log in again.';
+    }
+
+    // Photo verification errors - specific checks first
+    if (error.contains('burnt') ||
+        error.contains('burn') ||
+        error.contains('charred')) {
+      return 'Food appears burnt or charred. Please take a photo of fresh, properly cooked food.';
+    }
+    if (error.contains('No food detected')) {
+      return 'No food detected. Please take a clear photo of the food item.';
+    }
+    if (error.contains('Photo quality too low')) {
+      return 'Photo is too blurry or dark. Please take a clearer photo with better lighting.';
+    }
+    if (error.contains('plating is not very appetizing') ||
+        error.contains('not very appetizing') ||
+        error.contains('plating')) {
+      return 'The plating is not very appetizing.';
+    }
+    if (error.contains('Food does not appear consumable') ||
+        error.contains('spoiled') ||
+        error.contains('rotten') ||
+        error.contains('moldy')) {
+      return 'Food appears spoiled, rotten, or unsafe. Please take a photo of fresh food.';
+    }
+
+    // API errors
+    if (error.contains('429') || error.contains('rate limit')) {
+      return 'Too many requests. Please wait a moment and try again.';
+    }
+    if (error.contains('402') || error.contains('payment')) {
+      return 'Verification service temporarily unavailable. Please try again later.';
+    }
+    if (error.contains('500') || error.contains('server error')) {
+      return 'Server error. Please try again later.';
+    }
+
+    // File errors
+    if (error.contains('File too large')) {
+      return 'Image file is too large. Please choose a smaller image.';
+    }
+    if (error.contains('Invalid format')) {
+      return 'Image format not supported. Please use JPG or PNG.';
+    }
+
+    // Generic fallback
+    return 'Something went wrong. Please try again.';
+  }
 
   Future<void> _pickAndUploadOfferImage(
     void Function(void Function()) modalSetState,
@@ -271,7 +338,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
             }),
           );
 
-            if (verifyResponse.statusCode == 200 ||
+          if (verifyResponse.statusCode == 200 ||
               verifyResponse.statusCode == 201) {
             final verifyData = jsonDecode(verifyResponse.body);
             final isValid = verifyData['isValid'] as bool? ?? false;
@@ -286,26 +353,31 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
               // 2. Auto-generate description if photo is valid
               await _generateDescriptionForImage(imageUrl, modalSetState);
             } else {
-              // Photo failed verification - show warning
+              // Photo failed verification - show user-friendly warning
+              final userFriendlyMessage = _getUserFriendlyErrorMessage(
+                messages?.join(', ') ?? 'Photo verification failed',
+              );
               modalSetState(() {
-                _offerImageUploadError = 'Photo verification failed: ${messages?.join(", ") ?? "Not a valid food image"}';
-                _uploadedOfferImageUrl = null;
+                _offerImageUploadError = userFriendlyMessage;
               });
             }
           }
           if (verifyResponse.statusCode != 200) {
+            final errorMsg = _getUserFriendlyErrorMessage(
+              'server error ${verifyResponse.statusCode}',
+            );
             modalSetState(() {
               _aiVerificationResult = 'error';
-              _aiVerificationMessage =
-                  'AI verification failed: server error ${verifyResponse.statusCode}';
+              _aiVerificationMessage = errorMsg;
             });
           }
         } catch (aiError) {
           // AI verification failed but we can still proceed
           print('AI verification error: $aiError');
+          final errorMsg = _getUserFriendlyErrorMessage(aiError.toString());
           modalSetState(() {
             _aiVerificationResult = 'error';
-            _aiVerificationMessage = 'AI verification failed: $aiError';
+            _aiVerificationMessage = errorMsg;
           });
         } finally {
           modalSetState(() {
@@ -313,11 +385,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           });
         }
       }
-
     } catch (e) {
-      modalSetState(
-        () => _offerImageUploadError = 'Image picker/upload error: $e',
-      );
+      final errorMsg = _getUserFriendlyErrorMessage(e.toString());
+      modalSetState(() => _offerImageUploadError = errorMsg);
     } finally {
       modalSetState(() {
         _uploadingOfferImage = false;
@@ -385,10 +455,12 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       }
     } catch (e) {
       print('Error generating description: $e');
+      final errorMsg = _getUserFriendlyErrorMessage(e.toString());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to generate description: $e'),
-          backgroundColor: Colors.red,
+          content: Text(errorMsg),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
         ),
       );
     } finally {
@@ -408,10 +480,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
   String _quantity = '';
   String _pickupTime = '';
   String _visibility = 'IDENTIFIED';
-
-  // Image Upload
-  bool _aiVerifying = false;
-  Map<String, dynamic>? _aiResult;
 
   // QR Scanner
   Map<String, dynamic>? _qrResult;
@@ -549,11 +617,13 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
     });
 
     try {
-      debugPrint('QR Validate: Starting validation for token: ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
+      debugPrint(
+        'QR Validate: Starting validation for token: ${token.substring(0, token.length > 20 ? 20 : token.length)}...',
+      );
       final prefs = await SharedPreferences.getInstance();
       final jwt = prefs.getString('jwt');
       debugPrint('QR Validate: JWT ${jwt != null ? "present" : "missing"}');
-      
+
       debugPrint('QR Validate: Calling API...');
       final response = await ApiService.post(
         'orders/qr/validate',
@@ -606,10 +676,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       if (!mounted) return;
       final errorMessage = e.toString().replaceFirst('Exception: ', '');
       setState(() {
-        _qrResult = {
-          'success': false,
-          'message': errorMessage,
-        };
+        _qrResult = {'success': false, 'message': errorMessage};
       });
       // Show error in SnackBar
       ScaffoldMessenger.of(context).showSnackBar(
@@ -638,7 +705,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
         barrierDismissible: true,
         builder: (cameraDialogContext) => AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           title: const Text('Scan QR Code'),
           content: SizedBox(
             width: 320,
@@ -654,7 +723,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                     return;
                   }
                   final value = barcodes.first.rawValue;
-                  debugPrint('QR Scan: Detected value: ${value?.substring(0, value.length > 20 ? 20 : value.length)}...');
+                  debugPrint(
+                    'QR Scan: Detected value: ${value?.substring(0, value.length > 20 ? 20 : value.length)}...',
+                  );
                   if (value == null || value.trim().isEmpty) {
                     debugPrint('QR Scan: Empty value, ignoring');
                     return;
@@ -687,7 +758,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
       return;
     }
 
-    debugPrint('QR Scan: Scanned token result: ${scannedToken != null ? "found (${scannedToken.substring(0, scannedToken.length > 20 ? 20 : scannedToken.length)}...)" : "null/empty"}');
+    debugPrint(
+      'QR Scan: Scanned token result: ${scannedToken != null ? "found (${scannedToken.substring(0, scannedToken.length > 20 ? 20 : scannedToken.length)}...)" : "null/empty"}',
+    );
 
     if (scannedToken == null || scannedToken.isEmpty) {
       debugPrint('QR Scan: No token scanned or user cancelled');
@@ -933,7 +1006,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             Navigator.pop(context);
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => const PartnerTransactionsScreen(),
+                                builder: (_) =>
+                                    const PartnerTransactionsScreen(),
                               ),
                             );
                           },
@@ -1172,7 +1246,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
               Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  shape: BoxShape.circle,
+                ),
                 child: Icon(icon, color: iconColor, size: 21),
               ),
 
@@ -1198,7 +1275,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 9, color: Color(0xFF6B7280)),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF6B7280),
+                      ),
                     ),
                   ],
                 ),
@@ -1330,7 +1410,10 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFF1F9D7A), width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
         hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
       );
     }
@@ -1504,8 +1587,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                           ),
                         ],
                       ),
-                    if (_offerImageUploadError != null &&
-                        _uploadedOfferImageUrl == null)
+                    if (_offerImageUploadError != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8, bottom: 8),
                         child: Text(
@@ -1528,25 +1610,27 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               const SizedBox(
                                 height: 16,
                                 width: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             else
                               Icon(
                                 _aiVerificationResult == 'valid'
                                     ? Icons.check_circle
                                     : _aiVerificationResult == 'invalid'
-                                        ? Icons.error
-                                        : _aiVerificationResult == 'error'
-                                            ? Icons.warning
-                                            : Icons.help_outline,
+                                    ? Icons.error
+                                    : _aiVerificationResult == 'error'
+                                    ? Icons.warning
+                                    : Icons.help_outline,
                                 size: 16,
                                 color: _aiVerificationResult == 'valid'
                                     ? const Color(0xFF10B981)
                                     : _aiVerificationResult == 'invalid'
-                                        ? const Color(0xFFEF4444)
-                                        : _aiVerificationResult == 'error'
-                                            ? const Color(0xFFF59E0B)
-                                            : const Color(0xFF6B7280),
+                                    ? const Color(0xFFEF4444)
+                                    : _aiVerificationResult == 'error'
+                                    ? const Color(0xFFF59E0B)
+                                    : const Color(0xFF6B7280),
                               ),
                             const SizedBox(width: 8),
                             Flexible(
@@ -1554,13 +1638,13 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                 _aiVerifyingImage
                                     ? 'Verifying image...'
                                     : _aiVerificationResult == 'valid'
-                                        ? 'Photo verified'
-                                        : _aiVerificationResult == 'invalid'
-                                            ? 'Photo verification failed'
-                                            : _aiVerificationResult == 'error'
-                                                ? (_aiVerificationMessage ??
-                                                    'Verification error')
-                                                : 'Verification pending',
+                                    ? 'Photo verified'
+                                    : _aiVerificationResult == 'invalid'
+                                    ? 'Photo verification failed'
+                                    : _aiVerificationResult == 'error'
+                                    ? (_aiVerificationMessage ??
+                                          'Verification error')
+                                    : 'Verification pending',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Color(0xFF6B7280),
@@ -1582,9 +1666,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             onPressed: _generatingDescription
                                 ? null
                                 : () => _generateDescriptionForImage(
-                                      _uploadedOfferImageUrl!,
-                                      modalSetState,
-                                    ),
+                                    _uploadedOfferImageUrl!,
+                                    modalSetState,
+                                  ),
                             icon: _generatingDescription
                                 ? const SizedBox(
                                     height: 16,
@@ -1592,13 +1676,11 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white),
+                                        Colors.white,
+                                      ),
                                     ),
                                   )
-                                : const Icon(
-                                    Icons.auto_awesome,
-                                    size: 16,
-                                  ),
+                                : const Icon(Icons.auto_awesome, size: 16),
                             label: Text(
                               _generatingDescription
                                   ? 'Generating...'
@@ -1607,9 +1689,7 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1F9D7A),
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
                         ),
@@ -1754,7 +1834,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         ),
                       ],
                     ),
-                    if (_originalPrice.isNotEmpty && _discountedPrice.isNotEmpty) ...[                    
+                    if (_originalPrice.isNotEmpty &&
+                        _discountedPrice.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Builder(
                         builder: (_) {
@@ -1832,7 +1913,8 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                                           ),
                                         ),
                                         TextSpan(
-                                          text: '${payout.toStringAsFixed(2)} DT',
+                                          text:
+                                              '${payout.toStringAsFixed(2)} DT',
                                           style: const TextStyle(
                                             color: Color(0xFF1F9D7A),
                                             fontWeight: FontWeight.w700,
@@ -1877,9 +1959,9 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                               TextField(
                                 keyboardType: TextInputType.number,
                                 onChanged: (v) => _quantity = v,
-                                decoration: modalInputDecoration('5').copyWith(
-                                  isDense: true,
-                                ),
+                                decoration: modalInputDecoration(
+                                  '5',
+                                ).copyWith(isDense: true),
                               ),
                             ],
                           ),
@@ -2171,11 +2253,15 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
           children: [
             _buildStatCard(
               title: "Total Sales",
-              value: _loadingStats ? "-" : "${_totalSales.toStringAsFixed(2)} DT",
+              value: _loadingStats
+                  ? "-"
+                  : "${_totalSales.toStringAsFixed(2)} DT",
               icon: Icons.account_balance_wallet,
               iconColor: const Color(0xFF1F9D7A),
               iconBg: const Color(0xFFE8F5F1),
-              badgeLabel: _loadingStats ? null : "${_commissionRate.toStringAsFixed(0)}% fee",
+              badgeLabel: _loadingStats
+                  ? null
+                  : "${_commissionRate.toStringAsFixed(0)}% fee",
             ),
             _buildStatCard(
               title: "Meals Saved",

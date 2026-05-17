@@ -173,10 +173,7 @@ export class OrdersController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post(':orderId/cancel')
-  async cancelOrder(
-    @Param('orderId') orderId: string,
-    @Req() req: Request,
-  ) {
+  async cancelOrder(@Param('orderId') orderId: string, @Req() req: Request) {
     const user = req.user as { id: string; role: Role };
     const updatedOrder = await this.ordersService.cancelOrder(orderId, user.id);
     return {

@@ -7,10 +7,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { AccountStatus, Role } from '@prisma/client';
+import { AccountStatus, ClientType, Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
+import * as admin from 'firebase-admin';
 import { MailService } from '../mail/mail.service';
 import { User } from '@prisma/client';
 
@@ -28,6 +29,38 @@ function getEmailPayloadKey(): Buffer {
 
 const PASSWORD_REGEX =
   /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
+function normalizeGoogleRole(role?: string): Role | null {
+  const normalizedRole = role?.trim().toUpperCase();
+  if (normalizedRole === 'CLIENT') return Role.CLIENT;
+  if (normalizedRole === 'DELIVERER' || normalizedRole === 'LIVREUR') {
+    return Role.LIVREUR;
+  }
+  if (normalizedRole === 'RESTAURANT') return Role.RESTAURANT;
+  return null;
+}
+
+function initializeFirebaseAdmin() {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+  if (!projectId || !clientEmail || !privateKey) {
+    return false;
+  }
+
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId,
+        clientEmail,
+        privateKey,
+      }),
+    });
+  }
+
+  return true;
+}
 
 @Injectable()
 export class AuthService {
@@ -94,12 +127,10 @@ export class AuthService {
   private async generateEmailChangeToken(user: Pick<User, 'id'>) {
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = sha256(rawToken);
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
         emailChangeTokenHash: tokenHash,
-      
       },
     });
     return rawToken;
@@ -115,12 +146,42 @@ export class AuthService {
       throw new BadRequestException('Invalid role for self registration');
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(dto.email)) {
+      throw new BadRequestException('Please enter a valid email address');
+    }
+
+    // Validate password length
+    if (!dto.password || dto.password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
     const email = dto.email.toLowerCase();
 
-    const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) throw new BadRequestException('Email already in use');
+    try {
+      const existing = await this.prisma.user.findUnique({ where: { email } });
+      if (existing)
+        throw new BadRequestException(
+          'This email is already registered. Please use a different email or sign in.',
+        );
+    } catch (e: unknown) {
+      if (e instanceof BadRequestException) {
+        throw e;
+      }
+      console.error('Database error checking email:', e);
+      throw new BadRequestException(
+        'Failed to check email availability. Please try again.',
+      );
+    }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    let passwordHash: string;
+    try {
+      passwordHash = await bcrypt.hash(dto.password, 10);
+    } catch (e) {
+      console.error('Password hashing error:', e);
+      throw new BadRequestException('Registration error. Please try again.');
+    }
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = sha256(rawToken);
@@ -159,19 +220,31 @@ export class AuthService {
           ? { ...createDataBase, restaurantProfile: { create: {} } }
           : { ...createDataBase, livreurProfile: { create: {} } };
 
-    const user = await this.prisma.user.create({
-      data: createData,
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
-        emailVerifiedAt: true,
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: createData,
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          status: true,
+          emailVerifiedAt: true,
+        },
+      });
+    } catch (e: unknown) {
+      console.error('User creation error:', e);
+      const err = e as Error & { code?: string };
+      if (err.code === 'P2002') {
+        throw new BadRequestException(
+          'This email is already registered. Please use a different email or sign in.',
+        );
+      }
+      throw new BadRequestException('Registration failed. Please try again.');
+    }
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.100.6:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}`;
 
     console.log(`[DEV] Verify email for ${user.email}: ${verifyUrl}`);
@@ -254,7 +327,7 @@ export class AuthService {
           email: changeUser.pendingEmail.toLowerCase(),
           pendingEmail: null,
           emailChangeTokenHash: null,
-          
+
           emailVerifiedAt: new Date(),
         },
       });
@@ -341,7 +414,7 @@ export class AuthService {
     });
 
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.100.6:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${rawToken}&changeEmail=1`;
 
     try {
@@ -684,8 +757,211 @@ export class AuthService {
     };
   }
 
+  // Sign in / register using Google ID token
+  async signInWithGoogle(idToken: string, requestedRole?: string) {
+    if (!initializeFirebaseAdmin()) {
+      throw new BadRequestException('Firebase admin is not configured');
+    }
+
+    const role = normalizeGoogleRole(requestedRole);
+    if (!role) {
+      throw new BadRequestException('Google sign-in role is required');
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (e: unknown) {
+      console.error(
+        'Google sign-in verification failed',
+        e instanceof Error ? e.message : String(e),
+      );
+      throw new BadRequestException('Invalid Google ID token');
+    }
+
+    const email = String(decodedToken.email || '').toLowerCase();
+    const emailVerified = decodedToken.email_verified === true;
+
+    if (!email || !emailVerified) {
+      throw new BadRequestException('Google account email not verified');
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        clientProfile: true,
+        restaurantProfile: true,
+        livreurProfile: true,
+      },
+    });
+
+    let user = existingUser;
+
+    if (user) {
+      if (user.role !== role) {
+        throw new ForbiddenException({
+          code: 'ROLE_MISMATCH',
+          expectedRole: role,
+          actualRole: user.role,
+        });
+      }
+
+      if (!user.emailVerifiedAt) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { emailVerifiedAt: new Date() },
+          include: {
+            clientProfile: true,
+            restaurantProfile: true,
+            livreurProfile: true,
+          },
+        });
+      }
+    } else {
+      const baseData = {
+        email,
+        passwordHash: await bcrypt.hash(
+          crypto.randomBytes(16).toString('hex'),
+          10,
+        ),
+        role,
+        emailVerifiedAt: new Date(),
+      };
+
+      const createData: Prisma.UserCreateInput =
+        role === Role.CLIENT
+          ? {
+              ...baseData,
+              status: AccountStatus.APPROVED,
+              clientProfile: {
+                create: {
+                  termsAcceptedAt: new Date(),
+                  clientType: ClientType.NORMAL,
+                },
+              },
+            }
+          : role === Role.RESTAURANT
+            ? {
+                ...baseData,
+                status: AccountStatus.PENDING,
+                restaurantProfile: {
+                  create: {},
+                },
+              }
+            : {
+                ...baseData,
+                status: AccountStatus.PENDING,
+                livreurProfile: {
+                  create: {},
+                },
+              };
+
+      user = await this.prisma.user.create({
+        data: createData,
+        include: {
+          clientProfile: true,
+          restaurantProfile: true,
+          livreurProfile: true,
+        },
+      });
+    }
+
+    if (!user) {
+      throw new BadRequestException('Unable to complete Google sign-in');
+    }
+
+    if (user.status === AccountStatus.SUSPENDED || user.suspendedAt) {
+      throw new ForbiddenException({ code: 'ACCOUNT_SUSPENDED' });
+    }
+
+    const rawNextOnboardingStep = this.getNextOnboardingStep(user);
+    const nextOnboardingStep =
+      (user.role === Role.RESTAURANT || user.role === Role.LIVREUR) &&
+      user.status === AccountStatus.APPROVED &&
+      rawNextOnboardingStep === 4
+        ? null
+        : rawNextOnboardingStep;
+
+    const needsOnboarding = nextOnboardingStep != null;
+
+    if (needsOnboarding) {
+      const onboardingToken = await this.jwt.signAsync({
+        sub: user.id,
+        role: user.role,
+        status: user.status,
+        scope: 'ONBOARDING',
+      });
+
+      return {
+        onboardingToken,
+        requiresOnboarding: true,
+        nextOnboardingStep,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          clientProfile: user.clientProfile
+            ? { clientType: user.clientProfile.clientType }
+            : null,
+        },
+        message:
+          user.role === Role.CLIENT
+            ? 'Please complete your profile to access the app.'
+            : 'Please complete your onboarding profile to access the app.',
+      };
+    }
+
+    if (
+      (user.role === Role.RESTAURANT || user.role === Role.LIVREUR) &&
+      user.status === AccountStatus.PENDING
+    ) {
+      const onboardingToken = await this.jwt.signAsync({
+        sub: user.id,
+        role: user.role,
+        status: user.status,
+        scope: 'ONBOARDING',
+      });
+
+      return {
+        onboardingToken,
+        requiresOnboarding: false,
+        pendingApproval: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+        },
+        message: user.emailVerifiedAt
+          ? 'Your account needs admin approval to start using the app.'
+          : 'Please verify your email and finish onboarding.',
+      };
+    }
+
+    const accessToken = await this.jwt.signAsync({
+      sub: user.id,
+      role: user.role,
+      status: user.status,
+      scope: 'ACCESS',
+    });
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    };
+  }
+
   async requestPasswordReset(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
     if (!user) {
       return {
         message:
@@ -705,14 +981,20 @@ export class AuthService {
       },
     });
 
-    const resetUrl =
+    const browserResetUrl =
       (process.env.PASSWORD_RESET_URL ||
-        'http://192.168.1.15:52530/reset-password') + `?token=${rawToken}`;
+        'http://192.168.100.6:52530/reset-password') + `?token=${rawToken}`;
+    const appResetUrl = `fiftyfood://reset-password?token=${encodeURIComponent(
+      rawToken,
+    )}`;
     try {
       await this.mailService.sendMail(
         user.email,
         'Reset your FiftyFood password',
-        `<p>Hello,<br>To reset your password, <a href="${resetUrl}">click here</a>. This link is valid for 1 hour.<br>If you didn't request a reset, ignore this email.</p>`,
+        `<p>Hello,</p>
+         <p>To reset your password on the web, <a href="${browserResetUrl}">click here</a>.</p>
+         <p>To open the reset page in the FiftyFood app, <a href="${appResetUrl}">tap here</a>.</p>
+         <p>This link is valid for 1 hour. If you didn't request a reset, ignore this email.</p>`,
       );
     } catch (error) {
       console.error('Failed to send password reset email:', error);
@@ -726,6 +1008,12 @@ export class AuthService {
 
   async resetPassword(token: string, newPassword: string) {
     const tokenHash = sha256(token);
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      throw new BadRequestException(
+        'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.',
+      );
+    }
 
     const user = await this.prisma.user.findFirst({
       where: {
@@ -807,14 +1095,14 @@ export class AuthService {
       user.role !== Role.CLIENT
         ? true
         : isProClient
-        ? !!clientProfile?.societyName &&
-          !!clientProfile?.fiscalNumber &&
-          !!clientProfile?.proPhone &&
-          (clientProfile?.cuisinePreferences?.length ?? 0) > 0
-        : !!clientProfile?.fullName &&
-          !!clientProfile?.phone &&
-          !!clientProfile?.defaultAddress &&
-          (clientProfile?.cuisinePreferences?.length ?? 0) > 0;
+          ? !!clientProfile?.societyName &&
+            !!clientProfile?.fiscalNumber &&
+            !!clientProfile?.proPhone &&
+            (clientProfile?.cuisinePreferences?.length ?? 0) > 0
+          : !!clientProfile?.fullName &&
+            !!clientProfile?.phone &&
+            !!clientProfile?.defaultAddress &&
+            (clientProfile?.cuisinePreferences?.length ?? 0) > 0;
 
     return {
       ...user,
@@ -830,7 +1118,7 @@ export class AuthService {
     if (user.emailVerifiedAt) throw new ForbiddenException('Already verified');
     const token = await this.generateEmailVerificationToken(user);
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.100.6:3000';
     const verifyUrl = `${baseUrl}/auth/verify-email?token=${token}`;
     try {
       await this.mailService.sendMail(

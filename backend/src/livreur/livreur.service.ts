@@ -6,12 +6,91 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LivreurUploadType } from './livreur-upload.constants';
-import { LivreurProfile, Role } from '@prisma/client';
+import { LivreurProfile, Prisma, Role } from '@prisma/client';
 import { LivreurProfileDto } from './dto/livreur-profile.dto';
 
 @Injectable()
 export class LivreurService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private asString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private sanitizePayoutDetails(
+    payoutMethod?: string,
+    payoutDetails?: unknown,
+  ): Prisma.InputJsonValue | undefined {
+    if (payoutDetails === undefined) return undefined;
+    if (
+      !payoutDetails ||
+      typeof payoutDetails !== 'object' ||
+      Array.isArray(payoutDetails)
+    ) {
+      return undefined;
+    }
+
+    const details = payoutDetails as Record<string, unknown>;
+    const method = (payoutMethod ?? '').toUpperCase();
+    const provider =
+      method === 'PAYPAL'
+        ? 'paypal'
+        : method === 'CREDIT_CARD'
+          ? 'stripe'
+          : method === 'EDINAR'
+            ? 'konnect'
+            : method === 'BANK_TRANSFER'
+              ? 'konnect'
+              : null;
+
+    const base = {
+      provider,
+      providerRecipientId: this.asString(details.providerRecipientId) || null,
+      verificationStatus:
+        this.asString(details.verificationStatus) || 'PENDING',
+      payoutEnabled: details.payoutEnabled === true,
+    };
+
+    if (method === 'BANK_TRANSFER') {
+      return {
+        ...base,
+        accountHolder: this.asString(details.accountHolder),
+        bankName: this.asString(details.bankName),
+        iban: this.asString(details.iban),
+      };
+    }
+
+    if (method === 'PAYPAL') {
+      return {
+        ...base,
+        paypalEmail: this.asString(details.paypalEmail),
+      };
+    }
+
+    if (method === 'CREDIT_CARD') {
+      const cardNumber = this.asString(details.cardNumber).replace(/\s+/g, '');
+      return {
+        ...base,
+        cardHolderName: this.asString(details.cardHolderName),
+        cardLast4: cardNumber.length >= 4 ? cardNumber.slice(-4) : '',
+        expiryDate: this.asString(details.expiryDate),
+      };
+    }
+
+    if (method === 'EDINAR') {
+      const edinarNumber = this.asString(details.edinarNumber).replace(
+        /\s+/g,
+        '',
+      );
+      return {
+        ...base,
+        cardHolderName: this.asString(details.cardHolderName),
+        edinarLast4: edinarNumber.length >= 4 ? edinarNumber.slice(-4) : '',
+      };
+    }
+
+    return base;
+  }
 
   async updateProfile(
     userId: string,
@@ -28,7 +107,10 @@ export class LivreurService {
       vehicleOwnershipDocUrl: dto.vehicleOwnershipDocUrl,
       vehiclePhotoUrl: dto.vehiclePhotoUrl,
       payoutMethod: dto.payoutMethod,
-      payoutDetails: dto.payoutDetails,
+      payoutDetails: this.sanitizePayoutDetails(
+        dto.payoutMethod,
+        dto.payoutDetails,
+      ),
     };
     return this.prisma.livreurProfile.upsert({
       where: { userId },

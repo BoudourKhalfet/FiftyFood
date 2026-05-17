@@ -55,6 +55,10 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     "BREAKFAST",
     "FINE_DINING",
     "BRUNCH",
+    "TUNISIAN",
+    "ITALIAN",
+    "CHINESE",
+    "FRIED_FOOD",
   ];
   final Map<String, String> categoryLabels = {
     "BAKERY": "Bakery",
@@ -76,6 +80,10 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     "BREAKFAST": "Breakfast",
     "FINE_DINING": "Fine Dining",
     "BRUNCH": "Brunch",
+    "TUNISIAN": "Tunisian",
+    "ITALIAN": "Italian",
+    "CHINESE": "Chinese",
+    "FRIED_FOOD": "Fried Food",
   };
 
   // For preferences editing

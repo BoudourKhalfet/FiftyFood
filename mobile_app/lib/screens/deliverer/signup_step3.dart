@@ -176,7 +176,8 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: (_cinFrontImage == null ||
+              onPressed:
+                  (_cinFrontImage == null ||
                       _cinBackImage == null ||
                       _cinVerifying)
                   ? null
@@ -247,27 +248,30 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
   }
 
   Future<void> _captureCINPhoto(String side, StateSetter setModalState) async {
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
       final backCamera = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      final controller = CameraController(backCamera, ResolutionPreset.high);
+      controller = CameraController(
+        backCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
       await controller.initialize();
 
       if (!mounted) return;
 
       final image = await showDialog<XFile?>(
         context: context,
+        barrierDismissible: false,
         builder: (context) => Dialog(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                height: 400,
-                child: CameraPreview(controller),
-              ),
+              SizedBox(height: 400, child: CameraPreview(controller!)),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -275,7 +279,7 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                   children: [
                     TextButton(
                       onPressed: () async {
-                        final photo = await controller.takePicture();
+                        final photo = await controller!.takePicture();
                         Navigator.pop(context, photo);
                       },
                       child: const Text('Capture'),
@@ -292,11 +296,10 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
         ),
       );
 
-      await controller.dispose();
-
       if (image != null) {
         final bytes = await image.readAsBytes();
         final compressed = await _compressImage(bytes);
+        if (!mounted) return;
         setModalState(() {
           if (side == 'front') {
             _cinFrontImage = compressed;
@@ -307,7 +310,19 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
         });
       }
     } catch (e) {
-      setModalState(() => _cinVerifyError = 'Camera error: $e');
+      if (mounted) {
+        setModalState(
+          () => _cinVerifyError = 'Camera error. Please try again.',
+        );
+      }
+    } finally {
+      if (controller != null) {
+        // Let dialog pop animation finish before disposing preview controller.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (controller!.value.isInitialized) {
+          await controller!.dispose();
+        }
+      }
     }
   }
 
@@ -352,7 +367,9 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
   Future<String?> _performOCR(Uint8List imageBytes) async {
     // ML Kit Text Recognition is not supported on Flutter Web
     if (kIsWeb) {
-      print('OCR: Web platform detected, returning null (server-side OCR will be used)');
+      print(
+        'OCR: Web platform detected, returning null (server-side OCR will be used)',
+      );
       return null; // Backend will perform OCR on web
     }
 
@@ -412,17 +429,30 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
         if (ocrText == null || ocrText.isEmpty) {
           setModalState(() {
             _cinVerifying = false;
-            _cinVerifyError = 'Could not read text from CIN. Try better lighting.';
+            _cinVerifyError =
+                'Could not read text from CIN. Try better lighting.';
           });
           return;
         }
 
         final extractedCIN = _extractCINNumber(ocrText, enteredCIN);
 
+        // If OCR text has no 8-digit sequences at all, indicate CIN area missing
+        final hasAny8Digit = RegExp(r'\b\d{8}\b').hasMatch(ocrText);
+        if (!hasAny8Digit) {
+          setModalState(() {
+            _cinVerifying = false;
+            _cinVerifyError =
+                'CIN number is not visible or cropped. Please ensure the entire front of the ID card is clearly visible in the photo.';
+          });
+          return;
+        }
+
         if (extractedCIN == null) {
           setModalState(() {
             _cinVerifying = false;
-            _cinVerifyError = 'CIN mismatch! The number on the card does not match what you entered.';
+            _cinVerifyError =
+                'The CIN number on the card does not match what you entered. Please verify and try again.';
           });
           return;
         }
@@ -516,7 +546,8 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
     // Check identity verification first
     if (!_cinVerified || !_faceVerified) {
       setState(() {
-        _error = 'Please complete identity verification (CIN + Face) before submitting.';
+        _error =
+            'Please complete identity verification (CIN + Face) before submitting.';
       });
       return;
     }
@@ -751,10 +782,16 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                             border: const OutlineInputBorder(),
                             prefixIcon: const Icon(Icons.badge),
                             suffixIcon: (_cinVerified && _faceVerified)
-                                ? const Icon(Icons.verified, color: Colors.green)
+                                ? const Icon(
+                                    Icons.verified,
+                                    color: Colors.green,
+                                  )
                                 : (_cinVerified || _faceVerified)
-                                    ? const Icon(Icons.pending, color: Colors.orange)
-                                    : null,
+                                ? const Icon(
+                                    Icons.pending,
+                                    color: Colors.orange,
+                                  )
+                                : null,
                           ),
                           validator: (v) =>
                               v == null || v.isEmpty ? 'Required' : null,
@@ -775,7 +812,11 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                          const Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(
@@ -784,12 +825,18 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                                 if (_cinVerified)
                                   const Text(
                                     'CIN verified',
-                                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 if (_faceVerified)
                                   const Text(
                                     'Face verified',
-                                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                               ],
                             ),
@@ -801,33 +848,36 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                   ],
 
                   ElevatedButton.icon(
-                    onPressed: (_cinVerified && _faceVerified) || _loading || _cinVerifying
+                    onPressed:
+                        (_cinVerified && _faceVerified) ||
+                            _loading ||
+                            _cinVerifying
                         ? null
                         : _cinVerified
-                            ? _startFaceVerificationOnly
-                            : _startIdentityVerification,
+                        ? _startFaceVerificationOnly
+                        : _startIdentityVerification,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: (_cinVerified && _faceVerified)
                           ? Colors.green
                           : _cinVerified
-                              ? Colors.orange
-                              : const Color(0xFF3D9176),
+                          ? Colors.orange
+                          : const Color(0xFF3D9176),
                     ),
                     icon: Icon(
                       (_cinVerified && _faceVerified)
                           ? Icons.verified
                           : _cinVerified
-                              ? Icons.refresh
-                              : Icons.verified_user,
+                          ? Icons.refresh
+                          : Icons.verified_user,
                       color: Colors.white,
                     ),
                     label: Text(
                       (_cinVerified && _faceVerified)
                           ? 'Identity Verified ✓'
                           : _cinVerified
-                              ? 'Continue Face Verification'
-                              : 'Verify Identity (CIN + Face)',
+                          ? 'Continue Face Verification'
+                          : 'Verify Identity (CIN + Face)',
                       style: const TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ),

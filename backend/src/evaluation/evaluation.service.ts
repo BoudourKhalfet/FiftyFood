@@ -94,7 +94,7 @@ export class EvaluationService {
     const popularity = await this.computePopularity();
 
     const results = await Promise.all(
-      users.map(u => this.evaluateUser(u, k, offers, popularity)),
+      users.map((u) => this.evaluateUser(u, k, offers, popularity)),
     );
 
     return this.aggregate(results, k);
@@ -106,8 +106,17 @@ export class EvaluationService {
 
   private generateSyntheticUsers(count: number): SyntheticUser[] {
     const categories = [
-      'Italian', 'Fast Food', 'Asian', 'Healthy',
-      'Dessert', 'Bakery', 'Mexican', 'Indian',
+      'Italian',
+      'Fast Food',
+      'Asian',
+      'Healthy',
+      'Dessert',
+      'Bakery',
+      'Mexican',
+      'Indian',
+      'Tunisian',
+      'Chinese',
+      'Fried Food',
     ];
 
     const prices = [8, 15, 25];
@@ -181,7 +190,6 @@ export class EvaluationService {
     offers: any[],
     popularity: Map<string, number>,
   ): Promise<UserEvaluationResult> {
-
     const gt = this.buildGroundTruth(user, offers);
 
     const hybrid = await this.getHybrid(user.id, k);
@@ -200,7 +208,10 @@ export class EvaluationService {
   // GROUND TRUTH
   // =========================
 
-  private buildGroundTruth(user: SyntheticUser, offers: any[]): PseudoGroundTruth {
+  private buildGroundTruth(
+    user: SyntheticUser,
+    offers: any[],
+  ): PseudoGroundTruth {
     const relevant = new Set<string>();
 
     for (const o of offers) {
@@ -208,7 +219,7 @@ export class EvaluationService {
       const price = o.discountedPrice ?? 0;
 
       const match =
-        cats.some(c => user.preferredCategories.includes(c)) &&
+        cats.some((c) => user.preferredCategories.includes(c)) &&
         price <= user.maxPrice;
 
       if (match) relevant.add(o.id);
@@ -222,17 +233,20 @@ export class EvaluationService {
   // =========================
 
   private async getHybrid(userId: string, k: number): Promise<string[]> {
-    const recs = await this.recommendationService.getRecommendedOffers(userId, k);
+    const recs = await this.recommendationService.getRecommendedOffers(
+      userId,
+      k,
+    );
 
     if (!recs?.length) return [];
 
-    return recs.map(r => r.offer.id);
+    return recs.map((r) => r.offer.id);
   }
 
   private getRandom(offers: any[], k: number, userId: string): string[] {
     const seed = this.seed(userId);
     const shuffled = this.shuffle([...offers], seed);
-    return shuffled.slice(0, k).map(o => o.id);
+    return shuffled.slice(0, k).map((o) => o.id);
   }
 
   private getPopularity(
@@ -243,7 +257,7 @@ export class EvaluationService {
     return [...offers]
       .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0))
       .slice(0, k)
-      .map(o => o.id);
+      .map((o) => o.id);
   }
 
   // =========================
@@ -255,15 +269,12 @@ export class EvaluationService {
     gt: PseudoGroundTruth,
     k: number,
   ): SystemResult {
-
     const topK = recs.slice(0, k);
 
-    const relevant = topK.filter(id =>
-      gt.relevantOfferIds.has(id),
-    ).length;
+    const relevant = topK.filter((id) => gt.relevantOfferIds.has(id)).length;
 
     return {
-      precision: k === 0 ? 0 : relevant / k,  // STRICT: always divide by K
+      precision: k === 0 ? 0 : relevant / k, // STRICT: always divide by K
       recall:
         gt.relevantOfferIds.size === 0
           ? 0
@@ -276,20 +287,21 @@ export class EvaluationService {
   // AGGREGATION
   // =========================
 
-  private aggregate(results: UserEvaluationResult[], k: number): EvaluationResults {
-
-    const avg = (arr: number[]) =>
-      arr.reduce((a, b) => a + b, 0) / arr.length;
+  private aggregate(
+    results: UserEvaluationResult[],
+    k: number,
+  ): EvaluationResults {
+    const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
     const pack = (key: keyof UserEvaluationResult) => ({
-      precisionAtK: avg(results.map(r => (r[key] as SystemResult).precision)),
-      recallAtK: avg(results.map(r => (r[key] as SystemResult).recall)),
+      precisionAtK: avg(results.map((r) => (r[key] as SystemResult).precision)),
+      recallAtK: avg(results.map((r) => (r[key] as SystemResult).recall)),
     });
 
     return {
       k,
       userCount: results.length,
-      avgRelevantPerUser: avg(results.map(r => r.groundTruthSize)),
+      avgRelevantPerUser: avg(results.map((r) => r.groundTruthSize)),
 
       hybrid: pack('hybrid'),
       random: pack('random'),
@@ -318,16 +330,14 @@ export class EvaluationService {
 
   private seed(str: string): number {
     return (
-      EVALUATION_SEED +
-      str.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+      EVALUATION_SEED + str.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
     );
   }
 
   private shuffle<T>(arr: T[], seed: number): T[] {
     let s = seed;
 
-    const rand = () =>
-      (s = (s * 9301 + 49297) % 233280) / 233280;
+    const rand = () => (s = (s * 9301 + 49297) % 233280) / 233280;
 
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));

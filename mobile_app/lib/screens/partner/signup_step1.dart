@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/api_service.dart';
+import '../../auth/google_auth.dart';
 import 'signup_step2.dart';
 
 class PartnerSignupStep1 extends StatefulWidget {
@@ -37,6 +38,45 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
       ..onTap = () => Navigator.of(context).pushNamed('/signin/partner');
   }
 
+  /// Convert technical error messages to user-friendly messages
+  String _getUserFriendlyErrorMessage(String error) {
+    // Network errors
+    if (error.contains('Connection reset') ||
+        error.contains('Connection refused')) {
+      return 'Connection lost. Please check your internet and try again.';
+    }
+    if (error.contains('SocketException') ||
+        error.contains('timeout') ||
+        error.contains('TimeoutException')) {
+      return 'Network error. Please check your connection and try again.';
+    }
+    if (error.contains('Failed to host')) {
+      return 'Unable to reach the server. Please check your internet connection.';
+    }
+
+    // Authentication/Registration errors
+    if (error.contains('already in use')) {
+      return 'This email is already registered. Please use a different email or sign in.';
+    }
+    if (error.contains('weak password')) {
+      return 'Password is too weak. Use at least 8 characters.';
+    }
+    if (error.contains('invalid email')) {
+      return 'Please enter a valid email address.';
+    }
+
+    // Server errors
+    if (error.contains('500') || error.contains('Internal server')) {
+      return 'Server error. Please try again in a moment.';
+    }
+    if (error.contains('503') || error.contains('Service unavailable')) {
+      return 'Service temporarily unavailable. Please try again later.';
+    }
+
+    // Generic fallback
+    return 'Registration failed. Please try again.';
+  }
+
   Future<void> _onContinue() async {
     if (_formKey.currentState?.validate() == true) {
       setState(() {
@@ -66,7 +106,8 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
 
         if (message.contains('already in use')) {
           setState(() {
-            _error = "Email already in use";
+            _error =
+                "This email is already registered. Please use a different email or sign in.";
           });
         } else if (response['success'] == true ||
             response['statusCode'] == 201 ||
@@ -77,12 +118,14 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
           );
         } else {
           setState(() {
-            _error = response['message'] ?? 'Registration failed';
+            _error = _getUserFriendlyErrorMessage(
+              response['message'] ?? 'Registration failed',
+            );
           });
         }
       } catch (e) {
         setState(() {
-          _error = "Registration failed (exception): $e";
+          _error = _getUserFriendlyErrorMessage(e.toString());
         });
       } finally {
         setState(() {
@@ -283,73 +326,49 @@ class _PartnerSignupStep1State extends State<PartnerSignupStep1> {
                           child: Text('Continue'),
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'OR CONTINUE WITH',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                       const SizedBox(height: 12),
                       Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(
-                                Icons.g_mobiledata,
-                                color: Color(0xFF1F2937),
-                              ),
-                              label: const Text(
-                                'Google',
-                                style: TextStyle(color: Color(0xFF1F2937)),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(
-                                  color: Color(0xFF1F9D7A),
-                                  width: 2,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
+                        children: const [
+                          Expanded(child: Divider()),
+                          SizedBox(width: 8),
+                          Text(
+                            'OR CONTINUE WITH',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF9CA3AF),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(
-                                Icons.facebook,
-                                color: Color(0xFF1F9D7A),
-                              ),
-                              label: const Text(
-                                'Facebook',
-                                style: TextStyle(color: Color(0xFF1F9D7A)),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(
-                                  color: Color(0xFF1F9D7A),
-                                  width: 2,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
+                          SizedBox(width: 8),
+                          Expanded(child: Divider()),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _loading
+                            ? null
+                            : () async {
+                                await GoogleAuth.signInWithGoogle(
+                                  context,
+                                  'RESTAURANT',
+                                );
+                              },
+                        icon: const Icon(
+                          Icons.g_mobiledata,
+                          color: Color(0xFF1F9D7A),
+                        ),
+                        label: const Text(
+                          'Google',
+                          style: TextStyle(color: Color(0xFF1F9D7A)),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF1F9D7A)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       Center(
                         child: Text.rich(
                           TextSpan(

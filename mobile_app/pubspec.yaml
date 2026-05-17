@@ -30,33 +30,35 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # Firebase
   firebase_core: ^3.13.0
   firebase_messaging: ^15.2.10
-      
+  firebase_auth: ^5.7.0
+  google_sign_in: ^6.0.0
+
   # Camera and image handling
   camera: ^0.10.5
   image: ^4.1.1
-  
+
   # Face detection and liveness
   google_mlkit_face_detection: ^0.10.0
-  
+
   # OCR for CIN text recognition
   google_mlkit_text_recognition: ^0.13.0
-  
+
   # Video processing
   video_player: ^2.8.1
-  
+
   # HTTP and serialization
   dio: ^5.3.1
-  
+
   # State management
   provider: ^6.0.0
-  
+
   # UI components
   flutter_svg: ^2.0.7
-  
+
   # Utilities
   permission_handler: ^11.0.0
   http: ^1.2.1
@@ -141,4 +143,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-

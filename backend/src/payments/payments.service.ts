@@ -19,9 +19,12 @@ export class PaymentsService {
   ) {}
 
   private async findAndAuthorizeOrder(orderId: string, userId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) throw new BadRequestException('Order not found');
-    if (order.clientId !== userId) throw new BadRequestException('Unauthorized');
+    if (order.clientId !== userId)
+      throw new BadRequestException('Unauthorized');
     return order;
   }
 
@@ -41,7 +44,11 @@ export class PaymentsService {
     email?: string;
     orderId?: string;
   }) {
-    const verifiedTotal = await this.getVerifiedTotal(params.offerId, params.items, params.deliveryFee);
+    const verifiedTotal = await this.getVerifiedTotal(
+      params.offerId,
+      params.items,
+      params.deliveryFee,
+    );
 
     const intent = await this.stripeService.createPaymentIntent({
       orderData: {
@@ -74,7 +81,10 @@ export class PaymentsService {
     email: string;
     phone?: string;
   }) {
-    const order = await this.findAndAuthorizeOrder(params.orderId, params.userId);
+    const order = await this.findAndAuthorizeOrder(
+      params.orderId,
+      params.userId,
+    );
 
     const konnectPayment = await this.konnectService.createPayment({
       orderId: params.orderId,
@@ -108,7 +118,10 @@ export class PaymentsService {
     returnUrl?: string;
     cancelUrl?: string;
   }) {
-    const order = await this.findAndAuthorizeOrder(params.orderId, params.userId);
+    const order = await this.findAndAuthorizeOrder(
+      params.orderId,
+      params.userId,
+    );
 
     const paypalOrder = await this.paypalService.createOrder({
       orderId: params.orderId,
@@ -139,13 +152,17 @@ export class PaymentsService {
   // =========================
   // STRIPE CONFIRM INTENT (mobile fallback — webhook is source of truth)
   // =========================
-  async confirmStripePayment(paymentIntentId: string, userId: string): Promise<{
+  async confirmStripePayment(
+    paymentIntentId: string,
+    userId: string,
+  ): Promise<{
     status: string;
     orderId?: string;
     orderStatus?: string;
     amount?: number;
   }> {
-    const confirmation = await this.stripeService.confirmPayment(paymentIntentId);
+    const confirmation =
+      await this.stripeService.confirmPayment(paymentIntentId);
     this.logger.log(`Stripe mobile confirm status: ${confirmation.status}`);
 
     if (confirmation.status === 'succeeded') {
@@ -162,7 +179,11 @@ export class PaymentsService {
             } as any,
           },
         });
-        return { status: confirmation.status, orderId, amount: confirmation.amount };
+        return {
+          status: confirmation.status,
+          orderId,
+          amount: confirmation.amount,
+        };
       }
     }
 
@@ -187,7 +208,11 @@ export class PaymentsService {
     cancelUrl?: string;
     orderId?: string;
   }) {
-    const verifiedTotal = await this.getVerifiedTotal(params.offerId, params.items, params.deliveryFee);
+    const verifiedTotal = await this.getVerifiedTotal(
+      params.offerId,
+      params.items,
+      params.deliveryFee,
+    );
 
     const session = await this.stripeService.createCheckoutSession({
       orderData: {
@@ -215,13 +240,14 @@ export class PaymentsService {
   // =========================
   // STRIPE CHECKOUT CONFIRM (poll fallback — webhook is the source of truth)
   // =========================
-  async confirmStripeCheckoutSession(sessionId: string, userId: string): Promise<{
+  async confirmStripeCheckoutSession(sessionId: string): Promise<{
     status: string;
     orderId?: string;
     orderStatus?: string;
     amount?: number;
   }> {
-    const confirmation = await this.stripeService.confirmCheckoutSession(sessionId);
+    const confirmation =
+      await this.stripeService.confirmCheckoutSession(sessionId);
 
     if (confirmation.status === 'paid') {
       let order = null;
@@ -236,7 +262,9 @@ export class PaymentsService {
       // Second: try to find by stripeSessionId in paymentDetails (webhook created)
       if (!order) {
         order = await this.prisma.order.findFirst({
-          where: { paymentDetails: { path: ['stripeSessionId'], equals: sessionId } },
+          where: {
+            paymentDetails: { path: ['stripeSessionId'], equals: sessionId },
+          },
         });
       }
 
@@ -248,10 +276,16 @@ export class PaymentsService {
             await this.updateOrderStatus(order.id, 'CONFIRMED');
           } catch (err) {
             this.logger.error(`Failed to confirm order ${order.id}: ${err}`);
-            return { status: 'error', orderId: order.id, orderStatus: order.status };
+            return {
+              status: 'error',
+              orderId: order.id,
+              orderStatus: order.status,
+            };
           }
           // Refresh order to get updated status
-          const refreshed = await this.prisma.order.findUnique({ where: { id: order.id } });
+          const refreshed = await this.prisma.order.findUnique({
+            where: { id: order.id },
+          });
           return {
             status: 'paid',
             orderId: order.id,
@@ -268,7 +302,9 @@ export class PaymentsService {
       }
 
       // Payment succeeded but order not found/created
-      this.logger.warn(`Stripe payment paid but order not found for session ${sessionId}`);
+      this.logger.warn(
+        `Stripe payment paid but order not found for session ${sessionId}`,
+      );
       return { status: 'order_not_found' };
     }
 
@@ -278,10 +314,17 @@ export class PaymentsService {
   // =========================
   // KONNECT VERIFY
   // =========================
-  async verifyKonnectPayment(paymentId: string, orderId: string, userId?: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+  async verifyKonnectPayment(
+    paymentId: string,
+    orderId: string,
+    userId?: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) throw new BadRequestException('Order not found');
-    if (userId && order.clientId !== userId) throw new BadRequestException('Unauthorized');
+    if (userId && order.clientId !== userId)
+      throw new BadRequestException('Unauthorized');
 
     if (order.status !== OrderStatus.PENDING) {
       return { status: 'already_processed', orderStatus: order.status };
@@ -310,9 +353,12 @@ export class PaymentsService {
     orderId: string,
     userId?: string,
   ) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) throw new BadRequestException('Order not found');
-    if (userId && order.clientId !== userId) throw new BadRequestException('Unauthorized');
+    if (userId && order.clientId !== userId)
+      throw new BadRequestException('Unauthorized');
 
     if (order.status !== OrderStatus.PENDING) {
       return { status: 'already_processed', orderStatus: order.status };
@@ -333,7 +379,8 @@ export class PaymentsService {
       where: { id: orderId },
     });
 
-    const existingDetails = (order.paymentDetails as Record<string, unknown>) ?? {};
+    const existingDetails =
+      (order.paymentDetails as Record<string, unknown>) ?? {};
     await this.prisma.order.update({
       where: { id: orderId },
       data: {
@@ -354,17 +401,26 @@ export class PaymentsService {
       // Decrement offer quantity when payment is successful
       let quantityOrdered = 1;
       try {
-        const parsed: any = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+        const parsed: any =
+          typeof order.items === 'string'
+            ? JSON.parse(order.items)
+            : order.items;
         const mainItem = Array.isArray(parsed) ? parsed[0] : parsed;
         if (typeof mainItem?.quantity === 'number') {
           quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
         }
-      } catch { /* default quantity 1 */ }
+      } catch {
+        /* default quantity 1 */
+      }
 
       await this.prisma.$transaction(async (tx) => {
         // Decrement offer quantity
         const reserved = await tx.offer.updateMany({
-          where: { id: order.offerId, status: 'ACTIVE', quantity: { gte: quantityOrdered } },
+          where: {
+            id: order.offerId,
+            status: 'ACTIVE',
+            quantity: { gte: quantityOrdered },
+          },
           data: { quantity: { decrement: quantityOrdered } },
         });
         if (reserved.count === 0) {
@@ -419,7 +475,11 @@ export class PaymentsService {
 
     let event: any;
     try {
-      event = this.stripeService.constructWebhookEvent(rawBody, signature, webhookSecret);
+      event = this.stripeService.constructWebhookEvent(
+        rawBody,
+        signature,
+        webhookSecret,
+      );
     } catch {
       throw new BadRequestException('Invalid Stripe webhook signature');
     }
@@ -431,7 +491,9 @@ export class PaymentsService {
         const intent = event.data.object;
         if (intent.metadata?.orderId) {
           // Order was pre-created — just confirm it
-          this.logger.log(`Order ${intent.metadata.orderId} confirmed via Stripe webhook (payment_intent)`);
+          this.logger.log(
+            `Order ${intent.metadata.orderId} confirmed via Stripe webhook (payment_intent)`,
+          );
           await this.updateOrderStatus(intent.metadata.orderId, 'CONFIRMED');
           await this.prisma.order.update({
             where: { id: intent.metadata.orderId },
@@ -443,13 +505,17 @@ export class PaymentsService {
             },
           });
         } else {
-          this.logger.warn(`Stripe webhook: No orderId in payment_intent ${intent.id}`);
+          this.logger.warn(
+            `Stripe webhook: No orderId in payment_intent ${intent.id}`,
+          );
         }
         break;
       }
       case 'checkout.session.completed': {
         const session = event.data.object;
-        this.logger.log(`checkout.session.completed: payment_status=${session.payment_status}, metadata.orderId=${session.metadata?.orderId}`);
+        this.logger.log(
+          `checkout.session.completed: payment_status=${session.payment_status}, metadata.orderId=${session.metadata?.orderId}`,
+        );
         if (session.payment_status === 'paid') {
           // First: check if order was pre-created by orderId from metadata
           let order = null;
@@ -457,23 +523,36 @@ export class PaymentsService {
             order = await this.prisma.order.findUnique({
               where: { id: session.metadata.orderId },
             });
-            this.logger.log(`Found order by metadata.orderId: ${order ? order.id : 'null'}`);
+            this.logger.log(
+              `Found order by metadata.orderId: ${order ? order.id : 'null'}`,
+            );
           }
 
           // Second: check by stripeSessionId in paymentDetails
           if (!order) {
             order = await this.prisma.order.findFirst({
-              where: { paymentDetails: { path: ['stripeSessionId'], equals: session.id } },
+              where: {
+                paymentDetails: {
+                  path: ['stripeSessionId'],
+                  equals: session.id,
+                },
+              },
             });
-            this.logger.log(`Found order by stripeSessionId: ${order ? order.id : 'null'}`);
+            this.logger.log(
+              `Found order by stripeSessionId: ${order ? order.id : 'null'}`,
+            );
           }
 
           if (!order) {
             // No existing order found - this shouldn't happen with new flow
-            this.logger.warn(`Stripe webhook: No order found for session ${session.id}`);
+            this.logger.warn(
+              `Stripe webhook: No order found for session ${session.id}`,
+            );
           } else if (order.status !== 'CONFIRMED') {
             // Order exists but not confirmed - confirm it (will decrement quantity and send notification)
-            this.logger.log(`Order ${order.id} confirmed via Stripe webhook (checkout.session)`);
+            this.logger.log(
+              `Order ${order.id} confirmed via Stripe webhook (checkout.session)`,
+            );
             await this.updateOrderStatus(order.id, 'CONFIRMED');
             // Update payment details separately
             await this.prisma.order.update({
@@ -500,13 +579,18 @@ export class PaymentsService {
   // =========================
   // PRICE VERIFICATION
   // =========================
-  private async getVerifiedTotal(offerId: string, items: any, deliveryFee?: number): Promise<number> {
+  private async getVerifiedTotal(
+    offerId: string,
+    items: any,
+    deliveryFee?: number,
+  ): Promise<number> {
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
       select: { discountedPrice: true, status: true },
     });
     if (!offer) throw new BadRequestException('Offer not found');
-    if (offer.status !== 'ACTIVE') throw new BadRequestException('Offer is no longer available');
+    if (offer.status !== 'ACTIVE')
+      throw new BadRequestException('Offer is no longer available');
 
     let quantity = 1;
     try {
@@ -515,7 +599,9 @@ export class PaymentsService {
       if (typeof mainItem?.quantity === 'number') {
         quantity = Math.max(1, Math.floor(mainItem.quantity));
       }
-    } catch { /* default quantity 1 */ }
+    } catch {
+      /* default quantity 1 */
+    }
 
     const itemsTotal = Math.round(offer.discountedPrice * quantity * 100) / 100;
     const fee = deliveryFee ?? 0;
@@ -525,8 +611,13 @@ export class PaymentsService {
   // =========================
   // CORE STATUS UPDATE
   // =========================
-  private async updateOrderStatus(orderId: string, orderStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING') {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+  private async updateOrderStatus(
+    orderId: string,
+    orderStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING',
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
     if (!order) return;
 
     // Only update if status is actually changing
@@ -536,24 +627,37 @@ export class PaymentsService {
     if (orderStatus === 'CONFIRMED') {
       let quantityOrdered = 1;
       try {
-        const parsed: any = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+        const parsed: any =
+          typeof order.items === 'string'
+            ? JSON.parse(order.items)
+            : order.items;
         const mainItem = Array.isArray(parsed) ? parsed[0] : parsed;
         if (typeof mainItem?.quantity === 'number') {
           quantityOrdered = Math.max(1, Math.floor(mainItem.quantity));
         }
-      } catch { /* default quantity 1 */ }
+      } catch {
+        /* default quantity 1 */
+      }
 
-      this.logger.log(`Decrementing offer ${order.offerId} quantity by ${quantityOrdered}`);
+      this.logger.log(
+        `Decrementing offer ${order.offerId} quantity by ${quantityOrdered}`,
+      );
       await this.prisma.$transaction(async (tx) => {
         // Decrement offer quantity
         const reserved = await tx.offer.updateMany({
-          where: { id: order.offerId, status: 'ACTIVE', quantity: { gte: quantityOrdered } },
+          where: {
+            id: order.offerId,
+            status: 'ACTIVE',
+            quantity: { gte: quantityOrdered },
+          },
           data: { quantity: { decrement: quantityOrdered } },
         });
         if (reserved.count === 0) {
           throw new BadRequestException('Offer no longer available');
         }
-        this.logger.log(`Offer ${order.offerId} quantity decremented by ${quantityOrdered}`);
+        this.logger.log(
+          `Offer ${order.offerId} quantity decremented by ${quantityOrdered}`,
+        );
         // Update order status
         await tx.order.update({
           where: { id: orderId },
@@ -586,13 +690,13 @@ export class PaymentsService {
     return this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        client: { 
+        client: {
           select: { email: true },
-          include: { clientProfile: { select: { fullName: true } } }
+          include: { clientProfile: { select: { fullName: true } } },
         },
-        restaurant: { 
+        restaurant: {
           select: { email: true },
-          include: { restaurantProfile: { select: { restaurantName: true } } }
+          include: { restaurantProfile: { select: { restaurantName: true } } },
         },
         offer: { select: { description: true, photoUrl: true } },
       },

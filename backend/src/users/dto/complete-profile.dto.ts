@@ -1,4 +1,10 @@
-import { ArrayMinSize, IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsEnum,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { ClientType, CuisinePreference } from '@prisma/client';
 
 export class CompleteProfileDto {

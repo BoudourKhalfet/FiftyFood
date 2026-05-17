@@ -165,7 +165,15 @@ export class AdminService {
           const orders = await this.prisma.order.findMany({
             where: {
               restaurantId: user.id,
-              status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+              status: {
+                in: [
+                  'CONFIRMED',
+                  'ASSIGNED',
+                  'READY',
+                  'PICKED_UP',
+                  'DELIVERED',
+                ],
+              },
             },
             select: {
               total: true,
@@ -178,12 +186,14 @@ export class AdminService {
           });
 
           const ordersCompleted = orders.length;
-          const commissionRate = (user.restaurantProfile.commissionRate ?? 15) / 100;
+          const commissionRate =
+            (user.restaurantProfile.commissionRate ?? 15) / 100;
 
           // Calculate net sales after commission
           const totalSales = orders.reduce((sum, order) => {
             const orderPrice = order.total - (order.deliveryFee || 0);
-            const commission = Math.floor(orderPrice * commissionRate * 100) / 100;
+            const commission =
+              Math.floor(orderPrice * commissionRate * 100) / 100;
             return sum + (order.total - commission);
           }, 0);
 
@@ -208,7 +218,15 @@ export class AdminService {
           const completedOrders = await this.prisma.order.count({
             where: {
               livreurId: user.id,
-              status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+              status: {
+                in: [
+                  'CONFIRMED',
+                  'ASSIGNED',
+                  'READY',
+                  'PICKED_UP',
+                  'DELIVERED',
+                ],
+              },
             },
           });
 
@@ -219,9 +237,11 @@ export class AdminService {
           });
 
           // Calculate average rating from deliverer reviews
-          const avgRating = delivererReviews.length > 0
-            ? delivererReviews.reduce((sum, r) => sum + r.rating, 0) / delivererReviews.length
-            : 0;
+          const avgRating =
+            delivererReviews.length > 0
+              ? delivererReviews.reduce((sum, r) => sum + r.rating, 0) /
+                delivererReviews.length
+              : 0;
 
           return {
             ...user,
@@ -766,7 +786,7 @@ export class AdminService {
 
     // Send welcome email
     const baseUrl =
-      process.env.PUBLIC_BACKEND_URL || 'http://192.168.1.15:3000';
+      process.env.PUBLIC_BACKEND_URL || 'http://192.168.100.6:3000';
     const roleLabel =
       role === Role.CLIENT
         ? 'Client'
@@ -828,7 +848,10 @@ export class AdminService {
       email: string;
       status: string;
       suspendedAt: Date | null;
-      restaurantProfile: { restaurantName: string | null; avgRating: number | null } | null;
+      restaurantProfile: {
+        restaurantName: string | null;
+        avgRating: number | null;
+      } | null;
       restaurantOrders: { id: string }[];
       restaurantComplaints: { id: string; reason: string }[];
     };
@@ -838,13 +861,16 @@ export class AdminService {
       email: string;
       status: string;
       suspendedAt: Date | null;
-      livreurProfile: { fullName: string | null; avgRating: number | null } | null;
+      livreurProfile: {
+        fullName: string | null;
+        avgRating: number | null;
+      } | null;
       livreurOrders: { id: string }[];
       delivererComplaints: { id: string; reason: string }[];
     };
 
     // Get all restaurants with their orders, complaints and profile
-    const restaurants = await this.prisma.user.findMany({
+    const restaurants = (await this.prisma.user.findMany({
       where: { role: 'RESTAURANT' },
       select: {
         id: true,
@@ -859,7 +885,7 @@ export class AdminService {
         },
         restaurantOrders: {
           where: {
-            status: { in: ['PICKED_UP', 'DELIVERED'] }
+            status: { in: ['PICKED_UP', 'DELIVERED'] },
           },
           select: { id: true },
         },
@@ -867,10 +893,10 @@ export class AdminService {
           select: { id: true, reason: true },
         },
       },
-    }) as RestaurantWithStats[];
+    })) as RestaurantWithStats[];
 
     // Get all deliverers with their orders, complaints and profile
-    const deliverers = await this.prisma.user.findMany({
+    const deliverers = (await this.prisma.user.findMany({
       where: { role: 'LIVREUR' },
       select: {
         id: true,
@@ -885,7 +911,7 @@ export class AdminService {
         },
         livreurOrders: {
           where: {
-            status: { in: ['PICKED_UP', 'DELIVERED'] }
+            status: { in: ['PICKED_UP', 'DELIVERED'] },
           },
           select: { id: true },
         },
@@ -893,7 +919,7 @@ export class AdminService {
           select: { id: true, reason: true },
         },
       },
-    }) as DelivererWithStats[];
+    })) as DelivererWithStats[];
 
     type ComplaintWithRelations = {
       id: string;
@@ -904,13 +930,18 @@ export class AdminService {
       delivererId: string | null;
       orderId: string | null;
       order: { reference: string | null; orderCode: string | null } | null;
-      complainant: { email: string; clientProfile: { fullName: string | null } | null } | null;
-      restaurant: { restaurantProfile: { restaurantName: string | null } | null } | null;
+      complainant: {
+        email: string;
+        clientProfile: { fullName: string | null } | null;
+      } | null;
+      restaurant: {
+        restaurantProfile: { restaurantName: string | null } | null;
+      } | null;
       deliverer: { livreurProfile: { fullName: string | null } | null } | null;
     };
 
     // Get all complaints with relations
-    const complaints = await this.prisma.complaint.findMany({
+    const complaints = (await this.prisma.complaint.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -949,7 +980,7 @@ export class AdminService {
           },
         },
       },
-    }) as ComplaintWithRelations[];
+    })) as ComplaintWithRelations[];
 
     // Get complaint categories by target type
     const allComplaints = await this.prisma.complaint.findMany({
@@ -959,8 +990,11 @@ export class AdminService {
       },
     });
 
-    const categoriesMap = new Map<string, { reason: string; targetType: string; count: number }>();
-    
+    const categoriesMap = new Map<
+      string,
+      { reason: string; targetType: string; count: number }
+    >();
+
     for (const c of allComplaints) {
       const targetType = c.restaurantId ? 'RESTAURANT' : 'DELIVERER';
       const key = `${c.reason}|${targetType}`;
@@ -972,8 +1006,9 @@ export class AdminService {
       }
     }
 
-    const complaintCategories = Array.from(categoriesMap.values())
-      .sort((a, b) => b.count - a.count);
+    const complaintCategories = Array.from(categoriesMap.values()).sort(
+      (a, b) => b.count - a.count,
+    );
 
     // Format restaurant stats
     const restaurantStats = restaurants.map((r) => {
@@ -1057,7 +1092,9 @@ export class AdminService {
 
   async updateCommissionRate(restaurantId: string, commissionRate: number) {
     if (commissionRate < 0 || commissionRate > 100) {
-      throw new BadRequestException('Commission rate must be between 0 and 100');
+      throw new BadRequestException(
+        'Commission rate must be between 0 and 100',
+      );
     }
 
     const profile = await this.prisma.restaurantProfile.findUnique({
@@ -1090,7 +1127,9 @@ export class AdminService {
     const orders = await this.prisma.order.findMany({
       where: {
         restaurantId,
-        status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] },
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'],
+        },
       },
       include: {
         client: { include: { clientProfile: true } },
@@ -1108,7 +1147,7 @@ export class AdminService {
     return {
       restaurantName: restaurant.restaurantProfile.restaurantName,
       totalRevenue,
-      orders: orders.map(order => ({
+      orders: orders.map((order) => ({
         id: order.id,
         orderCode: order.orderCode,
         total: order.total,
@@ -1138,7 +1177,9 @@ export class AdminService {
       where: {
         livreurId: delivererId,
         // Show all orders from CONFIRMED onwards
-        status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] }
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'],
+        },
       },
       include: {
         restaurant: { include: { restaurantProfile: true } },
@@ -1168,7 +1209,10 @@ export class AdminService {
     }));
 
     // Total earnings = sum of all amounts (no fees deducted)
-    const totalEarnings = transformedOrders.reduce((sum, order) => sum + (order.amount || 0), 0);
+    const totalEarnings = transformedOrders.reduce(
+      (sum, order) => sum + (order.amount || 0),
+      0,
+    );
 
     return {
       delivererName: deliverer.livreurProfile.fullName,

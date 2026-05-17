@@ -48,6 +48,19 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fiftyfood" android:host="payment-error" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fiftyfood" android:host="reset-password" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="192.168.100.6" android:pathPrefix="/reset-password" />
+                <data android:scheme="https" android:host="192.168.100.6" android:pathPrefix="/reset-password" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

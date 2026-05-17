@@ -5,6 +5,7 @@ import 'package:mobile_app/api/client_profile_service.dart';
 import '../api/api_service.dart';
 import '../api/push_token_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../auth/google_auth.dart';
 import '../screens/client/LocationConsentPage.dart' as client_consent;
 import '../screens/deliverer/LocationConsentPage.dart' as deliverer_consent;
 import '../screens/deliverer/signup_step3.dart';
@@ -145,8 +146,11 @@ class _SignInPageState extends State<SignInPage> {
               : int.tryParse(nextOnboardingStep?.toString() ?? '') ?? 2;
 
           if (user['role'] == 'CLIENT') {
-            final ct = user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
-            Navigator.of(context).pushReplacementNamed('/client/signup2', arguments: ct);
+            final ct =
+                user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
+            Navigator.of(
+              context,
+            ).pushReplacementNamed('/client/signup2', arguments: ct);
             return;
           }
 
@@ -204,8 +208,11 @@ class _SignInPageState extends State<SignInPage> {
           }
 
           if (user['role'] == 'CLIENT') {
-            final ct = user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
-            Navigator.of(context).pushReplacementNamed('/client/signup2', arguments: ct);
+            final ct =
+                user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
+            Navigator.of(
+              context,
+            ).pushReplacementNamed('/client/signup2', arguments: ct);
             return;
           }
           if (user['role'].toString().toUpperCase() == 'LIVREUR') {
@@ -253,8 +260,11 @@ class _SignInPageState extends State<SignInPage> {
               });
             }
           } else {
-            final ct = user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
-            Navigator.of(context).pushReplacementNamed('/client/signup2', arguments: ct);
+            final ct =
+                user['clientProfile']?['clientType']?.toString() ?? 'NORMAL';
+            Navigator.of(
+              context,
+            ).pushReplacementNamed('/client/signup2', arguments: ct);
           }
         } else if (user['role'].toString().toUpperCase() == 'LIVREUR') {
           if (user['status'] == 'APPROVED') {
@@ -683,34 +693,18 @@ class _SignInPageState extends State<SignInPage> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () {},
+                            onPressed: () async {
+                              await GoogleAuth.signInWithGoogle(
+                                context,
+                                widget.role,
+                              );
+                            },
                             icon: const Icon(
                               Icons.g_mobiledata,
                               color: Color(0xFF1F9D7A),
                             ),
                             label: const Text(
                               'Google',
-                              style: TextStyle(color: Color(0xFF1F9D7A)),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF1F9D7A)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {},
-                            icon: const Icon(
-                              Icons.facebook,
-                              color: Color(0xFF1F9D7A),
-                            ),
-                            label: const Text(
-                              'Facebook',
                               style: TextStyle(color: Color(0xFF1F9D7A)),
                             ),
                             style: OutlinedButton.styleFrom(

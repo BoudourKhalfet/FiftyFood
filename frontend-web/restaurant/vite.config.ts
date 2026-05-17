@@ -8,8 +8,8 @@ export default defineConfig({
     strictPort: true,
     port: 5175,
     proxy: {
-      "^/auth": "http://192.168.53.51:3000",
-      "^/restaurant": "http://192.168.53.51:3000",
+      "^/auth": "http://192.168.100.6:3000",
+      "^/restaurant": "http://192.168.100.6:3000",
     },
   },
 });

@@ -45,7 +45,8 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
   String? _error;
   String? _ocrStatus;
 
-  int _currentStep = 0; // 0: CIN input, 1: Front photo, 2: Back photo, 3: Review, 4: OCR Verification
+  int _currentStep =
+      0; // 0: CIN input, 1: Front photo, 2: Back photo, 3: Review, 4: OCR Verification
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
     _cameraController = CameraController(
       backCamera,
       ResolutionPreset.high,
+      enableAudio: false,
     );
 
     _initializeControllerFuture = _cameraController.initialize();
@@ -263,7 +265,8 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
       if (ocrText == null || ocrText.isEmpty) {
         setState(() {
           _ocrProcessing = false;
-          _error = 'Could not read text from CIN card. Please retake the photo with better lighting.';
+          _error =
+              'Could not read text from CIN card. Please retake the photo with better lighting.';
           _ocrStatus = null;
         });
         return;
@@ -274,10 +277,36 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
       final enteredCIN = _cinController.text.trim();
       final extractedCIN = _extractCINNumber(ocrText, enteredCIN);
 
+      // If OCR produced text but no 8-digit number at all, warn that CIN area
+      // is likely missing/cropped before indicating a mismatch with entered CIN.
+      final hasAny8Digit = RegExp(r'\b\d{8}\b').hasMatch(ocrText);
+
+      if (!hasAny8Digit) {
+        setState(() {
+          _ocrProcessing = false;
+          _error =
+              'CIN number is not visible or cropped. Please ensure the entire front of the ID card is clearly visible in the photo.';
+          _ocrStatus = null;
+        });
+        // Reset to allow retry
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            setState(() {
+              _currentStep = 0;
+              _cinFrontImage = null;
+              _cinBackImage = null;
+              _cinController.clear();
+            });
+          }
+        });
+        return;
+      }
+
       if (extractedCIN == null) {
         setState(() {
           _ocrProcessing = false;
-          _error = 'CIN number verification failed. The number on the card does not match what you entered. Please check and try again.';
+          _error =
+              'The CIN number on the card does not match what you entered. Please verify and try again.';
           _ocrStatus = null;
         });
         // Reset to allow retry
@@ -296,7 +325,6 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
 
       setState(() => _ocrStatus = 'CIN verified! Submitting...');
       await _submitCINVerification();
-
     } catch (e) {
       setState(() {
         _ocrProcessing = false;
@@ -394,9 +422,7 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: SafeArea(
-        child: _currentStep == 0
-            ? _buildCINInputStep()
-            : _buildCameraStep(),
+        child: _currentStep == 0 ? _buildCINInputStep() : _buildCameraStep(),
       ),
     );
   }
@@ -449,9 +475,7 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
           ),
           const SizedBox(height: 32),
           ElevatedButton(
-            onPressed: _loading
-                ? null
-                : () => setState(() => _currentStep = 1),
+            onPressed: _loading ? null : () => setState(() => _currentStep = 1),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               backgroundColor: const Color(0xFF3D9176),
@@ -462,8 +486,7 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
                     width: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.white),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   )
                 : const Text(
@@ -523,7 +546,9 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
                         child: Column(
                           children: [
                             const CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3D9176)),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF3D9176),
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -537,7 +562,9 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
                         ),
                       ),
                     ElevatedButton.icon(
-                      onPressed: (_ocrProcessing || _loading) ? null : _takePicture,
+                      onPressed: (_ocrProcessing || _loading)
+                          ? null
+                          : _takePicture,
                       icon: const Icon(Icons.camera_alt),
                       label: const Text('Take Photo'),
                       style: ElevatedButton.styleFrom(
@@ -550,8 +577,13 @@ class _CINCaptureScreenState extends State<CINCaptureScreen> {
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: (_ocrProcessing || _loading) ? null : _pickFromGallery,
-                      icon: const Icon(Icons.photo_library, color: Color(0xFF3D9176)),
+                      onPressed: (_ocrProcessing || _loading)
+                          ? null
+                          : _pickFromGallery,
+                      icon: const Icon(
+                        Icons.photo_library,
+                        color: Color(0xFF3D9176),
+                      ),
                       label: const Text(
                         'Import from Gallery',
                         style: TextStyle(color: Color(0xFF3D9176)),

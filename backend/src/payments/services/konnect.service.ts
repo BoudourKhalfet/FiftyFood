@@ -10,8 +10,9 @@ export class KonnectService {
 
   constructor() {
     this.konnectApiKey = process.env.KONNECT_API_KEY || '';
-    this.konnectBaseUrl =
-      (process.env.KONNECT_BASE_URL || 'https://api.konnect.network/api/v2').replace(/\/$/, '');
+    this.konnectBaseUrl = (
+      process.env.KONNECT_BASE_URL || 'https://api.konnect.network/api/v2'
+    ).replace(/\/$/, '');
 
     // Separate wallet ID from API key
     this.konnectWalletId = process.env.KONNECT_WALLET_ID || '';
@@ -20,7 +21,9 @@ export class KonnectService {
       this.logger.warn('KONNECT_API_KEY not configured');
     }
     if (!this.konnectWalletId) {
-      this.logger.warn('KONNECT_WALLET_ID not configured - using API key as fallback');
+      this.logger.warn(
+        'KONNECT_WALLET_ID not configured - using API key as fallback',
+      );
       this.konnectWalletId = this.konnectApiKey; // Fallback
     }
   }
@@ -35,26 +38,34 @@ export class KonnectService {
     returnUrl?: string;
   }) {
     if (!this.konnectApiKey) {
-      throw new BadRequestException('Konnect is not configured');
+      throw new BadRequestException(
+        'Payment service is temporarily unavailable. Please try again later.',
+      );
     }
 
     try {
       const returnUrl =
         params.returnUrl ||
-        `${process.env.FRONTEND_URL || 'http://192.168.1.15:3000'}/payment-success`;
+        `${process.env.FRONTEND_URL || 'http://192.168.100.6:3000'}/payment-success`;
 
       const parsedAmount = Number(params.amount);
       if (!Number.isFinite(parsedAmount)) {
-        throw new BadRequestException('Invalid order amount');
+        throw new BadRequestException(
+          'Invalid payment amount. Please check your order.',
+        );
       }
 
       const finalAmount = Math.round(parsedAmount * 1000);
       if (!Number.isInteger(finalAmount) || finalAmount <= 0) {
-        throw new BadRequestException('Amount must be a positive integer in millimes');
+        throw new BadRequestException(
+          'Order amount must be valid and positive.',
+        );
       }
 
       this.logger.log(`Creating Konnect payment for order ${params.orderId}`);
-      this.logger.log(`Konnect amount: ${parsedAmount} TND (${finalAmount} millimes)`);
+      this.logger.log(
+        `Konnect amount: ${parsedAmount} TND (${finalAmount} millimes)`,
+      );
 
       // Konnect API - Correct implementation based on docs
       const requestBody = {
@@ -76,14 +87,17 @@ export class KonnectService {
       this.logger.debug(`Konnect request: ${JSON.stringify(requestBody)}`);
 
       // Correct endpoint and auth header
-      const response = await fetch(`${this.konnectBaseUrl}/payments/init-payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.konnectApiKey,
+      const response = await fetch(
+        `${this.konnectBaseUrl}/payments/init-payment`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': this.konnectApiKey,
+          },
+          body: JSON.stringify(requestBody),
         },
-        body: JSON.stringify(requestBody),
-      });
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -104,7 +118,7 @@ export class KonnectService {
     } catch (error) {
       this.logger.error('Konnect payment error:', error);
       throw new BadRequestException(
-        error instanceof Error ? error.message : 'Failed to create Konnect payment',
+        'Unable to process payment. Please check your information and try again.',
       );
     }
   }
@@ -135,7 +149,8 @@ export class KonnectService {
         status: payment.status || payment.state,
         amount: payment.amount ? payment.amount / 1000 : 0,
         orderId: payment.orderId,
-        isSuccessful: (payment.status === 'completed' || payment.state === 'completed'),
+        isSuccessful:
+          payment.status === 'completed' || payment.state === 'completed',
       };
     } catch (error) {
       this.logger.error('Konnect verification error:', error);

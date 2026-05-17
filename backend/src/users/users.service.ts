@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ClientType, CuisinePreference } from '@prisma/client';
+import { CuisinePreference } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';

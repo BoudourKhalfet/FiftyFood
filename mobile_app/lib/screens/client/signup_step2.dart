@@ -40,10 +40,18 @@ class _SignupStep2State extends State<SignupStep2> {
     'BREAKFAST',
     'FINE_DINING',
     'BRUNCH',
+    'TUNISIAN',
+    'ITALIAN',
+    'CHINESE',
+    'FRIED_FOOD',
   ];
 
   final Map<String, String> _foodEmoji = {
     'BAKERY': '🥖',
+    'TUNISIAN': '🇹🇳',
+    'ITALIAN': '🍝',
+    'CHINESE': '🥡',
+    'FRIED_FOOD': '🍗',
     'GRILL': '🔥',
     'FAST_FOOD': '🍟',
     'VEGETARIAN': '🥬',
@@ -136,7 +144,6 @@ class _SignupStep2State extends State<SignupStep2> {
       }
     }
   }
-
 
   Widget _buildTextField({
     required TextEditingController controller,

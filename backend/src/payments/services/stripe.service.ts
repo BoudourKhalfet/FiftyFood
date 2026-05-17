@@ -15,7 +15,7 @@ export class StripeService {
       this.logger.warn('STRIPE_SECRET_KEY not configured');
     }
 
-this.stripe = new Stripe(secretKey, {
+    this.stripe = new Stripe(secretKey, {
       apiVersion: '2026-04-22.dahlia',
     });
   }
@@ -118,7 +118,11 @@ this.stripe = new Stripe(secretKey, {
     };
 
     // Only add customer_email if it's a valid non-empty string
-    if (params.email && params.email.trim().length > 0 && params.email.includes('@')) {
+    if (
+      params.email &&
+      params.email.trim().length > 0 &&
+      params.email.includes('@')
+    ) {
       sessionConfig.customer_email = params.email.trim();
     }
 

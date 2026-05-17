@@ -162,7 +162,11 @@ export class PaymentsController {
     @Param('paymentId') paymentId: string,
     @Param('orderId') orderId: string,
   ) {
-    return this.paymentsService.verifyKonnectPayment(paymentId, orderId, req.user.sub);
+    return this.paymentsService.verifyKonnectPayment(
+      paymentId,
+      orderId,
+      req.user.sub,
+    );
   }
 
   // =========================
@@ -189,7 +193,10 @@ export class PaymentsController {
     @Param('orderId') orderId: string,
     @Param('paymentIntentId') paymentIntentId: string,
   ) {
-    return this.paymentsService.confirmStripePayment(paymentIntentId, req.user.sub);
+    return this.paymentsService.confirmStripePayment(
+      paymentIntentId,
+      req.user.sub,
+    );
   }
 
   // =========================
@@ -215,10 +222,7 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Param('sessionId') sessionId: string,
   ) {
-    return this.paymentsService.confirmStripeCheckoutSession(
-      sessionId,
-      req.user.sub,
-    );
+    return this.paymentsService.confirmStripeCheckoutSession(sessionId);
   }
   // =========================
   // PAYPAL RETURN PAGES
@@ -264,9 +268,11 @@ export class PaymentsController {
         return res.redirect(returnUrl);
       }
       // If already captured, still show success
-      if ((error as Error).message?.includes('ALREADY_CAPTURED') ||
-          (error as Error).message?.includes('DUPLICATE_CAPTURE') ||
-          (error as Error).message?.includes('already_processed')) {
+      if (
+        (error as Error).message?.includes('ALREADY_CAPTURED') ||
+        (error as Error).message?.includes('DUPLICATE_CAPTURE') ||
+        (error as Error).message?.includes('already_processed')
+      ) {
         return res.status(200).send(`
           <html><head><title>Payment Successful</title></head>
           <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f0fdf4;">

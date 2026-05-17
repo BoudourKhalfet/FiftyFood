@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../api/auth_storage.dart';
@@ -97,12 +96,10 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
         return 'Bank Transfer';
       case 'PAYPAL':
         return 'PayPal';
-      case 'MOBILE_WALLET':
-        return 'Mobile Wallet';
-      case 'CASH':
-        return 'Cash';
-      case 'OTHER':
-        return 'Other';
+      case 'CREDIT_CARD':
+        return 'Credit / Visa Card';
+      case 'EDINAR':
+        return 'e-Dinar';
       default:
         return 'Not set';
     }
@@ -127,6 +124,34 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
       if (accountHolder.isNotEmpty) {
         return '$accountHolder\n$bankName · $maskedIban';
       }
+      final cardHolderName = details['cardHolderName']?.toString() ?? '';
+      final cardNumber = details['cardNumber']?.toString() ?? '';
+      final cardLast4 = details['cardLast4']?.toString() ?? '';
+      final resolvedCardLast4 = cardLast4.isNotEmpty
+          ? cardLast4
+          : (cardNumber.length >= 4
+                ? cardNumber.substring(cardNumber.length - 4)
+                : '');
+      final maskedCardNumber = resolvedCardLast4.isNotEmpty
+          ? '•••• $resolvedCardLast4'
+          : '••••';
+      final expiryDate = details['expiryDate']?.toString() ?? '';
+      if (cardHolderName.isNotEmpty && resolvedCardLast4.isNotEmpty) {
+        return '$cardHolderName\n$maskedCardNumber${expiryDate.isNotEmpty ? ' · $expiryDate' : ''}';
+      }
+      final edinarNumber = details['edinarNumber']?.toString() ?? '';
+      final edinarLast4 = details['edinarLast4']?.toString() ?? '';
+      final resolvedEdinarLast4 = edinarLast4.isNotEmpty
+          ? edinarLast4
+          : (edinarNumber.length >= 4
+                ? edinarNumber.substring(edinarNumber.length - 4)
+                : '');
+      final maskedEdinarNumber = resolvedEdinarLast4.isNotEmpty
+          ? '•••• $resolvedEdinarLast4'
+          : '••••';
+      if (cardHolderName.isNotEmpty && resolvedEdinarLast4.isNotEmpty) {
+        return '$cardHolderName\n$maskedEdinarNumber';
+      }
       return bankName.isNotEmpty ? '$bankName · $maskedIban' : maskedIban;
     }
     if (details is String && details.trim().isEmpty) return 'Not set';
@@ -135,21 +160,40 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
 
   Future<void> _showPaymentDialog() async {
     // Default to BANK_TRANSFER if null or invalid value
-    final validMethods = ['BANK_TRANSFER', 'PAYPAL'];
-    String? selectedMethod = validMethods.contains(payoutMethod) ? payoutMethod : 'BANK_TRANSFER';
+    final validMethods = ['BANK_TRANSFER', 'PAYPAL', 'CREDIT_CARD', 'EDINAR'];
+    String? selectedMethod = validMethods.contains(payoutMethod)
+        ? payoutMethod
+        : 'BANK_TRANSFER';
     final accountHolderController = TextEditingController();
     final bankNameController = TextEditingController();
     final ibanController = TextEditingController();
     final paypalEmailController = TextEditingController();
+    final cardHolderNameController = TextEditingController();
+    final cardNumberController = TextEditingController();
+    final cardExpiryController = TextEditingController();
+    final edinarHolderNameController = TextEditingController();
+    final edinarNumberController = TextEditingController();
     bool saving = false;
 
     // Parse existing payout details if available
     final existingDetails = payoutDetails;
     if (existingDetails is Map) {
-      accountHolderController.text = existingDetails['accountHolder']?.toString() ?? '';
+      accountHolderController.text =
+          existingDetails['accountHolder']?.toString() ?? '';
       bankNameController.text = existingDetails['bankName']?.toString() ?? '';
       ibanController.text = existingDetails['iban']?.toString() ?? '';
-      paypalEmailController.text = existingDetails['paypalEmail']?.toString() ?? '';
+      paypalEmailController.text =
+          existingDetails['paypalEmail']?.toString() ?? '';
+      cardHolderNameController.text =
+          existingDetails['cardHolderName']?.toString() ?? '';
+      cardNumberController.text =
+          existingDetails['cardNumber']?.toString() ?? '';
+      cardExpiryController.text =
+          existingDetails['expiryDate']?.toString() ?? '';
+      edinarHolderNameController.text =
+          existingDetails['cardHolderName']?.toString() ?? '';
+      edinarNumberController.text =
+          existingDetails['edinarNumber']?.toString() ?? '';
     } else if (existingDetails is String && existingDetails.isNotEmpty) {
       accountHolderController.text = existingDetails;
     }
@@ -181,6 +225,14 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                         DropdownMenuItem(
                           value: 'PAYPAL',
                           child: Text('PayPal'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'CREDIT_CARD',
+                          child: Text('Credit / Visa Card'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'EDINAR',
+                          child: Text('e-Dinar'),
                         ),
                       ],
                       onChanged: (value) => setLocalState(() {
@@ -227,6 +279,50 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                         keyboardType: TextInputType.emailAddress,
                       ),
                     ],
+                    if (selectedMethod == 'CREDIT_CARD') ...[
+                      TextField(
+                        controller: cardHolderNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Cardholder Name',
+                          hintText: 'Name on card',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: cardNumberController,
+                        decoration: const InputDecoration(
+                          labelText: 'Card Number',
+                          hintText: 'Visa / Credit card number',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: cardExpiryController,
+                        decoration: const InputDecoration(
+                          labelText: 'Expiry Date',
+                          hintText: 'MM/YY',
+                        ),
+                      ),
+                    ],
+                    if (selectedMethod == 'EDINAR') ...[
+                      TextField(
+                        controller: edinarHolderNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Cardholder Name',
+                          hintText: 'Name on e-Dinar card',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: edinarNumberController,
+                        decoration: const InputDecoration(
+                          labelText: 'e-Dinar Card Number',
+                          hintText: 'Card number',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -244,10 +340,13 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                           // Validate fields
                           if (selectedMethod == 'BANK_TRANSFER') {
                             if (accountHolderController.text.trim().isEmpty ||
+                                bankNameController.text.trim().isEmpty ||
                                 ibanController.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Please fill account holder name and IBAN.'),
+                                  content: Text(
+                                    'Please fill account holder name, bank name, and IBAN.',
+                                  ),
                                 ),
                               );
                               return;
@@ -261,16 +360,70 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                               );
                               return;
                             }
+                          } else if (selectedMethod == 'CREDIT_CARD') {
+                            if (cardHolderNameController.text.trim().isEmpty ||
+                                cardNumberController.text.trim().isEmpty ||
+                                cardExpiryController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Please fill cardholder name, card number, and expiry date.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                          } else if (selectedMethod == 'EDINAR') {
+                            if (edinarHolderNameController.text
+                                    .trim()
+                                    .isEmpty ||
+                                edinarNumberController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Please fill the e-Dinar cardholder name and card number.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
                           }
 
                           setLocalState(() => saving = true);
                           try {
                             final paymentDetails = selectedMethod == 'PAYPAL'
-                                ? {'paypalEmail': paypalEmailController.text.trim()}
+                                ? {
+                                    'paypalEmail': paypalEmailController.text
+                                        .trim(),
+                                  }
+                                : selectedMethod == 'CREDIT_CARD'
+                                ? {
+                                    'cardHolderName': cardHolderNameController
+                                        .text
+                                        .trim(),
+                                    'cardNumber': cardNumberController.text
+                                        .trim()
+                                        .replaceAll(' ', ''),
+                                    'expiryDate': cardExpiryController.text
+                                        .trim(),
+                                  }
+                                : selectedMethod == 'EDINAR'
+                                ? {
+                                    'cardHolderName': edinarHolderNameController
+                                        .text
+                                        .trim(),
+                                    'edinarNumber': edinarNumberController.text
+                                        .trim()
+                                        .replaceAll(' ', ''),
+                                  }
                                 : {
-                                    'accountHolder': accountHolderController.text.trim(),
+                                    'accountHolder': accountHolderController
+                                        .text
+                                        .trim(),
                                     'bankName': bankNameController.text.trim(),
-                                    'iban': ibanController.text.trim().replaceAll(' ', ''),
+                                    'iban': ibanController.text
+                                        .trim()
+                                        .replaceAll(' ', ''),
                                   };
                             await ApiService.patch('restaurants/me/payout', {
                               'payoutMethod': selectedMethod,
@@ -402,7 +555,11 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.reviews, color: Color(0xFF2D8066), size: 24),
+                    const Icon(
+                      Icons.reviews,
+                      color: Color(0xFF2D8066),
+                      size: 24,
+                    ),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
@@ -437,13 +594,17 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                         child: Column(
                           children: receivedReviews.map((review) {
                             final rating = review['rating']?.toString() ?? '0';
-                            final comment = (review['comment'] ?? '').toString();
-                            final reviewer = (review['reviewerName'] ??
-                                    review['reviewerEmail'] ??
-                                    'Anonymous')
+                            final comment = (review['comment'] ?? '')
                                 .toString();
+                            final reviewer =
+                                (review['reviewerName'] ??
+                                        review['reviewerEmail'] ??
+                                        'Anonymous')
+                                    .toString();
                             final date = review['createdAt'] != null
-                                ? DateTime.tryParse(review['createdAt'].toString())
+                                ? DateTime.tryParse(
+                                    review['createdAt'].toString(),
+                                  )
                                 : null;
                             return Container(
                               width: double.infinity,
@@ -452,20 +613,26 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF7F7F5),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFE5E5E0)),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E5E0),
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.star,
-                                          size: 16, color: Color(0xFFF59E0B)),
+                                      const Icon(
+                                        Icons.star,
+                                        size: 16,
+                                        color: Color(0xFFF59E0B),
+                                      ),
                                       const SizedBox(width: 6),
                                       Text(
                                         rating,
                                         style: const TextStyle(
-                                            fontWeight: FontWeight.w700),
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                       const Spacer(),
                                       Text(
@@ -508,9 +675,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade200),
-                  ),
+                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -584,11 +749,7 @@ class _PartnerProfileTabState extends State<PartnerProfileTab> {
                 ),
                 if (comment.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text(
-                    comment,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(comment, maxLines: 2, overflow: TextOverflow.ellipsis),
                 ],
               ],
             ),

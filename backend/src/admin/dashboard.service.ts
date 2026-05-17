@@ -43,7 +43,9 @@ export class DashboardService {
     // Get all paid orders (CONFIRMED, DELIVERED, PICKED_UP)
     const paidOrders = await this.prisma.order.findMany({
       where: {
-        status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'DELIVERED', 'PICKED_UP'] },
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'READY', 'DELIVERED', 'PICKED_UP'],
+        },
       },
       select: {
         total: true,
@@ -65,7 +67,7 @@ export class DashboardService {
     const appRevenue = paidOrders.reduce((sum, order) => {
       const orderPrice = order.total - (order.deliveryFee || 0);
       const rate = (commissionMap.get(order.restaurantId) ?? 15) / 100;
-      return sum + (orderPrice * rate);
+      return sum + orderPrice * rate;
     }, 0);
 
     const orderStats = {
@@ -93,8 +95,10 @@ export class DashboardService {
       // Get paid orders for this day
       const dayOrders = await this.prisma.order.findMany({
         where: {
-          status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'DELIVERED', 'PICKED_UP'] },
-          createdAt: { gte: dayStart, lt: dayEnd }
+          status: {
+            in: ['CONFIRMED', 'ASSIGNED', 'READY', 'DELIVERED', 'PICKED_UP'],
+          },
+          createdAt: { gte: dayStart, lt: dayEnd },
         },
         select: {
           total: true,
@@ -107,7 +111,7 @@ export class DashboardService {
       const dayRevenue = dayOrders.reduce((sum, order) => {
         const orderPrice = order.total - (order.deliveryFee || 0);
         const rate = (commissionMap.get(order.restaurantId) ?? 15) / 100;
-        return sum + (orderPrice * rate);
+        return sum + orderPrice * rate;
       }, 0);
 
       const dayIndex = dayStart.getDay();
@@ -121,7 +125,20 @@ export class DashboardService {
     // Hourly activity (last 7 days orders by hour, not just today)
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const hourlyData = [];
-    const hourLabels = ['06h', '08h', '10h', '11h', '12h', '13h', '14h', '16h', '18h', '19h', '20h', '22h'];
+    const hourLabels = [
+      '06h',
+      '08h',
+      '10h',
+      '11h',
+      '12h',
+      '13h',
+      '14h',
+      '16h',
+      '18h',
+      '19h',
+      '20h',
+      '22h',
+    ];
     const hourValues = [6, 8, 10, 11, 12, 13, 14, 16, 18, 19, 20, 22];
 
     for (let i = 0; i < hourValues.length; i++) {
@@ -133,7 +150,7 @@ export class DashboardService {
             createdAt: {
               gte: weekAgo,
             },
-          }
+          },
         },
       });
 
@@ -177,7 +194,7 @@ export class DashboardService {
     const completedOrdersThisMonth = await this.prisma.order.count({
       where: {
         status: { in: ['CONFIRMED', 'PICKED_UP', 'DELIVERED'] },
-        createdAt: { gte: d30ago }
+        createdAt: { gte: d30ago },
       },
     });
 
@@ -202,10 +219,26 @@ export class DashboardService {
     });
 
     // Calculate wasted meals: sum of remaining quantities for expired/completed offers
-    const cancelledOrdersThisMonth = wastedOffers.reduce((sum, offer) => sum + offer.quantity, 0);
+    const cancelledOrdersThisMonth = wastedOffers.reduce(
+      (sum, offer) => sum + offer.quantity,
+      0,
+    );
 
     // Monthly environmental data (last 6 months) - CONFIRMED counts as saved
-    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const months = [
+      'Jan',
+      'Fév',
+      'Mar',
+      'Avr',
+      'Mai',
+      'Juin',
+      'Juil',
+      'Août',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Déc',
+    ];
     const environmentalData = [];
     for (let i = 5; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -234,7 +267,10 @@ export class DashboardService {
         },
       });
 
-      const mealsWasted = monthWastedOffers.reduce((sum, offer) => sum + offer.quantity, 0);
+      const mealsWasted = monthWastedOffers.reduce(
+        (sum, offer) => sum + offer.quantity,
+        0,
+      );
 
       environmentalData.push({
         month: monthLabel,
@@ -245,17 +281,18 @@ export class DashboardService {
 
     // Offer conversion rate (based on offers created this month) - CONFIRMED counts as converted
     const totalOffersThisMonth = await this.prisma.offer.count({
-      where: { createdAt: { gte: d30ago } }
+      where: { createdAt: { gte: d30ago } },
     });
     const convertedOffersThisMonth = await this.prisma.order.count({
       where: {
         status: { in: ['CONFIRMED', 'PICKED_UP', 'DELIVERED'] },
-        createdAt: { gte: d30ago }
+        createdAt: { gte: d30ago },
       },
     });
-    const offerConversionRate = totalOffersThisMonth > 0
-      ? Math.round((convertedOffersThisMonth / totalOffersThisMonth) * 100)
-      : 0;
+    const offerConversionRate =
+      totalOffersThisMonth > 0
+        ? Math.round((convertedOffersThisMonth / totalOffersThisMonth) * 100)
+        : 0;
 
     // Average order value (last 30 days) - include all paid orders (CONFIRMED, PICKED_UP, DELIVERED)
     const avgOrderData = await this.prisma.order.aggregate({
@@ -335,7 +372,8 @@ export class DashboardService {
       const totalOrders = rest._count.restaurantOrders;
       const complaints = rest.restaurantComplaints.length;
       // Report percentage = complaints / total orders (or 0 if no orders)
-      const reportPercentage = totalOrders > 0 ? (complaints / totalOrders) * 100 : 0;
+      const reportPercentage =
+        totalOrders > 0 ? (complaints / totalOrders) * 100 : 0;
 
       return {
         id: rest.id,
@@ -353,7 +391,10 @@ export class DashboardService {
         // Only flag if: at least 5 reviews AND report percentage > 20%
         isFlagged: totalReviews >= 5 && reportPercentage > 20,
         recentReviews: rest.restaurantReviews
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          )
           .slice(0, 3),
       };
     });
@@ -394,10 +435,13 @@ export class DashboardService {
       dashboard: {
         totalRestaurants: restaurantStats.length,
         flaggedCount: flaggedRestaurants.length,
-        approvedRestaurants: restaurantStats.filter((r) => r.status === 'APPROVED').length,
-        avgReportPercentage: 
+        approvedRestaurants: restaurantStats.filter(
+          (r) => r.status === 'APPROVED',
+        ).length,
+        avgReportPercentage:
           restaurantStats.length > 0
-            ? restaurantStats.reduce((sum, r) => sum + r.reportPercentage, 0) / restaurantStats.length
+            ? restaurantStats.reduce((sum, r) => sum + r.reportPercentage, 0) /
+              restaurantStats.length
             : 0,
         newUsersThisMonth,
         newUsersLastMonth,

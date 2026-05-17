@@ -4,7 +4,7 @@ import { RestaurantIdentityDto } from './dto/restaurant-identity.dto';
 import { RestaurantLegalDto } from './dto/restaurant-legal.dto';
 import { RestaurantPayoutDto } from './dto/restaurant-payout.dto';
 import { RestaurantUploadType } from './uploads/restaurants-upload.constants';
-import { RestaurantProfile } from '@prisma/client';
+import { Prisma, RestaurantProfile } from '@prisma/client';
 
 export type PublicReview = {
   user: string;
@@ -29,6 +29,85 @@ export class RestaurantsService {
 
   private normalizeText(value?: string | null): string {
     return (value ?? '').trim().toLowerCase();
+  }
+
+  private asString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private sanitizePayoutDetails(
+    payoutMethod?: string,
+    payoutDetails?: unknown,
+  ): Prisma.InputJsonValue | undefined {
+    if (payoutDetails === undefined) return undefined;
+    if (
+      !payoutDetails ||
+      typeof payoutDetails !== 'object' ||
+      Array.isArray(payoutDetails)
+    ) {
+      return undefined;
+    }
+
+    const details = payoutDetails as Record<string, unknown>;
+    const method = (payoutMethod ?? '').toUpperCase();
+    const provider =
+      method === 'PAYPAL'
+        ? 'paypal'
+        : method === 'CREDIT_CARD'
+          ? 'stripe'
+          : method === 'EDINAR'
+            ? 'konnect'
+            : method === 'BANK_TRANSFER'
+              ? 'konnect'
+              : null;
+
+    const base = {
+      provider,
+      providerRecipientId: this.asString(details.providerRecipientId) || null,
+      verificationStatus:
+        this.asString(details.verificationStatus) || 'PENDING',
+      payoutEnabled: details.payoutEnabled === true,
+    };
+
+    if (method === 'BANK_TRANSFER') {
+      return {
+        ...base,
+        accountHolder: this.asString(details.accountHolder),
+        bankName: this.asString(details.bankName),
+        iban: this.asString(details.iban),
+      };
+    }
+
+    if (method === 'PAYPAL') {
+      return {
+        ...base,
+        paypalEmail: this.asString(details.paypalEmail),
+      };
+    }
+
+    if (method === 'CREDIT_CARD') {
+      const cardNumber = this.asString(details.cardNumber).replace(/\s+/g, '');
+      return {
+        ...base,
+        cardHolderName: this.asString(details.cardHolderName),
+        cardLast4: cardNumber.length >= 4 ? cardNumber.slice(-4) : '',
+        expiryDate: this.asString(details.expiryDate),
+      };
+    }
+
+    if (method === 'EDINAR') {
+      const edinarNumber = this.asString(details.edinarNumber).replace(
+        /\s+/g,
+        '',
+      );
+      return {
+        ...base,
+        cardHolderName: this.asString(details.cardHolderName),
+        edinarLast4: edinarNumber.length >= 4 ? edinarNumber.slice(-4) : '',
+      };
+    }
+
+    return base;
   }
 
   private async geocodeAddress(
@@ -233,11 +312,16 @@ export class RestaurantsService {
       where: { userId },
     });
 
+    const sanitizedPayoutDetails = this.sanitizePayoutDetails(
+      dto.payoutMethod,
+      dto.payoutDetails,
+    );
+
     const updatedProfile = await this.prisma.restaurantProfile.update({
       where: { userId },
       data: {
         payoutMethod: dto.payoutMethod,
-        payoutDetails: dto.payoutDetails,
+        payoutDetails: sanitizedPayoutDetails,
         payoutCompletedAt: new Date(),
       },
     });
@@ -421,7 +505,15 @@ export class RestaurantsService {
     for (let i = 5; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const start = new Date(date.getFullYear(), date.getMonth(), 1);
-      const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+      const end = new Date(
+        date.getFullYear(),
+        date.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
 
       const agg = await this.prisma.order.aggregate({
         where: {
@@ -443,7 +535,9 @@ export class RestaurantsService {
       const mealsSaved = completedOrders.reduce((total, order) => {
         const items = order.items as Array<{ quantity?: number }> | null;
         if (!Array.isArray(items)) return total;
-        return total + items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+        return (
+          total + items.reduce((sum, item) => sum + (item.quantity || 0), 0)
+        );
       }, 0);
 
       result.push({
@@ -472,7 +566,9 @@ export class RestaurantsService {
       map[hour] = (map[hour] || 0) + 1;
     }
 
-    const hours = Object.keys(map).map(Number).sort((a, b) => a - b);
+    const hours = Object.keys(map)
+      .map(Number)
+      .sort((a, b) => a - b);
     return hours.map((h) => ({ hour: `${h}h`, count: map[h] }));
   }
 
@@ -493,7 +589,10 @@ export class RestaurantsService {
     const total = Object.values(map).reduce((s, v) => s + v, 0);
     return {
       total,
-      distribution: [5, 4, 3, 2, 1].map((stars) => ({ stars, count: map[stars] })),
+      distribution: [5, 4, 3, 2, 1].map((stars) => ({
+        stars,
+        count: map[stars],
+      })),
     };
   }
 
@@ -542,7 +641,12 @@ export class RestaurantsService {
 
     const profile = await this.prisma.restaurantProfile.findUnique({
       where: { userId },
-      select: { id: true, avgRating: true, restaurantName: true, commissionRate: true },
+      select: {
+        id: true,
+        avgRating: true,
+        restaurantName: true,
+        commissionRate: true,
+      },
     });
 
     if (!profile) {
@@ -560,12 +664,16 @@ export class RestaurantsService {
       return orders.reduce((total, order) => {
         const items = order.items as Array<{ quantity?: number }> | null;
         if (!Array.isArray(items)) return total;
-        return total + items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+        return (
+          total + items.reduce((sum, item) => sum + (item.quantity || 0), 0)
+        );
       }, 0);
     };
 
     // Helper to calculate net amount after commission (truncated)
-    const calculateNetAfterCommission = (orders: { total: number; deliveryFee: number | null }[]): number => {
+    const calculateNetAfterCommission = (
+      orders: { total: number; deliveryFee: number | null }[],
+    ): number => {
       const commissionRate = (profile.commissionRate ?? 15) / 100;
       return orders.reduce((sum, order) => {
         const orderPrice = order.total - (order.deliveryFee || 0);
@@ -576,12 +684,20 @@ export class RestaurantsService {
 
     // Total stats - fetch all paid orders for net sales calculation
     const totalCompletedOrdersData = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] } },
+      where: {
+        restaurantId: userId,
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'],
+        },
+      },
       select: { total: true, deliveryFee: true, items: true },
     });
     const totalNetSales = calculateNetAfterCommission(totalCompletedOrdersData);
     const totalMealsSavedData = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: { in: ['PICKED_UP', 'DELIVERED'] } },
+      where: {
+        restaurantId: userId,
+        status: { in: ['PICKED_UP', 'DELIVERED'] },
+      },
       select: { items: true },
     });
     const totalMealsSaved = sumItemQuantities(totalMealsSavedData);
@@ -589,26 +705,46 @@ export class RestaurantsService {
       where: { restaurantId: userId },
     });
     const activeOffersCount = await this.prisma.offer.count({
-      where: { restaurantId: userId, status: 'ACTIVE', pickupDateTime: { gte: now } },
+      where: {
+        restaurantId: userId,
+        status: 'ACTIVE',
+        pickupDateTime: { gte: now },
+      },
     });
 
     // Last 7 days - fetch orders for net revenue calculation
     const completedOrders7d = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] }, createdAt: { gte: d7ago } },
+      where: {
+        restaurantId: userId,
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'],
+        },
+        createdAt: { gte: d7ago },
+      },
       select: { total: true, deliveryFee: true, items: true, id: true },
     });
     const revenue7d = calculateNetAfterCommission(completedOrders7d);
     const orders7d = completedOrders7d.length;
     const meals7d = sumItemQuantities(completedOrders7d);
     const completedOrdersPrev7d = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: completedStatuses, createdAt: { gte: d14ago, lt: d7ago } },
+      where: {
+        restaurantId: userId,
+        status: completedStatuses,
+        createdAt: { gte: d14ago, lt: d7ago },
+      },
       select: { items: true },
     });
     const mealsPrev7d = sumItemQuantities(completedOrdersPrev7d);
 
     // Previous 7 days (for % change)
     const completedOrdersPrev7dData = await this.prisma.order.findMany({
-      where: { restaurantId: userId, status: { in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'] }, createdAt: { gte: d14ago, lt: d7ago } },
+      where: {
+        restaurantId: userId,
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'READY', 'PICKED_UP', 'DELIVERED'],
+        },
+        createdAt: { gte: d14ago, lt: d7ago },
+      },
       select: { total: true, deliveryFee: true, items: true },
     });
     const prevRevenue = calculateNetAfterCommission(completedOrdersPrev7dData);

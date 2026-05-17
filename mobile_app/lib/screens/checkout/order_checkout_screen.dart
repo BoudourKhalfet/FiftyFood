@@ -1201,7 +1201,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       case AppPaymentMethod.paypal:
         return 'Pay with PayPal';
       case AppPaymentMethod.konnect:
-        return 'Pay with D17 / Konnect';
+        return 'Pay with e-Dinar / bank account';
     }
   }
 

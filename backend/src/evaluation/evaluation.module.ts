@@ -6,7 +6,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 
 /**
  * Evaluation Module
- * 
+ *
  * Provides offline evaluation capabilities for the recommender system.
  * Imports RecommendationModule and PrismaModule to reuse existing services.
  */

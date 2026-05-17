@@ -10,6 +10,10 @@ import { LivenessSessionService } from './liveness-session.service';
 @Module({
   imports: [PrismaModule, HttpModule],
   controllers: [LivreurOnboardingController, IdentityVerificationController],
-  providers: [LivreurService, IdentityVerificationService, LivenessSessionService],
+  providers: [
+    LivreurService,
+    IdentityVerificationService,
+    LivenessSessionService,
+  ],
 })
 export class LivreurModule {}

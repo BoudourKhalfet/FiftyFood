@@ -11,6 +11,7 @@ class ResetPasswordPage extends StatefulWidget {
 
 class _ResetPasswordPageState extends State<ResetPasswordPage> {
   final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
   String? _message;
   String? _error;
   bool _submitting = false;
@@ -18,12 +19,14 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   @override
   void dispose() {
     _passwordController.dispose();
+    _confirmController.dispose();
     super.dispose();
   }
 
   Future<void> _reset() async {
     final token = widget.token;
     final newPassword = _passwordController.text.trim();
+    final confirm = _confirmController.text.trim();
     if (token == null || token.isEmpty) {
       setState(() {
         _error = "Reset token missing.";
@@ -33,7 +36,15 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     }
     if (newPassword.length < 6) {
       setState(() {
-        _error = "Password too short.";
+        _error =
+            "Password must be at least 8 characters and include uppercase, lowercase, number, and special character.";
+        _message = null;
+      });
+      return;
+    }
+    if (newPassword != confirm) {
+      setState(() {
+        _error = "Passwords do not match.";
         _message = null;
       });
       return;
@@ -97,7 +108,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "Enter a new password. Minimum 6 characters.",
+                    "Enter a new password. It must be at least 8 characters and include uppercase, lowercase, number, and special character.",
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.grey[700],
@@ -121,6 +132,18 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                       controller: _passwordController,
                       decoration: InputDecoration(
                         labelText: "New password",
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      obscureText: true,
+                      enabled: !_submitting,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _confirmController,
+                      decoration: InputDecoration(
+                        labelText: "Confirm new password",
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
