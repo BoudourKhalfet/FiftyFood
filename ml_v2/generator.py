@@ -257,7 +257,15 @@ def generate_offers(
         # an early-unlocked restaurant (15 offers) from an experienced one (200+).
         h = hist[rid]
         n_own = len(h)
-        rest_past_expired = float(np.mean(h)) if n_own > 0 else 0.40
+        # EWM gives more weight to recent offers — a restaurant that was bad
+        # but has improved recently will see its expired rate drop faster
+        # than with a simple mean. span=10 means the last ~10 offers dominate.
+        if n_own > 0:
+            rest_past_expired = float(
+                pd.Series(h).ewm(span=10, min_periods=1).mean().iloc[-1]
+            )
+        else:
+            rest_past_expired = 0.40
         rest_offer_count = n_own
 
         offer_row: dict = dict(
