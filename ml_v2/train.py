@@ -596,6 +596,53 @@ def train() -> tuple[CatBoostClassifier, IsotonicRegression | _PlattCalibrator]:
                     stats["n_total"],
                 )
 
+    # ── 9f. Feature Bounds per establishment type ─────────────────────────────
+    # Percentiles 10 and 90 of sold offers for actionable features
+    feature_bounds_by_estab: dict[str, dict[str, dict[str, float]]] = {}
+    actionable_features = ["discount_rate", "description_length", "time_to_pickup_hours", "quantity"]
+    for estab, grp in sold_df.groupby("establishment_type"):
+        if len(grp) >= _MIN_GROUP_SAMPLES:
+            estab_bounds = {}
+            for f in actionable_features:
+                if f in grp.columns:
+                    estab_bounds[f] = {
+                        "p10_sold": float(grp[f].quantile(0.10)),
+                        "p90_sold": float(grp[f].quantile(0.90)),
+                    }
+            feature_bounds_by_estab[str(estab)] = estab_bounds
+
+    # ── 9g. Global Interaction Matrix ─────────────────────────────────────────
+    # ShapInteractionValues is O(n * f^2) and slow on large datasets.
+    # Sample up to 2000 rows from training data when the set exceeds 3000.
+    _SHAP_INT_MAX = 2000
+    _shap_pool: Pool
+    if len(X_tr) > 3000:
+        _rng_idx = np.random.default_rng(42).choice(
+            len(X_tr), size=_SHAP_INT_MAX, replace=False
+        )
+        _X_sample = X_tr[_rng_idx]
+        _y_sample = y_tr[_rng_idx]
+        _shap_pool = _pool(_X_sample, _y_sample, cat_idx)
+        logger.info(
+            "Computing global SHAP interaction matrix on %d/%d sampled rows...",
+            _SHAP_INT_MAX, len(X_tr),
+        )
+    else:
+        _shap_pool = _pool(X_tr, y_tr, cat_idx)
+        logger.info(
+            "Computing global SHAP interaction matrix on all %d rows...", len(X_tr)
+        )
+    try:
+        interaction_values = model.get_feature_importance(
+            _shap_pool, type="ShapInteractionValues"
+        )
+        global_interaction_matrix = np.abs(interaction_values[:, :-1, :-1]).mean(axis=0)
+    except Exception as _exc:
+        logger.warning(
+            "ShapInteractionValues failed (%s) -- storing empty matrix.", _exc
+        )
+        global_interaction_matrix = np.zeros((len(feat), len(feat)))
+
     # ── 10. Persist ───────────────────────────────────────────────────────────
     os.makedirs(MODEL_DIR, exist_ok=True)
     model.save_model(MODEL_PATH)
@@ -616,6 +663,8 @@ def train() -> tuple[CatBoostClassifier, IsotonicRegression | _PlattCalibrator]:
             "optimal_ttp_by_estab": optimal_ttp_by_estab,
             "qty_advice_by_day": qty_advice_by_day,                    # estab-type fallback
             "qty_advice_by_restaurant_day": qty_advice_by_restaurant_day,  # per-restaurant
+            "feature_bounds_by_estab": feature_bounds_by_estab,
+            "global_interaction_matrix": global_interaction_matrix,
         },
         ARTIF_PATH,
     )

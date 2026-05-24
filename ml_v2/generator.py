@@ -96,57 +96,77 @@ def _sell_probability(offer: dict) -> float:
     """
     p = offer["category_sell_rate"]
 
-    # Discount incentive — non-linear: sweet spot is 40-60 %
+    # Discount incentive — strengthened sweet spot so the model learns that
+    # pricing is a powerful independent lever (not just a secondary one).
     dr = offer["discount_rate"]
     if dr < 20:
-        p -= 0.20
+        p -= 0.22
     elif dr < 30:
-        p -= 0.09
+        p -= 0.10
     elif dr < 40:
         p += 0.00
     elif dr < 50:
-        p += 0.07
+        p += 0.12   # was 0.07 — stronger sweet-spot signal
     elif dr < 60:
-        p += 0.13
+        p += 0.18   # was 0.13
     else:
-        p += 0.18
+        p += 0.22   # was 0.18
 
-    # Quantity penalty — more units require broader demand to clear
-    p -= max(0.0, (offer["quantity"] - 10)) * 0.013
+    # Quantity penalty — attenuated so other levers are not always dominated
+    # by a single large-quantity effect.  0.009 vs former 0.013 per unit.
+    p -= max(0.0, (offer["quantity"] - 10)) * 0.009
 
-    # Lead time — posting too late leaves no exposure window
+    # Lead time — strengthened so timing advice has real model support
     ttp = offer["time_to_pickup_hours"]
     if ttp < 1:
-        p -= 0.20
+        p -= 0.25   # was 0.20
     elif ttp < 2:
-        p -= 0.08
+        p -= 0.10   # was 0.08
     elif ttp <= 4:
         p += 0.00
     elif ttp <= 6:
-        p += 0.06
+        p += 0.08   # was 0.06
     else:
-        p += 0.10
+        p += 0.13   # was 0.10
 
     # Time-of-day and day-of-week demand signals
     p += (_HOUR_DEMAND.get(offer["pickup_hour"], 1.0) - 1.0) * 0.50
     p += (_DOW_DEMAND[offer["day_of_week"]] - 1.0) * 0.40
 
-    # Offer configuration levers
-    # delivery_available removed — platform-controlled, not a restaurant lever
     if offer["visibility"] == "ANONYMOUS":
-        p += 0.07  # reaches non-registered users
-    # has_photo removed — photo upload is mandatory on the platform, always present
+        p += 0.07
 
-    # Description quality proxy
+    # Description quality — strengthened so the content lever is meaningful
     dl = offer["description_length"]
     if dl < 30:
-        p -= 0.05
+        p -= 0.07   # was 0.05
     elif dl > 100:
-        p += 0.04
+        p += 0.08   # was 0.04
 
     # Restaurant reputation signals
     p += (offer["restaurant_avg_rating"] - 3.5) * 0.06
-    p -= offer["restaurant_past_expired_rate"] * 0.14  # track record matters
+    p -= offer["restaurant_past_expired_rate"] * 0.14
+
+    # ── Non-linear synergies — 5 interactions, stronger magnitudes ───────────
+    # The model needs to learn that COMBINATIONS of levers matter, not just
+    # individual features. Stronger interactions = richer SHAP interaction
+    # values = better optimizer guidance.
+
+    # 1. discount x hour: deep discount rescues bad timing
+    if dr >= 50 and _HOUR_DEMAND.get(offer["pickup_hour"], 1.0) < 0.8:
+        p += 0.12   # was 0.08
+    # 2. quantity x day: high-demand day absorbs larger quantities
+    if offer["quantity"] > 15 and _DOW_DEMAND.get(offer["day_of_week"], 1.0) >= 1.10:
+        p += 0.08   # was 0.05
+    # 3. description x category: good content compensates weak category demand
+    if dl > 100 and offer["category_sell_rate"] < 0.45:
+        p += 0.09   # was 0.06
+    # 4. NEW — discount x quantity: big discount compensates large stock
+    if dr >= 45 and offer["quantity"] > 15:
+        p += 0.07
+    # 5. NEW — ttp x description: publishing early + rich content = compounding
+    if ttp >= 3.0 and dl > 80:
+        p += 0.06
 
     return float(np.clip(p, 0.05, 0.97))
 
@@ -347,11 +367,11 @@ if __name__ == "__main__":
     os.makedirs("models", exist_ok=True)
 
     restaurants = generate_restaurants(n=80, seed=42)
-    df = generate_offers(restaurants, n_offers=2000, seed=42)
+    df = generate_offers(restaurants, n_offers=5000, seed=42)
     df.to_csv("offer_history.csv", index=False)
 
     exp_rate = df["expired"].mean()
-    print(f"\n✅  Generated {len(df)} offers  |  expiration rate: {exp_rate:.1%}")
+    print(f"\n[OK]  Generated {len(df)} offers  |  expiration rate: {exp_rate:.1%}")
     print(
         f"   Restaurants: {df['restaurant_id'].nunique()}  "
         f"|  Categories: {df['category'].nunique()}\n"

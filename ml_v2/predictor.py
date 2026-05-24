@@ -13,9 +13,7 @@ Improvements over v1:
   - time_to_pickup tip enriched: lead_time_gap_hours + incentive field added
   - Optimal description_length and time_to_pickup loaded from training artifacts
   - prediction_confidence: LOW / MEDIUM / HIGH based on restaurant_offer_count
-
-Usage (standalone demo):
-    python predictor.py   (requires trained model from train.py)
+  - Contextual visibility/demand tips for low-engagement and low-demand offers
 """
 
 import logging
@@ -26,6 +24,9 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, Pool
 from features import ALL_FEATURES, build_features
+from diagnosis import OfferDiagnosis, diagnose, diagnosis_summary
+from interaction_engine import detect_interactions
+from optimizer import optimize_offer
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,11 @@ _NON_ACTIONABLE = frozenset(
     }
 )
 
+# ── Contextual tip thresholds — REMOVED ─────────────────────────────────────────
+# All contextual tip triggering is now 100 % SHAP-driven via OfferDiagnosis.
+# No feature value is compared to a hardcoded constant to decide whether a
+# tip fires. The model’s learned weights drive every trigger decision.
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 class OfferRiskPredictor:
@@ -194,6 +200,12 @@ class OfferRiskPredictor:
         self._qty_advice_by_restaurant_day: dict[str, dict[int, dict]] = artifacts.get(
             "qty_advice_by_restaurant_day", {}
         )
+        self._feature_bounds_by_estab: dict[str, dict[str, dict[str, float]]] = artifacts.get(
+            "feature_bounds_by_estab", {}
+        )
+        self._global_interaction_matrix = artifacts.get(
+            "global_interaction_matrix", None
+        )
         # Precompute feature indices once — avoids O(n) .index() scan per offer.
         try:
             self._feat_idx_qty: int = self._feat_names.index("quantity")
@@ -203,6 +215,28 @@ class OfferRiskPredictor:
             self._feat_idx_ttp: int = self._feat_names.index("time_to_pickup_hours")
         except ValueError:
             self._feat_idx_ttp = -1  # graceful fallback — declare-earlier tip skipped
+        # Precompute indices for contextual-tip features — same pattern.
+        try:
+            self._feat_idx_view_log: int = self._feat_names.index("view_count")
+        except ValueError:
+            self._feat_idx_view_log = -1
+        try:
+            self._feat_idx_engagement: int = self._feat_names.index("engagement_rate")
+        except ValueError:
+            self._feat_idx_engagement = -1
+        try:
+            self._feat_idx_cat_sell: int = self._feat_names.index("category_sell_rate")
+        except ValueError:
+            self._feat_idx_cat_sell = -1
+        # Indices for qty_compensator_cf — leverage these rather than .index() at runtime
+        try:
+            self._feat_idx_discount: int = self._feat_names.index("discount_rate")
+        except ValueError:
+            self._feat_idx_discount = -1
+        try:
+            self._feat_idx_desc: int = self._feat_names.index("description_length")
+        except ValueError:
+            self._feat_idx_desc = -1
 
         data_driven = "best_days_by_estab" in artifacts
         desc_driven = "optimal_desc_by_estab" in artifacts
@@ -293,22 +327,79 @@ class OfferRiskPredictor:
             offer_count = offer_counts[idx]
             estab_type = estab_types[idx]
 
+            current_score = float(cal_proba[idx])
+            risk_level = self._risk_level(current_score)
+
+            # SHAP-driven diagnosis — computed once per offer, shared with
+            # _top_factors so tip triggering is model-derived, not rule-based.
+            diag: OfferDiagnosis = diagnose(shap_row, self._feat_names)
+
+            top_factors = self._top_factors(
+                shap_row,
+                feat_row,
+                self._feat_names,
+                self._cat_feat_set,
+                current_score=current_score,
+                estab_type=estab_type,
+                # HIGH offers get more factors explained (5 vs default)
+                top_n=5 if risk_level == "HIGH" else top_n,
+                restaurant_id=restaurant_ids[idx],
+                diagnosis=diag,
+            )
+
+            action_plan = None
+            if risk_level in {"HIGH", "MEDIUM"}:
+                current_values = {f: float(feat_row[i]) for i, f in enumerate(self._feat_names) if f not in self._cat_feat_set}
+
+                # quantity IS included here for interaction detection only:
+                # knowing that quantity x discount_rate interact tells the
+                # optimizer "a bigger discount is especially powerful when
+                # the restaurant has a lot of surplus to move".
+                # quantity is NOT passed to optimize_offer (surplus already
+                # exists; reducing it means waste, not the platform mission).
+                _detect_actionable = {"discount_rate", "description_length",
+                                      "time_to_pickup_hours", "quantity"}
+                single_pool = Pool(X[idx:idx+1], cat_features=self._cat_idx)
+                interacting_pairs = detect_interactions(
+                    self._model, single_pool, self._feat_names,
+                    _detect_actionable, threshold=0.01
+                )
+
+                top_shap_features = [f["feature"] for f in top_factors if f.get("shap_contribution", 0) > 0]
+
+                # HIGH targets standard threshold (35%); MEDIUM targets a
+                # stricter 25% so the plan still shows a meaningful gain.
+                _target = 0.35 if risk_level == "HIGH" else 0.25
+                action_plan = optimize_offer(
+                    self,
+                    X_row=feat_row,
+                    current_score=current_score,
+                    top_shap_features=top_shap_features,
+                    interacting_pairs=interacting_pairs,
+                    estab_type=estab_type,
+                    feature_names=self._feat_names,
+                    current_values=current_values,
+                    estab_bounds=self._feature_bounds_by_estab.get(estab_type, {}),
+                    target_risk=_target,
+                )
+
             rows.append(
                 {
                     "offer_id": offer_ids[idx],
-                    "risk_score": round(float(cal_proba[idx]), 4),
-                    "risk_level": self._risk_level(cal_proba[idx]),
+                    "risk_score": round(current_score, 4),
+                    "risk_level": risk_level,
                     "prediction_confidence": self._prediction_confidence(offer_count),
-                    "top_factors": self._top_factors(
-                        shap_row,
-                        feat_row,
-                        self._feat_names,
-                        self._cat_feat_set,
-                        current_score=float(cal_proba[idx]),
-                        estab_type=estab_type,
-                        top_n=top_n,
-                        restaurant_id=restaurant_ids[idx],
-                    ),
+                    "top_factors": top_factors,
+                    "action_plan": action_plan,
+                    # SHAP-derived diagnosis — ready for downstream display / API
+                    "diagnosis": {
+                        "primary": diag.primary.name if diag.primary else None,
+                        "axes": [
+                            {"name": a.name, "label": a.label_fr, "share": a.share}
+                            for a in diag.dominant_axes
+                        ],
+                        "summary": diagnosis_summary(diag),
+                    } if diag.axes else None,
                 }
             )
 
@@ -422,17 +513,45 @@ class OfferRiskPredictor:
             chosen = best
 
         delta, suggested, cf_score, reduction = chosen
+        _ci = int(current_val)
+        _si = int(round(suggested))
+        _di = int(delta)
+        _rp = int(round(reduction * 100))
+        if current_val < 25:
+            _disc_msg = (
+                f"\u00c0 {_ci}%\u00a0de remise, votre offre peine \u00e0 se d\u00e9marquer. "
+                f"Passer \u00e0 {_si}% (+{_di}%) devrait stimuler les commandes \u2014 "
+                f"{_rp}\u00a0points de risque en moins."
+            )
+        elif delta <= 5.0:
+            _disc_msg = (
+                f"Bonne nouvelle\u00a0: un simple +{_di}% suffit ici. "
+                f"Passer de {_ci}% \u00e0 {_si}% de remise r\u00e9duit votre risque de {_rp}\u00a0points."
+            )
+        elif _rp >= 20:
+            _disc_msg = (
+                f"Un effort sur la remise paie vraiment\u00a0: {_ci}% \u2192 {_si}% "
+                f"fait chuter votre risque de {_rp}\u00a0points."
+            )
+        elif current_val >= 48:
+            _disc_msg = (
+                f"M\u00eame \u00e0 {_ci}%, la demande reste insuffisante. "
+                f"Pousser jusqu\u2019\u00e0 {_si}% (+{_di}%) peut encore faire la diff\u00e9rence\u00a0: "
+                f"-{_rp}\u00a0pts de risque."
+            )
+        else:
+            _disc_msg = (
+                f"Votre remise de {_ci}% est insuffisante. "
+                f"Passez \u00e0 {_si}% (+{_di}%) \u2014 "
+                f"votre risque d\u2019expiration baisse de {_rp}\u00a0points."
+            )
         return {
             "suggested_value": round(suggested, 2),
             "predicted_score": round(cf_score, 4),
             "risk_reduction": round(reduction, 4),
             "scope": "now",
             "delta_applied": f"+{delta:.0f}%",
-            "message": (
-                f"Votre remise de {int(current_val)}% est insuffisante. "
-                f"Passez \u00e0 {int(round(suggested))}% (+{int(delta)}%) — "
-                f"votre risque d\u2019expiration baisse de {int(round(reduction * 100))} points."
-            ),
+            "message": _disc_msg,
         }
 
     def _qty_advice_for_day(
@@ -510,12 +629,20 @@ class OfferRiskPredictor:
             "scope": "next_time",
             "advice_type": "quantity_by_day",
             "data_source": data_source,
+            # Next-time planning advice: the restaurant chooses how many
+            # units to POST on the platform for the next occurrence of this day.
             "message": (
-                f"Le {day_fr}, vous expirez {pct_expired}\u202f% de vos offres "
-                f"({day_stats['n_total']} analys\u00e9es). "
-                f"La prochaine fois un {day_fr}, publiez "
-                f"{int(round(suggested_qty))}\u00a0unit\u00e9s au lieu de "
-                f"{int(round(current_qty))}."
+                (
+                    f"Le {day_fr} est un jour difficile pour vous\u00a0: {pct_expired}\u202f% de vos offres expirent "
+                    f"({day_stats['n_total']} analys\u00e9es). "
+                    f"La prochaine fois un {day_fr}, pr\u00e9voyez de publier {int(round(suggested_qty))}\u00a0unit\u00e9s "
+                    f"au lieu de {int(round(current_qty))} pour correspondre \u00e0 la demande r\u00e9elle de ce jour."
+                ) if pct_expired >= 60 else (
+                    f"Le {day_fr}, {pct_expired}\u202f% de vos offres expirent en moyenne "
+                    f"({day_stats['n_total']} analys\u00e9es). "
+                    f"La prochaine fois ce jour-l\u00e0, planifiez {int(round(suggested_qty))}\u00a0unit\u00e9s "
+                    f"pour mieux correspondre \u00e0 la demande."
+                )
             ),
         }
 
@@ -557,9 +684,19 @@ class OfferRiskPredictor:
             "risk_reduction": round(reduction, 4),
             "scope": "now",
             "message": (
-                f"Votre description ({int(current_val)}\u00a0car.) est trop courte. "
-                f"Les offres similaires vendues font {int(target)}+ caract\u00e8res. "
-                f"Enrichissez-la maintenant."
+                (
+                    f"Description tr\u00e8s courte ({int(current_val)}\u00a0car.)\u00a0: "
+                    f"les clients ne savent pas ce qu\u2019ils ach\u00e8tent. "
+                    f"D\u00e9crivez le contenu, les portions et les points forts \u2014 "
+                    f"visez {int(target)}+ car."
+                ) if current_val < 40 else (
+                    f"Votre description ({int(current_val)}\u00a0car.) manque de d\u00e9tails. "
+                    f"Les offres similaires vendues font {int(target)}+ car. "
+                    f"Ajoutez ingr\u00e9dients, portions ou particularit\u00e9s pour rassurer le client."
+                ) if current_val < 90 else (
+                    f"Quelques d\u00e9tails suppl\u00e9mentaires feraient la diff\u00e9rence. "
+                    f"\u00c9toffez de {int(current_val)} \u00e0 {int(target)}+ car. avec ce qui distingue votre offre."
+                )
             ),
         }
 
@@ -603,11 +740,17 @@ class OfferRiskPredictor:
             "scope": "next_time",
             "incentive": "publish_earlier",
             "message": (
-                f"Vous publiez {_fmt_h(current_val)} avant le pickup. "
-                f"En publiant {_fmt_h(target)} \u00e0 l\u2019avance "
-                f"({_fmt_h(lead_gap)} plus t\u00f4t), "
-                f"votre risque d\u2019expiration baisserait de "
-                f"{int(round(reduction * 100))}\u00a0points."
+                (
+                    f"Vous publiez seulement {_fmt_h(current_val)} avant le pickup. "
+                    f"En annon\u00e7ant {_fmt_h(lead_gap)} plus t\u00f4t, "
+                    f"les clients ont le temps de planifier leur passage \u2014 "
+                    f"risque en baisse de {int(round(reduction * 100))}\u00a0points."
+                ) if lead_gap >= 1.5 else (
+                    f"Vous publiez {_fmt_h(current_val)} avant le pickup. "
+                    f"En publiant {_fmt_h(target)} \u00e0 l\u2019avance "
+                    f"({_fmt_h(lead_gap)} plus t\u00f4t), votre risque baisserait de "
+                    f"{int(round(reduction * 100))}\u00a0points."
+                )
             ),
         }
 
@@ -640,7 +783,7 @@ class OfferRiskPredictor:
 
         Returns the computed clock time at which the restaurant should post
         (current_pickup_hour − target_ttp), so the frontend can display:
-        “At 20h, declare your estimated surplus for a 22h pickup.”
+        "At 20h, declare your estimated surplus for a 22h pickup."
         """
         target_ttp = float(
             self._optimal_ttp_by_estab.get(estab_type, _OPTIMAL_TTP_DEFAULT)
@@ -680,6 +823,224 @@ class OfferRiskPredictor:
             ),
         }
 
+    # ── Contextual tip helpers ────────────────────────────────────────────────
+
+    def _qty_compensator_cf(
+        self,
+        X_row: np.ndarray,
+        current_qty: float,
+        current_score: float,
+        estab_type: str,
+    ) -> dict | None:
+        """
+        Surplus context: quantity cannot be reduced on an active offer.
+
+        Uses the SHAP global interaction matrix (learned at training time over
+        all training offers) to identify which actionable lever is most strongly
+        coupled with quantity. High interaction strength means: when stock is
+        large, THIS feature has an outsized effect on whether the offer sells.
+
+        The recommendation is 100 % model-driven — no hardcoded lever priority.
+        If discount x quantity has the strongest interaction, discount is suggested.
+        If description x quantity is stronger, description is suggested instead.
+        """
+        if self._feat_idx_qty < 0:
+            return None
+
+        qty_idx = self._feat_idx_qty
+
+        # Candidate levers and their precomputed feature indices
+        _levers: list[tuple[str, int]] = [
+            ("discount_rate",        self._feat_idx_discount),
+            ("description_length",   self._feat_idx_desc),
+            ("time_to_pickup_hours", self._feat_idx_ttp),
+        ]
+        _levers = [(n, idx) for n, idx in _levers if idx >= 0]
+        if not _levers:
+            return None
+
+        # Select lever with highest SHAP interaction strength vs quantity
+        best_feat, best_idx, best_strength = _levers[0][0], _levers[0][1], 0.0
+        if self._global_interaction_matrix is not None:
+            mat = self._global_interaction_matrix
+            for feat_name, feat_idx in _levers:
+                if qty_idx < mat.shape[0] and feat_idx < mat.shape[1]:
+                    strength = float(mat[qty_idx, feat_idx])
+                    if strength > best_strength:
+                        best_strength = strength
+                        best_feat = feat_name
+                        best_idx = feat_idx
+
+        qty_int = int(round(current_qty))
+
+        # Generate a counterfactual for the winning lever
+        if best_feat == "discount_rate":
+            base = self._best_discount_cf(
+                X_row, best_idx, float(X_row[best_idx]), current_score
+            )
+            if base is None:
+                return None
+            sug = int(round(base["suggested_value"]))
+            red = int(round(base["risk_reduction"] * 100))
+            return {
+                **base,
+                "advice_type": "qty_compensator",
+                "compensated_by": best_feat,
+                "interaction_strength": round(best_strength, 4),
+                "message": (
+                    f"Vous avez {qty_int}\u00a0unit\u00e9s \u00e0 \u00e9couler. "
+                    f"Le mod\u00e8le indique que la remise est votre levier le plus puissant "
+                    f"pour ce volume \u2014 passer \u00e0 {sug}% r\u00e9duit votre risque de {red}\u00a0pts."
+                ),
+            }
+
+        elif best_feat == "description_length":
+            base = self._best_desc_cf(
+                X_row, best_idx, float(X_row[best_idx]), current_score, estab_type
+            )
+            if base is None:
+                return None
+            sug = int(round(base["suggested_value"]))
+            return {
+                **base,
+                "advice_type": "qty_compensator",
+                "compensated_by": best_feat,
+                "interaction_strength": round(best_strength, 4),
+                "message": (
+                    f"Pour \u00e9couler vos {qty_int}\u00a0unit\u00e9s, "
+                    f"une description compl\u00e8te est particuli\u00e8rement d\u00e9cisive selon le mod\u00e8le. "
+                    f"Visez {sug}+\u00a0car. pour maximiser l\u2019attractivit\u00e9."
+                ),
+            }
+
+        elif best_feat == "time_to_pickup_hours":
+            base = self._best_ttp_cf(
+                X_row, best_idx, float(X_row[best_idx]), current_score, estab_type
+            )
+            if base is None:
+                return None
+            sug = round(base["suggested_value"], 1)
+            red = int(round(base["risk_reduction"] * 100))
+            return {
+                **base,
+                "advice_type": "qty_compensator",
+                "compensated_by": best_feat,
+                "interaction_strength": round(best_strength, 4),
+                "message": (
+                    f"Avec {qty_int}\u00a0unit\u00e9s, le temps d\u2019exposition est crucial. "
+                    f"La prochaine fois, publiez {sug}h avant le pickup "
+                    f"pour donner \u00e0 vos clients le temps de commander (\u2212{red}\u00a0pts)."
+                ),
+            }
+
+        return None
+
+    def _visibility_content_cf(
+        self,
+        view_count: float,
+        engagement_rate: float,
+        diagnosis: OfferDiagnosis | None = None,
+    ) -> dict | None:
+        """
+        Content-quality tip — only called from the SHAP-triggered path in
+        _top_factors (never from a static fallback).
+
+        Message selection is 100 % SHAP-driven:
+          - visibility axis share > engagement axis share
+            → "presque invisible" message (view count is the bottleneck)
+          - engagement axis share > visibility axis share
+            → "ne cliquent pas" message (CTR is the bottleneck)
+          - neither dominates
+            → generic attractiveness message
+
+        No hardcoded view-count or engagement-rate thresholds are used
+        for branching — the SHAP axis shares decide the message.
+        """
+        raw_views = int(round(np.expm1(view_count)))
+        engagement_pct = round(engagement_rate * 100, 1)
+
+        vis_share = diagnosis.axis_share("visibility") if diagnosis else 0.0
+        eng_share = diagnosis.axis_share("engagement") if diagnosis else 0.0
+
+        if vis_share >= eng_share and vis_share > 0:
+            # Visibility (view count) is the dominant content-quality driver
+            _vis_msg = (
+                f"Votre offre est presque invisible ({raw_views}\u00a0vues). "
+                "Ajoutez une photo app\u00e9tissante et d\u00e9taillez le contenu \u2014 "
+                "l\u2019impact sur les vues sera imm\u00e9diat."
+            )
+        elif eng_share > vis_share:
+            # Engagement (CTR) is the dominant content-quality driver
+            _vis_msg = (
+                f"Les clients voient votre offre mais ne cliquent pas "
+                f"({engagement_pct}\u202f% d\u2019engagement). "
+                "Un titre plus accrocheur, une photo claire ou un d\u00e9tail concret "
+                "(portions, ingr\u00e9dients, poids) pourraient inverser la tendance."
+            )
+        else:
+            _vis_msg = (
+                "Votre offre manque d\u2019attractivit\u00e9. "
+                "Enrichissez la description et soignez la photo de couverture "
+                "pour augmenter les vues et l\u2019engagement."
+            )
+        return {
+            "scope": "now",
+            "advice_type": "content_quality",
+            "message": _vis_msg,
+        }
+
+    def _low_demand_discount_cf(
+        self,
+        X_row: np.ndarray,
+        feat_idx_discount: int,
+        current_discount: float,
+        current_qty: float,
+        current_score: float,
+        category_sell_rate: float,
+        cat_axis_share: float = 0.0,
+    ) -> dict | None:
+        """
+        Weak-category discount tip — delegates to _best_discount_cf for the
+        model inference, then replaces the message with a SHAP-enriched
+        explanation of WHY the discount is especially important here.
+
+        Always called from _top_factors’ SHAP-driven path (category axis >= 15 %).
+        No static trigger logic in this method — the trigger is upstream.
+
+        cat_axis_share: fraction of total SHAP attributed to the category axis;
+          used to quantify the category’s contribution in the message.
+        """
+        if feat_idx_discount < 0:
+            return None
+
+        base_cf = self._best_discount_cf(
+            X_row, feat_idx_discount, current_discount, current_score
+        )
+        if base_cf is None:
+            return None
+
+        suggested = int(round(base_cf["suggested_value"]))
+        delta = base_cf.get("delta_applied", "")
+        reduction_pts = int(round(base_cf["risk_reduction"] * 100))
+        contextual_cf = dict(base_cf)
+        contextual_cf["advice_type"] = "low_demand_discount"
+
+        # SHAP-enriched message: quantify the category's contribution when available
+        if cat_axis_share > 0:
+            _cat_pct = int(round(cat_axis_share * 100))
+            contextual_cf["message"] = (
+                f"La cat\u00e9gorie repr\u00e9sente {_cat_pct}\u202f% de votre risque d\u2019expiration. "
+                f"Pour compenser cette faible demande, passer \u00e0 {suggested}\u202f% "
+                f"de remise ({delta}) r\u00e9duirait votre risque de {reduction_pts}\u202fpoints."
+            )
+        else:
+            contextual_cf["message"] = (
+                "Cette cat\u00e9gorie g\u00e9n\u00e8re habituellement moins de demande. "
+                f"Passer \u00e0 {suggested}\u202f% de remise ({delta}) "
+                f"pourrait r\u00e9duire votre risque de {reduction_pts}\u202fpoints."
+            )
+        return contextual_cf
+
     def _top_factors(
         self,
         shap_row: np.ndarray,
@@ -690,6 +1051,7 @@ class OfferRiskPredictor:
         estab_type: str = "UNKNOWN",
         top_n: int = 3,
         restaurant_id: str = "",
+        diagnosis: OfferDiagnosis | None = None,
     ) -> list[dict]:
         """
         Return the top_n ACTIONABLE features driving expiration risk,
@@ -717,6 +1079,12 @@ class OfferRiskPredictor:
                                   but triggered by a different SHAP signal)
           - description_length  : median of sold offers per establishment type
           - time_to_pickup_hours: median lead time of sold offers + incentive message
+
+        Contextual tips (appended after SHAP-based counterfactuals, max 1 each):
+          - content_quality     : low views/engagement in a popular category
+                                  → improve description & photo (no model inference)
+          - low_demand_discount : low-demand category + high quantity
+                                  → deeper discount (reuses _best_discount_cf)
         """
         risk_shap = np.where(shap_row > 0.0, shap_row, 0.0)
         risk_shap = np.where(
@@ -735,7 +1103,7 @@ class OfferRiskPredictor:
             raw = feat_values[i]
 
             # Human-readable display value
-            if name == "view_count_log":
+            if name == "view_count":
                 display_name = "view_count"
                 display_val = int(round(float(np.expm1(float(raw)))))
             elif name in cat_feat_set:
@@ -788,6 +1156,15 @@ class OfferRiskPredictor:
                     feat_values, i, float(raw), current_score, estab_type
                 )
 
+            elif name == "quantity":
+                # Surplus context: the food already exists — we cannot advise
+                # the restaurant to reduce it. Instead, query the SHAP global
+                # interaction matrix to find which actionable lever is most
+                # powerful at clearing a large stock, and generate a tip for it.
+                cf = self._qty_compensator_cf(
+                    feat_values, float(raw), current_score, estab_type
+                )
+
             factors.append(
                 {
                     "feature": display_name,
@@ -797,42 +1174,264 @@ class OfferRiskPredictor:
                 }
             )
 
+        # ── Contextual tips — appended AFTER SHAP-based factors ──────────────
+        # These complement model explanations with business heuristics.
+        # Rules:
+        #   • Only append if the equivalent advice_type is not already present.
+        #   • Cap total factors at top_n + 2 to avoid overwhelming the UI.
+        #     (top_n covers SHAP factors; +2 reserves slots for both contextual tips.)
+        #   • Each tip gets a sentinel shap_contribution of 0.0 to signal it is
+        #     heuristic, not model-derived — clients can filter on this field.
+
+        existing_advice_types: set[str] = {
+            f["counterfactual"].get("advice_type", "")
+            for f in factors
+            if f.get("counterfactual")
+        }
+
+        # ── Extract raw feature values needed for contextual checks ──────────
+        # Use precomputed indices; fall back to safe defaults when absent.
+        view_log_val: float = (
+            float(feat_values[self._feat_idx_view_log])
+            if self._feat_idx_view_log >= 0
+            else 0.0  # safe worst-case: no views observed
+        )
+        engagement_val: float = (
+            float(feat_values[self._feat_idx_engagement])
+            if self._feat_idx_engagement >= 0
+            else 0.0  # safe worst-case: no engagement observed
+        )
+        cat_sell_val: float = (
+            float(feat_values[self._feat_idx_cat_sell])
+            if self._feat_idx_cat_sell >= 0
+            else 0.5  # neutral default — neither tip fires
+        )
+        current_qty: float = (
+            float(feat_values[self._feat_idx_qty])
+            if self._feat_idx_qty >= 0
+            else 0.0
+        )
+
+        # Look up the discount_rate feature index on the fly (not precomputed
+        # because it may not always be a top SHAP factor).
+        try:
+            feat_idx_discount: int = feat_names.index("discount_rate")
+        except ValueError:
+            feat_idx_discount = -1
+
+        current_discount: float = (
+            float(feat_values[feat_idx_discount])
+            if feat_idx_discount >= 0
+            else 0.0
+        )
+
+        # CASE 1 — Content quality tip (purely SHAP-driven, no static fallback)
+        # Fires when the diagnosis shows visibility or engagement is a significant
+        # risk axis (>=15 % share) AND category is not the primary bottleneck.
+        # shap_contribution = actual combined SHAP of the two axes (not 0.0).
+        if "content_quality" not in existing_advice_types and diagnosis is not None:
+            if (
+                (
+                    diagnosis.has_axis("visibility", min_share=0.15)
+                    or diagnosis.has_axis("engagement", min_share=0.15)
+                )
+                and not diagnosis.is_primary("category")
+            ):
+                vis_cf = self._visibility_content_cf(
+                    view_log_val, engagement_val, diagnosis=diagnosis
+                )
+                if vis_cf is not None:
+                    _vis_shap = sum(
+                        a.shap_sum for a in diagnosis.axes
+                        if a.name in {"visibility", "engagement"}
+                    )
+                    factors.append(
+                        {
+                            "feature": "visibility_engagement",
+                            "value": round(engagement_val, 4),
+                            "shap_contribution": round(_vis_shap, 4),
+                            "counterfactual": vis_cf,
+                        }
+                    )
+
+        # CASE 2 — Weak-category discount tip (purely SHAP-driven, no static fallback)
+        # Fires when category axis >= 15 % of total expiration risk.
+        # shap_contribution = actual SHAP of the category axis (not 0.0).
+        if "low_demand_discount" not in existing_advice_types and diagnosis is not None:
+            _cat_share = diagnosis.axis_share("category")
+            if diagnosis.has_axis("category", min_share=0.15) and feat_idx_discount >= 0:
+                demand_cf = self._low_demand_discount_cf(
+                    feat_values,
+                    feat_idx_discount,
+                    current_discount,
+                    current_qty,
+                    current_score,
+                    cat_sell_val,
+                    cat_axis_share=_cat_share,
+                )
+                if demand_cf is not None:
+                    _cat_shap = next(
+                        (a.shap_sum for a in diagnosis.axes if a.name == "category"), 0.0
+                    )
+                    factors.append(
+                        {
+                            "feature": "category_demand",
+                            "value": round(cat_sell_val, 4),
+                            "shap_contribution": round(_cat_shap, 4),
+                            "counterfactual": demand_cf,
+                        }
+                    )
+
         return factors
+
+
+# ── Risk-archetype labels used by the demo ────────────────────────────────────
+_ARCHETYPE_LABELS: dict[str, str] = {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    from generator import generate_offers, generate_restaurants
+    import sys
+    # Force UTF-8 on Windows console to avoid UnicodeEncodeError with cp1252
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    # ── Curated archetype demo — one offer per distinct risk driver ───────────
+    # Each offer is handcrafted to isolate a specific expiration cause so the
+    # demo exercises every tip and action-plan variant the system can produce.
+    # The model and diagnosis engine determine which tips actually fire — no
+    # hard-wiring here.
+
+    _BASE: dict = dict(
+        restaurant_avg_rating=4.0,
+        restaurant_past_expired_rate=0.28,
+        restaurant_offer_count=65,
+        time_remaining_hours=2.0,
+        sell_through_rate_realtime=0.0,   # snapshot: no orders yet
+        day_of_week=3,
+        visibility="IDENTIFIED",
+        restaurant_id="DEMO-ARCH",
+    )
+
+    _archetypes: list[dict] = [
+        # 1 — Dominant: stock (very high quantity, zero sell-through)
+        dict(**_BASE, offer_id="ARCH-01-STOCK",
+             discount_rate=38.0, quantity=35, time_to_pickup_hours=2.5,
+             pickup_hour=20, description_length=110, category_sell_rate=0.50,
+             view_count=12, engagement_rate=0.07, establishment_type="RESTAURANT"),
+
+        # 2 — Dominant: visibility (nearly invisible offer, good category)
+        dict(**_BASE, offer_id="ARCH-02-INVIS",
+             discount_rate=46.0, quantity=10, time_to_pickup_hours=3.5,
+             pickup_hour=13, description_length=90, category_sell_rate=0.65,
+             view_count=2, engagement_rate=0.0, establishment_type="BAKERY"),
+
+        # 3 — Dominant: pricing (17 % discount, very low for this offer)
+        dict(**_BASE, offer_id="ARCH-03-PRICE",
+             discount_rate=17.0, quantity=12, time_to_pickup_hours=3.0,
+             pickup_hour=20, description_length=135, category_sell_rate=0.52,
+             view_count=22, engagement_rate=0.11, establishment_type="RESTAURANT"),
+
+        # 4 — Dominant: engagement (good views, CTR near zero)
+        dict(**_BASE, offer_id="ARCH-04-ENGAGE",
+             discount_rate=44.0, quantity=10, time_to_pickup_hours=3.5,
+             pickup_hour=12, description_length=40, category_sell_rate=0.60,
+             view_count=30, engagement_rate=0.008, establishment_type="FAST_FOOD"),
+
+        # 5 — Dominant: timing (published only 30 min before pickup, very late)
+        dict(**_BASE, offer_id="ARCH-05-TIMING",
+             discount_rate=50.0, quantity=10, time_to_pickup_hours=0.5,
+             pickup_hour=22, description_length=120, category_sell_rate=0.55,
+             view_count=5, engagement_rate=0.04, establishment_type="RESTAURANT"),
+
+        # 6 — Dominant: category (structural weak demand) + sales pace
+        # Uses {**_BASE, ...} spread (not dict(**_BASE, ...)) to allow overriding
+        # restaurant_past_expired_rate which already exists in _BASE.
+        {**_BASE, "offer_id": "ARCH-06-CATEG",
+         "discount_rate": 34.0, "quantity": 20, "time_to_pickup_hours": 2.5,
+         "pickup_hour": 20, "description_length": 100, "category_sell_rate": 0.27,
+         "view_count": 16, "engagement_rate": 0.06,
+         "restaurant_past_expired_rate": 0.48, "establishment_type": "RESTAURANT"},
+
+        # 7 — Dominant: content (description=15 chars, very low engagement)
+        dict(**_BASE, offer_id="ARCH-07-CONTENT",
+             discount_rate=45.0, quantity=10, time_to_pickup_hours=4.0,
+             pickup_hour=13, description_length=15, category_sell_rate=0.65,
+             view_count=14, engagement_rate=0.015, establishment_type="BAKERY"),
+
+        # 8 — Compound: every lever is slightly wrong at the same time
+        {**_BASE, "offer_id": "ARCH-08-CUMUL",
+         "discount_rate": 21.0, "quantity": 28, "time_to_pickup_hours": 0.5,
+         "pickup_hour": 22, "description_length": 20, "category_sell_rate": 0.30,
+         "view_count": 4, "engagement_rate": 0.01,
+         "restaurant_past_expired_rate": 0.58, "establishment_type": "RESTAURANT"},
+    ]
+
+    _archetype_labels: dict[str, str] = {
+        "ARCH-01-STOCK":   "Stock excessif",
+        "ARCH-02-INVIS":   "Faible visibilit\u00e9",
+        "ARCH-03-PRICE":   "Remise insuffisante",
+        "ARCH-04-ENGAGE":  "Faible engagement",
+        "ARCH-05-TIMING":  "Mauvais timing",
+        "ARCH-06-CATEG":   "Cat\u00e9gorie difficile",
+        "ARCH-07-CONTENT": "Description insuffisante",
+        "ARCH-08-CUMUL":   "Risque cumul\u00e9 (multi-facteurs)",
+    }
 
     predictor = OfferRiskPredictor()
-
-    # Build a small demo batch (20 offers, drop the label — predictor never sees it)
-    restaurants = generate_restaurants(n=80, seed=42)
-    demo_df = generate_offers(restaurants, n_offers=20, seed=99)
-    ground_truth = demo_df["expired"].tolist()
-    demo_df = demo_df.drop(columns=["expired"], errors="ignore")
-
+    demo_df = pd.DataFrame(_archetypes)
     results = predictor.predict(demo_df)
 
-    sep = "─" * 70
+    sep = "-" * 72
     print(f"\n{sep}")
-    print("  Hourly Risk Check — Demo (20 active offers)")
-    print(sep)
-    for idx, (_, row) in enumerate(results.iterrows()):
-        actual = "X EXPIRED" if ground_truth[idx] else "SOLD"
-        print(
-            f"\n  {row['offer_id']}  score={row['risk_score']:.3f}  "
-            f"level={row['risk_level']:6s}  actual={actual}"
-        )
-        for f in row["top_factors"]:
-            print(
-                f"    ⚠  {f['feature']:<35s} "
-                f"val={f['value']}  "
-                f"SHAP=+{f['shap_contribution']:.4f}"
-            )
+    print("  Archetype Risk Demo -- couverture de tous les types de risque")
     print(sep)
 
-    # Summary counts
-    counts = results["risk_level"].value_counts()
-    print(f"\n  Risk distribution: {counts.to_dict()}")
+    for _, row in results.iterrows():
+        oid      = row["offer_id"]
+        label    = _archetype_labels.get(oid, oid)
+        score    = row["risk_score"]
+        level    = row["risk_level"]
+        diag_out = row.get("diagnosis")
+
+        _icon = {"HIGH": "[HIGH]", "MEDIUM": "[MED] ", "LOW": "[LOW] "}.get(level, "[?]  ")
+        print(f"\n  {_icon} {oid}  [{label}]")
+        print(f"    score={score:.3f}  level={level}")
+
+        if diag_out and diag_out.get("summary"):
+            print(f"    >> Diagnostic: {diag_out['summary']}")
+            _axes_str = "  ".join(
+                f"{a['label']} {int(round(a['share']*100))}%"
+                for a in diag_out.get("axes", [])
+            )
+            if _axes_str:
+                print(f"       Axes: {_axes_str}")
+
+        for f in row["top_factors"]:
+            print(
+                f"    [!]  {f['feature']:<35s}"
+                f"val={f['value']}  SHAP=+{f['shap_contribution']:.4f}"
+            )
+            cf = f.get("counterfactual")
+            if cf and isinstance(cf, dict) and "message" in cf:
+                print(f"      -> {cf['message']}")
+
+        if row.get("action_plan"):
+            ap = row["action_plan"]
+            print(f"    [*] {ap['message']}")
+            # Show up to 2 alternative plans
+            for alt in ap.get("alternatives", []):
+                print(f"        + {alt['label']}: {alt['message']}")
+            exploited = ap.get("interactions_exploited", [])
+            if exploited:
+                top_syn = exploited[0]
+                print(
+                    f"      Synergie: "
+                    f"{top_syn['features'][0]} x {top_syn['features'][1]} "
+                    f"(force {top_syn['synergy']:.3f})"
+                )
+
+    print(f"\n{sep}")
+    counts = results["risk_level"].value_counts().to_dict()
+    print(f"  Distribution: {counts}")
     print(sep)
