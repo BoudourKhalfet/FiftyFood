@@ -696,6 +696,8 @@ class _AvailableOffersPageState extends State<AvailableOffersPage> {
                         ),
                       );
                       await fetchOffers();
+                    } else if (result is Map && result['success'] == true) {
+                      await fetchOffers();
                     }
                   },
                   child: Card(

@@ -484,3 +484,23 @@ enum InteractionType {
   OFFER_VIEW
   RESTAURANT_VIEW
 }
+
+model PaymentAuditLog {
+  id String @id @default(cuid())
+  timestamp DateTime @default(now())
+  action String
+  userId String @default("SYSTEM")
+  orderId String @default("N/A")
+  provider String
+  amount Float @default(0)
+  transactionId String?
+  status String @default("SUCCESS")
+  metadata String?
+  error String?
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([provider])
+  @@index([timestamp])
+  @@index([action])
+}

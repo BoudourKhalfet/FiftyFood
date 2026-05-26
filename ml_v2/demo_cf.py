@@ -33,14 +33,15 @@ for idx, (_, row) in enumerate(results.iterrows()):
             cf = f["counterfactual"]
 
             if cf:
-                sug = cf["suggested_value"]
-                pscore = cf["predicted_score"]
-                reduc = cf["risk_reduction"]
-                scope = cf["scope"]
-                cf_str = f"-> suggest {feat}={sug} : predicted score={pscore}  saves -{reduc:.2f}  [{scope}]"
+                sug = cf.get("suggested_value", cf.get("suggested_publish_label", "?"))
+                pscore = cf.get("predicted_score", "?")
+                reduc = cf.get("risk_reduction", 0.0)
+                scope = cf.get("scope", "?")
+                msg = cf.get("message", "")
+                cf_str = f"-> suggest {feat}={sug} : predicted score={pscore}  saves -{reduc:.2f}  [{scope}]\n      Tip: {msg}"
             else:
                 cf_str = "-> no counterfactual"
 
-            print(f"  [{feat}={val}  SHAP=+{shap}]  {cf_str}")
+            print(f"  [{feat}={val}  SHAP=+{shap:.4f}]  {cf_str}")
         print()
         shown += 1

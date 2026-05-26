@@ -63,11 +63,13 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeIntentDto,
   ) {
+    // Ensure items is a safe array to avoid unsafe `any` assignment
+    const items = Array.isArray(dto.items) ? (dto.items as unknown[]) : [];
     return this.paymentsService.createStripeIntent({
       clientId: req.user.sub,
       restaurantId: dto.restaurantId,
       offerId: dto.offerId,
-      items: dto.items,
+      items,
       total: dto.total,
       collectionMethod: dto.collectionMethod,
       deliveryAddress: dto.deliveryAddress,
@@ -87,11 +89,13 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeCheckoutDto,
   ) {
+    // Ensure items is a safe array to avoid unsafe `any` assignment
+    const items = Array.isArray(dto.items) ? (dto.items as unknown[]) : [];
     return this.paymentsService.createStripeCheckoutSession({
       clientId: req.user.sub,
       restaurantId: dto.restaurantId,
       offerId: dto.offerId,
-      items: dto.items,
+      items,
       total: dto.total,
       collectionMethod: dto.collectionMethod,
       deliveryAddress: dto.deliveryAddress,
@@ -299,7 +303,7 @@ export class PaymentsController {
   }
 
   @Get('paypal/cancel')
-  async paypalCancel(@Req() req: Request, @Res() res: Response) {
+  paypalCancel(@Req() req: Request, @Res() res: Response) {
     // Check if cancelUrl is a deep link (for mobile apps)
     const cancelUrl = req.query.cancelUrl as string;
     if (cancelUrl && cancelUrl.startsWith('fiftyfood://')) {

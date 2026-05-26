@@ -35,7 +35,7 @@ export class PaymentsService {
     clientId: string;
     restaurantId: string;
     offerId: string;
-    items: any;
+    items: unknown[];
     total: number;
     collectionMethod?: string;
     deliveryAddress?: string;
@@ -197,7 +197,7 @@ export class PaymentsService {
     clientId: string;
     restaurantId: string;
     offerId: string;
-    items: any;
+    items: unknown[];
     total: number;
     collectionMethod?: string;
     deliveryAddress?: string;

@@ -22,13 +22,13 @@ NUMERIC_FEATURES: list[str] = [
     "description_length",  # character count of the description
     "category_sell_rate",  # historical sell rate for this category (0–1)
     "restaurant_avg_rating",  # restaurant rating (2.5–5.0)
-    "restaurant_past_expired_rate",  # smoothed expiration rate (Bayesian blend with platform avg)
+    "restaurant_past_expired_rate",  # smoothed expiration rate (EWM span=10 over past offers — recent history weighted more)
     "restaurant_offer_count",  # how many completed offers this restaurant has — signals
     # how reliable the history features are (cold-start guard)
     # -- Dynamic (observed at snapshot time, updated each hourly check) ------
     "sell_through_rate_realtime",  # orders_placed / quantity at snapshot time
     "time_remaining_hours",  # hours until pickup at snapshot time
-    "view_count_log",  # log1p(view_count) — compresses heavy tail
+    "view_count",  # log1p(view_count) — compresses heavy tail
     "engagement_rate",  # click_count / view_count at snapshot time (CTR)
 ]
 
@@ -66,7 +66,7 @@ def build_features(
 
     # log1p compression for view count — prevents a handful of viral offers
     # from dominating the feature scale
-    out["view_count_log"] = np.log1p(out["view_count"].fillna(0))
+    out["view_count"] = np.log1p(out["view_count"].fillna(0))
 
     # Conservative fill for dynamic features: assume worst-case scenario
     # (no progress, no engagement) — safe default for cold offers

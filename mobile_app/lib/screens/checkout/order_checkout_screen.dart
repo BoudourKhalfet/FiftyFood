@@ -45,7 +45,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   String? _userFirstName;
   String? _userLastName;
   CardFieldInputDetails? _cardDetails;
-  
+
   // Deep link handling for PayPal
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSubscription;
@@ -59,22 +59,25 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     _initDeepLinks();
     _checkForPendingPayment();
   }
-  
+
   void _initDeepLinks() {
-    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
-      _handleDeepLink(uri);
-    }, onError: (err) {
-      print('Deep link error: $err');
-    });
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      (uri) {
+        _handleDeepLink(uri);
+      },
+      onError: (err) {
+        print('Deep link error: $err');
+      },
+    );
   }
-  
+
   void _handleDeepLink(Uri uri) async {
     print('Checkout received deep link: $uri');
     final host = uri.host;
     final orderId = uri.queryParameters['orderId'];
-    
+
     if (orderId != widget.orderId) return; // Not our order
-    
+
     if (host == 'payment-success') {
       _verifyPayPalPayment();
     } else if (host == 'payment-error') {
@@ -85,7 +88,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       });
     }
   }
-  
+
   Future<void> _checkForPendingPayment() async {
     // Check if we were redirected back from PayPal
     try {
@@ -97,27 +100,28 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       print('Error checking initial link: $e');
     }
   }
-  
+
   Future<void> _verifyPayPalPayment() async {
     if (!mounted) return;
     setState(() {
       _isWaitingForPayPal = false;
       _isProcessing = true;
     });
-    
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final paypalOrderId = prefs.getString('pendingPayPalOrderId');
-      
+
       if (paypalOrderId != null) {
         final capture = await PaymentService.capturePayPalPayment(
           paypalOrderId: paypalOrderId,
           orderId: widget.orderId,
         );
-        
+
         if (!mounted) return;
-        
-        if (capture['isSuccessful'] == true || capture['status'] == 'already_processed') {
+
+        if (capture['isSuccessful'] == true ||
+            capture['status'] == 'already_processed') {
           await prefs.remove('pendingPayPalOrderId');
           await prefs.remove('pendingOrderId');
           _showPaymentSuccess();
@@ -129,7 +133,8 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         } else {
           setState(() {
             _isProcessing = false;
-            _error = 'Payment could not be verified. Status: ${capture['status'] ?? 'unknown'}';
+            _error =
+                'Payment could not be verified. Status: ${capture['status'] ?? 'unknown'}';
           });
         }
       } else {
@@ -147,7 +152,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       });
     }
   }
-  
+
   void _showPaymentSuccess() {
     if (!mounted) return;
     showDialog(
@@ -162,10 +167,14 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
               if (mounted) {
-                Navigator.of(context).pop(true); // Return to previous screen with success
+                Navigator.of(
+                  context,
+                ).pop(true); // Return to previous screen with success
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3D9176)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF3D9176),
+            ),
             child: const Text('Done'),
           ),
         ],
@@ -190,14 +199,18 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final fullName = ((data['clientProfile']?['fullName'] as String?) ??
-            (data['livreurProfile']?['fullName'] as String?) ??
-            '').split(' ');
+        final fullName =
+            ((data['clientProfile']?['fullName'] as String?) ??
+                    (data['livreurProfile']?['fullName'] as String?) ??
+                    '')
+                .split(' ');
         if (!mounted) return;
         setState(() {
           _userEmail = data['email'] as String? ?? '';
           _userFirstName = fullName.isNotEmpty ? fullName.first : '';
-          _userLastName = fullName.length > 1 ? fullName.sublist(1).join(' ') : _userFirstName;
+          _userLastName = fullName.length > 1
+              ? fullName.sublist(1).join(' ')
+              : _userFirstName;
         });
       }
     } catch (_) {}
@@ -284,7 +297,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
         if (!mounted) return;
         await _pollStripeCheckoutStatus(sessionId);
-        return;  
+        return;
       }
       // Step 1: Create payment intent on backend
       final orderDetails = widget.orderDetails;
@@ -358,16 +371,19 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
               try {
                 final confirmation =
                     await PaymentService.confirmStripeCheckoutSession(
-                  sessionId: sessionId,
-                );
+                      sessionId: sessionId,
+                    );
 
                 if (!mounted) return;
                 Navigator.pop(context);
 
-                if (confirmation['status'] == 'paid' && confirmation['orderId'] != null) {
+                if (confirmation['status'] == 'paid' &&
+                    confirmation['orderId'] != null) {
                   _showPaymentSuccessDialog('Card');
                 } else if (confirmation['status'] == 'order_creation_failed') {
-                  _showPaymentErrorDialog('Payment succeeded but order creation failed. Please contact support.');
+                  _showPaymentErrorDialog(
+                    'Payment succeeded but order creation failed. Please contact support.',
+                  );
                 } else {
                   _showPaymentErrorDialog('Payment not completed yet.');
                 }
@@ -384,7 +400,6 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     );
   }
 
-  
   /// Show dialog when returning from PayPal
   void _showPayPalReturnDialog(String paypalOrderId) {
     showDialog(
@@ -458,7 +473,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       } else if (capture['status'] == 'already_processed') {
         _showPaymentSuccessDialog('PayPal');
       } else if (capture['needsApproval'] == true) {
-        _showPaymentErrorDialog('Payment not yet approved. Please open the PayPal link and complete the payment first, then try again.');
+        _showPaymentErrorDialog(
+          'Payment not yet approved. Please open the PayPal link and complete the payment first, then try again.',
+        );
       } else {
         final captureStatus = capture['status']?.toString() ?? '';
         _showPaymentErrorDialog(
@@ -472,7 +489,8 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       Navigator.of(context).pop(); // Close loading dialog
 
       final errorText = e.toString();
-      if (errorText.contains('Unauthorized') || errorText.contains('session expired')) {
+      if (errorText.contains('Unauthorized') ||
+          errorText.contains('session expired')) {
         _showSessionExpiredDialog();
       } else {
         _showPaymentErrorDialog('Payment verification failed: $errorText');
@@ -485,8 +503,12 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     try {
       final paymentData = await PaymentService.createPayPalPayment(
         orderId: widget.orderId,
-        returnUrl: kIsWeb ? null : 'fiftyfood://payment-success?orderId=${widget.orderId}',
-        cancelUrl: kIsWeb ? null : 'fiftyfood://payment-error?orderId=${widget.orderId}',
+        returnUrl: kIsWeb
+            ? null
+            : 'fiftyfood://payment-success?orderId=${widget.orderId}',
+        cancelUrl: kIsWeb
+            ? null
+            : 'fiftyfood://payment-error?orderId=${widget.orderId}',
       );
 
       final approvalUrl = paymentData['approvalUrl'];
@@ -530,7 +552,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       if (_userFirstName == null ||
           _userLastName == null ||
           _userEmail == null) {
-        throw Exception('User profile information is required for Konnect payment');
+        throw Exception(
+          'User profile information is required for Konnect payment',
+        );
       }
 
       final paymentData = await PaymentService.createKonnectPayment(
@@ -604,7 +628,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
         if (status == 'failed' || status == 'cancelled') {
           Navigator.of(context).pop();
-          _showPaymentErrorDialog('Payment was cancelled or failed. Please try again.');
+          _showPaymentErrorDialog(
+            'Payment was cancelled or failed. Please try again.',
+          );
           return;
         }
       } catch (_) {
@@ -616,7 +642,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
     if (!mounted) return;
     Navigator.of(context).pop();
-    _showPaymentErrorDialog('Payment not completed yet. Please check your Konnect/D17 app and try again.');
+    _showPaymentErrorDialog(
+      'Payment not completed yet. Please check your Konnect/D17 app and try again.',
+    );
   }
 
   Future<void> _pollStripeCheckoutStatus(String sessionId) async {
@@ -638,8 +666,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     const maxAttempts = 20;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        final confirmation =
-            await PaymentService.confirmStripeCheckoutSession(
+        final confirmation = await PaymentService.confirmStripeCheckoutSession(
           sessionId: sessionId,
         );
 
@@ -785,19 +812,21 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                               });
 
                               try {
-                                final intent =
-                                    await Stripe.instance.confirmPayment(
-                                  paymentIntentClientSecret: clientSecret,
-                                  data: PaymentMethodParams.card(
-                                    paymentMethodData: PaymentMethodData(),
-                                  ),
-                                );
+                                final intent = await Stripe.instance
+                                    .confirmPayment(
+                                      paymentIntentClientSecret: clientSecret,
+                                      data: PaymentMethodParams.card(
+                                        paymentMethodData: PaymentMethodData(),
+                                      ),
+                                    );
                                 if (!mounted) return;
                                 Navigator.pop(context, intent.id);
                               } catch (e) {
                                 setStateSheet(() {
-                                  localError =
-                                      e.toString().replaceAll('Exception: ', '');
+                                  localError = e.toString().replaceAll(
+                                    'Exception: ',
+                                    '',
+                                  );
                                   isSubmitting = false;
                                 });
                               }
@@ -807,8 +836,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                               height: 18,
                               width: 18,
                               child: CircularProgressIndicator(
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                                 strokeWidth: 2,
                               ),
                             )
@@ -832,17 +862,16 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     return clientSecret.substring(0, idx);
   }
 
-  
   /// Show Payment Success Dialog
   void _showPaymentSuccessDialog(String method) async {
     String? orderId;
-    
+
     if (widget.createOrderAfterPayment) {
-      // Create order after successful payment
+      // Create order after successful payment, then confirm server-side
       try {
         final prefs = await SharedPreferences.getInstance();
         final token = prefs.getString('jwt');
-        
+
         if (token != null) {
           final response = await http.post(
             Uri.parse(apiUrl('orders')),
@@ -852,23 +881,30 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
             },
             body: jsonEncode({
               ...widget.orderDetails,
-              'status': 'CONFIRMED', // Order is confirmed since payment is successful
               'paymentDetails': {
                 'status': 'completed',
                 'provider': method.toLowerCase(),
                 'confirmedAt': DateTime.now().toIso8601String(),
-                'paypalOrderId': widget.paypalOrderId, // Store PayPal order ID for reference
-              }
+                'paypalOrderId': widget.paypalOrderId,
+              },
             }),
           );
-          
+
           if (response.statusCode == 200 || response.statusCode == 201) {
             final responseData = jsonDecode(response.body);
-            orderId = (responseData['order']?['id'] ?? responseData['orderId'])?.toString();
-            
-            // Decrement offer quantity after successful order creation
+            orderId = (responseData['order']?['id'] ?? responseData['orderId'])
+                ?.toString();
+
             if (orderId != null && orderId.isNotEmpty) {
-              await _decrementOfferQuantity();
+              await PaymentService.confirmOrderPayment(
+                orderId: orderId,
+                paymentMethod: method.toUpperCase(),
+                paymentDetails: {
+                  'status': 'completed',
+                  'provider': method.toLowerCase(),
+                  'confirmedAt': DateTime.now().toIso8601String(),
+                },
+              );
             }
           }
         }
@@ -900,48 +936,23 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('✓ Payment Successful'),
-        content: Text('Your payment via $method was processed successfully. Your order has been confirmed.'),
+        content: Text(
+          'Your payment via $method was processed successfully. Your order has been confirmed.',
+        ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              Navigator.pop(context, {'success': true, 'orderId': orderId}); // Return success with order ID
+              Navigator.pop(context, {
+                'success': true,
+                'orderId': orderId,
+              }); // Return success with order ID
             },
             child: const Text('Done'),
           ),
         ],
       ),
     );
-  }
-
-  /// Decrement offer quantity after successful order creation
-  Future<void> _decrementOfferQuantity() async {
-    try {
-      final offerId = widget.orderDetails['offerId'];
-      final quantity = widget.orderDetails['items']['quantity'];
-      
-      if (offerId != null && quantity != null) {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('jwt');
-        
-        final response = await http.patch(
-          Uri.parse(apiUrl('offers/$offerId/decrement-quantity')),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({
-            'quantity': quantity,
-          }),
-        );
-
-        if (response.statusCode != 200 && response.statusCode != 201) {
-          debugPrint('Failed to decrement quantity: ${response.statusCode} ${response.body}');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error decrementing offer quantity: $e');
-    }
   }
 
   /// Show Payment Error Dialog
@@ -978,10 +989,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
               final prefs = await SharedPreferences.getInstance();
               await prefs.remove('jwt');
               if (!mounted) return;
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/signin',
-                (route) => false,
-              );
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/signin', (route) => false);
             },
             child: const Text('Sign In Again'),
           ),
@@ -1003,192 +1013,198 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Order Summary
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Order Summary',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Order Summary
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Order ID:'),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          widget.orderId,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                          textAlign: TextAlign.right,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total Amount:'),
-                      Text(
-                        '${widget.totalAmount.toStringAsFixed(2)} DT',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1F9D7A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            if (widget.lockMethod && _selectedMethod != null) ...[
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(
-                      _methodIcon(_selectedMethod!),
-                      color: _methodColor(_selectedMethod!),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _methodLabel(_selectedMethod!),
-                        style: const TextStyle(
-                          fontSize: 14,
+                      const Text(
+                        'Order Summary',
+                        style: TextStyle(
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: !_isProcessing ? _processPayment : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1F9D7A),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: _isProcessing
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                            strokeWidth: 2,
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Order ID:'),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              widget.orderId,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.right,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        )
-                      : const Text(
-                          'Pay Now',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total Amount:'),
+                          Text(
+                            '${widget.totalAmount.toStringAsFixed(2)} DT',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1F9D7A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                if (widget.lockMethod && _selectedMethod != null) ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _methodIcon(_selectedMethod!),
+                          color: _methodColor(_selectedMethod!),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _methodLabel(_selectedMethod!),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                ),
-              ),
-            ] else ...[
-              // Payment Method Selector
-              PaymentMethodSelector(
-                onMethodSelected: (method) {
-                  setState(() {
-                    _selectedMethod = method;
-                    _error = null;
-                  });
-                },
-                onPayNow: _processPayment,
-                isLoading: _isProcessing,
-              ),
-            ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: !_isProcessing ? _processPayment : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1F9D7A),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: _isProcessing
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'Pay Now',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
+                  ),
+                ] else ...[
+                  // Payment Method Selector
+                  PaymentMethodSelector(
+                    onMethodSelected: (method) {
+                      setState(() {
+                        _selectedMethod = method;
+                        _error = null;
+                      });
+                    },
+                    onPayNow: _processPayment,
+                    isLoading: _isProcessing,
+                  ),
+                ],
 
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  border: Border.all(color: Colors.red[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Colors.red[900]),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      // Waiting for PayPal overlay
-      if (_isWaitingForPayPal)
-          Container(
-            color: Colors.black.withOpacity(0.7),
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Complete payment in PayPal...',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                if (_error != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red[50],
+                      border: Border.all(color: Colors.red[300]!),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'You\'ll return here automatically',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: Colors.red[900]),
                     ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _isWaitingForPayPal = false;
-                        });
-                      },
-                      child: const Text('Cancel'),
-                    ),
-                  ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Waiting for PayPal overlay
+          if (_isWaitingForPayPal)
+            Container(
+              color: Colors.black.withOpacity(0.7),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Complete payment in PayPal...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'You\'ll return here automatically',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _isWaitingForPayPal = false;
+                          });
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

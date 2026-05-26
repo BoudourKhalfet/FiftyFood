@@ -1656,45 +1656,6 @@ class _PartnerDashboardPageState extends State<PartnerDashboardPage> {
                         ),
                       ),
 
-                    // Generate Description button (when photo uploaded)
-                    if (_uploadedOfferImageUrl != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _generatingDescription
-                                ? null
-                                : () => _generateDescriptionForImage(
-                                    _uploadedOfferImageUrl!,
-                                    modalSetState,
-                                  ),
-                            icon: _generatingDescription
-                                ? const SizedBox(
-                                    height: 16,
-                                    width: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : const Icon(Icons.auto_awesome, size: 16),
-                            label: Text(
-                              _generatingDescription
-                                  ? 'Generating...'
-                                  : 'Generate Description',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1F9D7A),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                      ),
-
                     // --- ERROR MESSAGE (always below image area) ---
                     if (modalError != null)
                       Padding(

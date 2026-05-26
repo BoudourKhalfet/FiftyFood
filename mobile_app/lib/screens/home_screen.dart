@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+import '../constants/api.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart';
 import 'client/signup_step1.dart';
@@ -15,12 +18,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  static const Map<String, String> _initialStats = {
+  static const Map<String, String> _fallbackStats = {
     'mealsSaved': '0',
     'activeUsers': '0',
     'partnerRestaurants': '0',
     'co2Reduced': '0',
   };
+
+  Map<String, String> _stats = Map<String, String>.from(_fallbackStats);
+  bool _loadingStats = true;
 
   late final AnimationController _ctrl;
   late final Animation<double> _offsetAnim;
@@ -28,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
+    _loadHomepageStats();
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
@@ -42,6 +49,56 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _ctrl.dispose();
     super.dispose();
+  }
+
+  String _formatStatValue(dynamic value) {
+    if (value is int) return value.toString();
+    if (value is double) {
+      final rounded = value.roundToDouble();
+      if ((value - rounded).abs() < 0.05) {
+        return value.round().toString();
+      }
+      return value.toStringAsFixed(1);
+    }
+    if (value is num) {
+      if (value % 1 == 0) {
+        return value.toInt().toString();
+      }
+      return value.toStringAsFixed(1);
+    }
+    return value?.toString() ?? '0';
+  }
+
+  Future<void> _loadHomepageStats() async {
+    try {
+      final response = await http.get(Uri.parse(apiUrl('stats/homepage')));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Unexpected homepage stats payload');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _stats = {
+          'mealsSaved': _formatStatValue(decoded['mealsSaved']),
+          'activeUsers': _formatStatValue(decoded['activeUsers']),
+          'partnerRestaurants': _formatStatValue(decoded['partnerRestaurants']),
+          'co2Reduced': _formatStatValue(decoded['co2Reduced']),
+        };
+        _loadingStats = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading homepage stats: $e');
+      if (!mounted) return;
+      setState(() {
+        _stats = Map<String, String>.from(_fallbackStats);
+        _loadingStats = false;
+      });
+    }
   }
 
   @override
@@ -240,7 +297,9 @@ class _HomeScreenState extends State<HomeScreen>
                           Expanded(
                             child: _buildStatCard(
                               icon: Icons.eco,
-                              number: _initialStats['mealsSaved']!,
+                              number: _loadingStats
+                                  ? '...'
+                                  : _stats['mealsSaved']!,
                               label: 'Meals Saved',
                             ),
                           ),
@@ -248,7 +307,9 @@ class _HomeScreenState extends State<HomeScreen>
                           Expanded(
                             child: _buildStatCard(
                               icon: Icons.people,
-                              number: _initialStats['activeUsers']!,
+                              number: _loadingStats
+                                  ? '...'
+                                  : _stats['activeUsers']!,
                               label: 'Active Users',
                             ),
                           ),
@@ -256,7 +317,9 @@ class _HomeScreenState extends State<HomeScreen>
                           Expanded(
                             child: _buildStatCard(
                               icon: Icons.business,
-                              number: _initialStats['partnerRestaurants']!,
+                              number: _loadingStats
+                                  ? '...'
+                                  : _stats['partnerRestaurants']!,
                               label: 'Partner Restaurants',
                             ),
                           ),
@@ -264,7 +327,9 @@ class _HomeScreenState extends State<HomeScreen>
                           Expanded(
                             child: _buildStatCard(
                               icon: Icons.trending_down,
-                              number: _initialStats['co2Reduced']!,
+                              number: _loadingStats
+                                  ? '...'
+                                  : _stats['co2Reduced']!,
                               label: 'CO₂ Reduced',
                             ),
                           ),
@@ -285,7 +350,9 @@ class _HomeScreenState extends State<HomeScreen>
                           width: childWidth,
                           child: _buildStatCard(
                             icon: Icons.eco,
-                            number: _initialStats['mealsSaved']!,
+                            number: _loadingStats
+                                ? '...'
+                                : _stats['mealsSaved']!,
                             label: 'Meals Saved',
                           ),
                         ),
@@ -293,7 +360,9 @@ class _HomeScreenState extends State<HomeScreen>
                           width: childWidth,
                           child: _buildStatCard(
                             icon: Icons.people,
-                            number: _initialStats['activeUsers']!,
+                            number: _loadingStats
+                                ? '...'
+                                : _stats['activeUsers']!,
                             label: 'Active Users',
                           ),
                         ),
@@ -301,7 +370,9 @@ class _HomeScreenState extends State<HomeScreen>
                           width: childWidth,
                           child: _buildStatCard(
                             icon: Icons.business,
-                            number: _initialStats['partnerRestaurants']!,
+                            number: _loadingStats
+                                ? '...'
+                                : _stats['partnerRestaurants']!,
                             label: 'Partner Restaurants',
                           ),
                         ),
@@ -309,7 +380,9 @@ class _HomeScreenState extends State<HomeScreen>
                           width: childWidth,
                           child: _buildStatCard(
                             icon: Icons.trending_down,
-                            number: _initialStats['co2Reduced']!,
+                            number: _loadingStats
+                                ? '...'
+                                : _stats['co2Reduced']!,
                             label: 'CO₂ Reduced',
                           ),
                         ),

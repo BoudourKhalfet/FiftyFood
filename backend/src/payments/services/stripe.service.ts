@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
+import crypto from 'crypto';
 
 @Injectable()
 export class StripeService {
@@ -26,6 +27,11 @@ export class StripeService {
     }
   }
 
+  private buildIdempotencyKey(prefix: string, seed: string) {
+    const digest = crypto.createHash('sha256').update(seed).digest('hex');
+    return `${prefix}_${digest.slice(0, 32)}`;
+  }
+
   async createPaymentIntent(params: {
     orderData: Record<string, any>;
     amount: number;
@@ -38,13 +44,21 @@ export class StripeService {
       ? { orderId: params.orderId }
       : { orderData: JSON.stringify(params.orderData) };
 
-    const paymentIntent = await this.stripe.paymentIntents.create({
-      amount: Math.round(params.amount * 100),
-      currency: 'eur',
-      metadata,
-      description: 'FiftyFood Order',
-      receipt_email: params.email || undefined,
-    });
+    const amountCents = Math.round(params.amount * 100);
+    const seed = params.orderId
+      ? `pi:${params.orderId}:${amountCents}:eur`
+      : `pi:${amountCents}:eur:${JSON.stringify(params.orderData ?? {})}`;
+
+    const paymentIntent = await this.stripe.paymentIntents.create(
+      {
+        amount: amountCents,
+        currency: 'eur',
+        metadata,
+        description: 'FiftyFood Order',
+        receipt_email: params.email || undefined,
+      },
+      { idempotencyKey: this.buildIdempotencyKey('pi', seed) },
+    );
 
     return {
       clientSecret: paymentIntent.client_secret,
@@ -95,8 +109,8 @@ export class StripeService {
       metadata.orderId = params.orderId;
     }
 
-    // Only set customer_email if valid
-    const sessionConfig: any = {
+    // Only add customer_email if it's a valid non-empty string
+    const sessionConfig: Record<string, any> = {
       mode: 'payment',
       payment_method_types: ['card'],
       line_items: [
@@ -113,11 +127,9 @@ export class StripeService {
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      ...(params.email ? { customer_email: params.email } : {}),
       metadata,
     };
 
-    // Only add customer_email if it's a valid non-empty string
     if (
       params.email &&
       params.email.trim().length > 0 &&
@@ -126,7 +138,14 @@ export class StripeService {
       sessionConfig.customer_email = params.email.trim();
     }
 
-    const session = await this.stripe.checkout.sessions.create(sessionConfig);
+    const amountCents = Math.round(params.amount * 100);
+    const seed = params.orderId
+      ? `cs:${params.orderId}:${amountCents}:eur`
+      : `cs:${amountCents}:eur:${JSON.stringify(params.orderData ?? {})}`;
+
+    const session = await this.stripe.checkout.sessions.create(sessionConfig, {
+      idempotencyKey: this.buildIdempotencyKey('cs', seed),
+    });
 
     return {
       sessionId: session.id,
