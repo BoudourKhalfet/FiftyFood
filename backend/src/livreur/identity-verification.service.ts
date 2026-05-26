@@ -5,51 +5,36 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
-
 import { HttpService } from '@nestjs/axios';
-
 import { PrismaService } from '../prisma/prisma.service';
-
 import * as Tesseract from 'tesseract.js';
-
 import { firstValueFrom } from 'rxjs';
-
 import { spawn, ChildProcess } from 'child_process';
-
 import * as path from 'path';
-
 import * as fs from 'fs';
 
 interface OCRResult {
   extractedCIN: string | null;
-
   confidence: number;
-
   rawText: string;
 }
 
 interface FaceVerificationResult {
   isLive: boolean;
-
   faceMatchScore: number;
-
   isMatch: boolean;
-
   confidence: number;
 }
 
 @Injectable()
 export class IdentityVerificationService implements OnModuleInit {
   private readonly logger = new Logger(IdentityVerificationService.name);
-
   private readonly FACE_SERVICE_URL =
     process.env.FACE_SERVICE_URL || 'http://localhost:5001';
-
   private faceServiceProcess: ChildProcess | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
-
     private readonly httpService: HttpService,
   ) {}
 
@@ -57,22 +42,18 @@ export class IdentityVerificationService implements OnModuleInit {
     this.logger.log(
       'IdentityVerificationService initialized (Tesseract.js OCR + Python face_recognition)',
     );
-
     await this._startFaceService();
   }
 
   private async _startFaceService() {
     // Check if service is already running
-
     try {
       await firstValueFrom(
         this.httpService.get(`${this.FACE_SERVICE_URL}/health`, {
           timeout: 2000,
         }),
       );
-
       this.logger.log('[FaceService] Already running, skipping auto-start');
-
       return;
     } catch {
       // Not running, start it
@@ -87,7 +68,6 @@ export class IdentityVerificationService implements OnModuleInit {
       this.logger.warn(
         `[FaceService] app.py not found at ${faceServicePath}, skipping auto-start`,
       );
-
       return;
     }
 
@@ -96,10 +76,8 @@ export class IdentityVerificationService implements OnModuleInit {
     );
 
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-
     this.faceServiceProcess = spawn(pythonCmd, [faceServicePath], {
       detached: false,
-
       stdio: 'pipe',
     });
 
@@ -108,31 +86,25 @@ export class IdentityVerificationService implements OnModuleInit {
     });
 
     this.faceServiceProcess.stderr?.on('data', (data) => {
-      this.logger.debug(`[FaceService] ${data.toString().trim()}`);
+      this.logger.warn(`[FaceService] ${data.toString().trim()}`);
     });
 
     this.faceServiceProcess.on('exit', (code) => {
       this.logger.warn(`[FaceService] Process exited with code ${code}`);
-
       this.faceServiceProcess = null;
     });
 
     // Wait up to 30 seconds for service to be ready (DeepFace/TensorFlow takes ~15s to load)
-
     let ready = false;
-
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 1000));
-
       try {
         await firstValueFrom(
           this.httpService.get(`${this.FACE_SERVICE_URL}/health`, {
             timeout: 2000,
           }),
         );
-
         ready = true;
-
         break;
       } catch {
         // still starting
@@ -151,155 +123,57 @@ export class IdentityVerificationService implements OnModuleInit {
   }
 
   /**
-
    * Extract CIN number from an ID card image using OCR
-
    * @param imageBase64 - Base64 encoded image or image URL
-
    * @param side - 'front' or 'back' of the ID card
-
    * @returns OCRResult with extracted CIN and confidence score
-
    */
-
-  /**
-   * Fix common OCR misreads for digits
-   */
-  private correctOCRDigits(text: string): string {
-    return text
-      .replace(/[Oo]/g, '0')
-      .replace(/[IlL|]/g, '1')
-      .replace(/[Zz]/g, '2')
-      .replace(/[Ss]/g, '5')
-      .replace(/[Bb]/g, '8')
-      .replace(/[Gg]/g, '9');
-  }
-
-  /**
-   * Diagnose why OCR extraction failed (cropped, blurry, etc.)
-   * Returns specific failure reason for better UX
-   */
-  async diagnoseCINExtractionFailure(imageBase64: string): Promise<string> {
+  async extractCINFromImage(
+    imageBase64: string,
+    side: 'front' | 'back',
+  ): Promise<OCRResult> {
     try {
+      this.logger.log(`Processing ${side} image with Tesseract.js...`);
+
+      // Convert base64 to buffer
       const imageBuffer = imageBase64.startsWith('data:')
         ? Buffer.from(imageBase64.split(',')[1], 'base64')
         : Buffer.from(imageBase64, 'base64');
 
-      // Try OCR to check if text exists
-      const worker = await Tesseract.createWorker('eng');
-      await worker.setParameters({
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-        tessedit_char_whitelist:
-          '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
-      } as any);
+      // Use Tesseract.js for OCR (completely free!)
+      const result = await Tesseract.recognize(
+        imageBuffer,
+        'eng+ara', // English + Arabic for Tunisian IDs
+        {
+          logger: (m: { status: string; progress: number }) => {
+            if (m.status === 'recognizing text') {
+              this.logger.log(
+                `Tesseract progress: ${(m.progress * 100).toFixed(1)}%`,
+              );
+            }
+          },
+        },
+      );
 
-      const result = await worker.recognize(imageBuffer);
-      const ocrText = result.data.text;
-      await worker.terminate();
-
-      // If OCR extracted text but no 8-digit number found
-      if (ocrText && ocrText.trim().length > 0) {
-        return 'CIN number is not visible or cropped. The image contains text but the CIN number cannot be read. Please ensure the entire ID card (including all edges) is clearly visible in the photo.';
-      }
-
-      // If no text at all, likely image quality issue
-      return 'Could not read any text from the photo. Please retake with better lighting and ensure the entire ID card is clearly visible.';
-    } catch (error) {
-      this.logger.debug(`Diagnosis failed (non-critical): ${error}`);
-      return 'Could not read CIN from the photo. Please retake with better lighting and ensure the entire ID card is clearly visible.';
-    }
-  }
-
-  /**
-   * Try to extract 8-digit CIN from OCR text
-   */
-  private extractCINFromText(text: string): string | null {
-    // First try exact 8-digit match on raw text
-    const exactRegex = /\b\d{8}\b/g;
-    const exactMatches = [...text.matchAll(exactRegex)];
-    if (exactMatches.length > 0) return exactMatches[0][0];
-
-    // Try after correcting common OCR digit misreads
-    const corrected = this.correctOCRDigits(text);
-    const correctedMatches = [...corrected.matchAll(exactRegex)];
-    if (correctedMatches.length > 0) return correctedMatches[0][0];
-
-    // Try finding any run of 8+ digits and take the first 8
-    const looseRegex = /\d{8,}/g;
-    const looseMatches = [...corrected.matchAll(looseRegex)];
-    if (looseMatches.length > 0) return looseMatches[0][0].substring(0, 8);
-
-    return null;
-  }
-
-  async extractCINFromImage(
-    imageBase64: string,
-
-    side: 'front' | 'back',
-  ): Promise<OCRResult> {
-    try {
-      // Deskew the image before OCR to fix tilted card photos
-      let processedBase64 = imageBase64;
-      try {
-        const rawB64 = imageBase64.startsWith('data:')
-          ? imageBase64.split(',')[1]
-          : imageBase64;
-        const deskewRes = await firstValueFrom(
-          this.httpService.post(
-            `${this.FACE_SERVICE_URL}/deskew`,
-            { image: rawB64 },
-            { timeout: 8000 },
-          ),
-        );
-        if (deskewRes.data?.image) {
-          processedBase64 = deskewRes.data.image;
-        }
-      } catch {
-        // Deskew unavailable — proceed with original image
-      }
-
-      // Convert base64 to buffer
-      const imageBuffer = processedBase64.startsWith('data:')
-        ? Buffer.from(processedBase64.split(',')[1], 'base64')
-        : Buffer.from(processedBase64, 'base64');
-
-      // Pass 1: Use eng only with PSM 6 (uniform block of text)
-      // Arabic mode confuses digit recognition on Tunisian IDs
-      const worker = await Tesseract.createWorker('eng');
-      await worker.setParameters({
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-        tessedit_char_whitelist:
-          '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
-      } as any);
-
-      const result = await worker.recognize(imageBuffer);
       const text = result.data.text;
-      let cin = this.extractCINFromText(text);
+      this.logger.log(
+        `Tesseract extracted text from ${side}: ${text.substring(0, 200)}...`,
+      );
 
-      // Pass 2: Try PSM 11 (sparse text) if first pass found nothing
-      if (!cin) {
-        await worker.setParameters({
-          tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
-        } as any);
-        const result2 = await worker.recognize(imageBuffer);
-        cin = this.extractCINFromText(result2.data.text);
-      }
+      // Extract CIN number (Tunisian CIN format: 8 digits)
+      const cinRegex = /\b\d{8}\b/g;
+      const matches = [...text.matchAll(cinRegex)];
+      this.logger.log(
+        `Found ${matches.length} potential CIN matches: ${matches.map((m) => m[0]).join(', ')}`,
+      );
 
-      // Pass 3: Try PSM 7 (single line) — CIN is often on its own line
-      if (!cin) {
-        await worker.setParameters({
-          tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
-          tessedit_char_whitelist: '0123456789',
-        } as any);
-        const result3 = await worker.recognize(imageBuffer);
-        cin = this.extractCINFromText(result3.data.text);
-      }
-
-      await worker.terminate();
-
-      if (cin) {
+      if (matches.length > 0) {
+        const bestMatch = matches[0][0];
+        this.logger.log(
+          `CIN found in ${side}: ${bestMatch} (confidence: ${result.data.confidence})`,
+        );
         return {
-          extractedCIN: cin,
+          extractedCIN: bestMatch,
           confidence: result.data.confidence / 100,
           rawText: text,
         };
@@ -307,57 +181,39 @@ export class IdentityVerificationService implements OnModuleInit {
 
       return {
         extractedCIN: null,
-
         confidence: 0,
-
         rawText: text,
       };
     } catch (error) {
       this.logger.error(`Tesseract OCR error for ${side}:`, error);
-
       // Return null instead of throwing - controller will handle fallback
-
       return {
         extractedCIN: null,
-
         confidence: 0,
-
         rawText: '',
       };
     }
   }
 
   /**
-
    * Verify CIN by comparing extracted CIN with user-provided CIN
-
    * @param userProvidedCIN - CIN number entered by the user
-
    * @param extractedCINFront - CIN extracted from front of ID
-
    * @param extractedCINBack - CIN extracted from back of ID (optional)
-
    * @returns boolean indicating if CINs match
-
    */
-
   async verifyCINMatch(
     userProvidedCIN: string,
-
     extractedCINFront: string | null,
-
     extractedCINBack: string | null,
   ): Promise<{ isValid: boolean; reason: string }> {
     // Normalize CINs (remove spaces, hyphens, etc.)
-
     const normalizeCIN = (cin: string) => cin.replace(/[\s\-]/g, '');
-
     const normalizedUserCIN = normalizeCIN(userProvidedCIN);
 
     if (!extractedCINFront) {
       return {
         isValid: false,
-
         reason: 'Could not extract CIN from front of ID card',
       };
     }
@@ -367,20 +223,16 @@ export class IdentityVerificationService implements OnModuleInit {
     if (normalizedUserCIN === normalizedFront) {
       return {
         isValid: true,
-
         reason: 'CIN matches front of ID card',
       };
     }
 
     // If back CIN is available, check if it matches
-
     if (extractedCINBack) {
       const normalizedBack = normalizeCIN(extractedCINBack);
-
       if (normalizedUserCIN === normalizedBack) {
         return {
           isValid: true,
-
           reason: 'CIN matches back of ID card',
         };
       }
@@ -388,58 +240,31 @@ export class IdentityVerificationService implements OnModuleInit {
 
     return {
       isValid: false,
-
       reason: `CIN mismatch. Entered: ${normalizedUserCIN}, Found on card: ${normalizedFront}`,
     };
   }
 
   /**
-
    * Store CIN verification results and document URLs
-
    * @param userId - User ID of the deliverer
-
    * @param cinFrontPhotoUrl - URL to stored front photo
-
    * @param cinBackPhotoUrl - URL to stored back photo
-
    * @param extractedCIN - CIN extracted from the document
-
    * @param verificationStatus - Status of verification (PENDING, VERIFIED, FAILED)
-
    */
-
-  async storeCINVerificationStatus(
-    userId: string,
-    verificationStatus: 'PENDING' | 'VERIFIED' | 'FAILED',
-  ) {
-    return this.prisma.livreurProfile.update({
-      where: { userId },
-      data: { cinVerificationStatus: verificationStatus },
-    });
-  }
-
   async storeCINVerification(
     userId: string,
-
     cinFrontPhotoUrl: string,
-
     cinBackPhotoUrl: string,
-
     extractedCIN: string,
-
     verificationStatus: 'PENDING' | 'VERIFIED' | 'FAILED',
   ) {
     return this.prisma.livreurProfile.update({
       where: { userId },
-
       data: {
         cinFrontPhotoUrl,
-
         cinBackPhotoUrl,
-
         cinVerificationStatus: verificationStatus,
-
         cinVerifiedAt:
           verificationStatus === 'VERIFIED' ? new Date() : undefined,
       },
@@ -447,408 +272,107 @@ export class IdentityVerificationService implements OnModuleInit {
   }
 
   /**
-   * Perform layered liveness verification using challenge-response frames + telemetry.
-   * Server-side validation: challenges, timing, replay detection, confidence scoring.
-   */
-  async performLivenessVerification(
-    frames: string[],
-    challenges: string[],
-    telemetry: any[],
-  ): Promise<{
-    isLive: boolean;
-    confidence: number;
-    reason: string;
-    riskLevel: string;
-    checks: any;
-  }> {
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.FACE_SERVICE_URL}/liveness`,
-          { frames, challenges, telemetry },
-          { timeout: 45000 },
-        ),
-      );
-
-      const result = response.data;
-      return {
-        isLive: result.isLive === true,
-        confidence: result.confidence ?? 0,
-        reason: result.reason ?? '',
-        riskLevel: result.riskLevel ?? 'HIGH',
-        checks: result.checks ?? {},
-      };
-    } catch (error: any) {
-      this.logger.error(
-        '[Liveness] Service unavailable:',
-        error?.message || error,
-      );
-      throw new BadRequestException(
-        'Liveness verification service is temporarily unavailable. Please try again later.',
-      );
-    }
-  }
-
-  /**
-   * Simple face-presence check (backward compat, used by verifyFace endpoint).
+   * Perform liveness detection on a video/image sequence
+   * This is a placeholder - actual implementation depends on your chosen service
+   * (AWS Rekognition, Azure Face API, etc.)
    */
   async performLivenessDetection(
-    imageBase64: string,
+    videoBase64: string,
   ): Promise<{ isLive: boolean; confidence: number }> {
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.FACE_SERVICE_URL}/detect`,
-          { image: imageBase64 },
-          { timeout: 10000 },
-        ),
-      );
-      const hasFace = response.data?.has_face === true;
-      return { isLive: hasFace, confidence: hasFace ? 0.8 : 0.0 };
+      // TODO: Integrate with AWS Rekognition, Azure Face API, or similar service
+      // For now, this is a placeholder implementation
+      this.logger.warn('Liveness detection not yet implemented');
+
+      return {
+        isLive: true, // Placeholder
+        confidence: 0.5,
+      };
     } catch (error) {
-      this.logger.error('[Liveness] Face service unavailable:', error);
-      throw new BadRequestException(
-        'Face verification service is temporarily unavailable. Please try again later.',
-      );
+      this.logger.error('Liveness detection error:', error);
+      throw new BadRequestException('Liveness detection failed');
     }
   }
 
   /**
-
    * Perform face recognition between selfie and ID card photo
-
    * Uses Python face_recognition library (dlib-based) for accurate comparison
-
    */
-
   async performFaceRecognition(
     selfieBase64: string,
-
     idCardPhotoBase64: string,
-
     clientFaceMatch?: boolean,
   ): Promise<{ matchScore: number; isMatch: boolean }> {
     try {
-      // Call Python face_recognition service (OpenCV + dlib)
+      this.logger.log(
+        `[AI] Calling face recognition service at ${this.FACE_SERVICE_URL}...`,
+      );
 
+      // Call Python face_recognition service (OpenCV + dlib)
       const response = await firstValueFrom(
         this.httpService.post(
           `${this.FACE_SERVICE_URL}/compare`,
-
           {
             cinImageBase64: idCardPhotoBase64,
             selfieImageBase64: selfieBase64,
           },
-
-          { timeout: 120000 }, // 120 second timeout (first call downloads models)
+          { timeout: 15000 }, // 15 second timeout (face_recognition can be slow)
         ),
       );
 
-      const result = response.data;
+      const result = response.data as {
+        error?: string;
+        matchScore: number;
+        isMatch: boolean;
+        distance?: number;
+      };
 
       if (result.error) {
         this.logger.error(
           '[AI] Face recognition service returned error:',
           result.error,
         );
-
         throw new Error(result.error);
       }
 
-      return {
-        matchScore: result.matchScore ?? 0,
+      this.logger.log(
+        `[AI] Face recognition result: score=${result.matchScore}, match=${result.isMatch}, distance=${result.distance}`,
+      );
 
-        isMatch: result.isMatch === true,
+      return {
+        matchScore: result.matchScore,
+        isMatch: result.isMatch,
       };
     } catch (error: any) {
-      this.logger.error(
-        `[AI] Face recognition service unavailable: ${error?.message || error}`,
+      this.logger.warn(
+        `[AI] Face recognition unavailable: ${error?.message || error}`,
       );
+      this.logger.log('[Fallback] Using client-side liveness verification');
 
-      throw new BadRequestException(
-        'Face verification service is temporarily unavailable. Please try again later.',
-      );
+      // Fallback: accept if client did liveness detection
+      // Liveness (turning head, blinking) proves it's a real person
+      const fallbackMatch = clientFaceMatch !== false; // Accept unless explicitly false
+      return {
+        matchScore: fallbackMatch ? 0.85 : 0.5,
+        isMatch: fallbackMatch,
+      };
     }
   }
 
   /**
-
    * Complete identity verification workflow
-
    */
-
   async completeIdentityVerification(
     userId: string,
-
     cinFrontPhotoUrl: string,
-
     cinBackPhotoUrl: string,
   ) {
     return this.prisma.livreurProfile.update({
       where: { userId },
-
       data: {
         identityVerified: true,
-
         identityVerifiedAt: new Date(),
       },
     });
-  }
-
-  /**
-
-   * Extract and verify Tunisian ID barcode from back image
-
-   * Uses Python script with pyzbar for PDF417 barcode detection
-
-   */
-
-  async extractTunisianBarcode(imageBase64: string): Promise<{
-    cin: string | null;
-
-    isValidFormat: boolean;
-
-    rawData: string | null;
-  }> {
-    try {
-      const imageBuffer = imageBase64.startsWith('data:')
-        ? Buffer.from(imageBase64.split(',')[1], 'base64')
-        : Buffer.from(imageBase64, 'base64');
-
-      // Call Python face service for barcode extraction
-
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.FACE_SERVICE_URL}/extract-barcode`,
-          {
-            image: imageBuffer.toString('base64'),
-          },
-          { timeout: 10000 },
-        ),
-      );
-
-      const result = response.data;
-
-      if (result.barcode && result.isTunisianFormat) {
-        return {
-          cin: result.cin,
-
-          isValidFormat: true,
-
-          rawData: result.rawData,
-        };
-      }
-
-      return {
-        cin: null,
-
-        isValidFormat: false,
-
-        rawData: null,
-      };
-    } catch (error) {
-      this.logger.error('[TunisianID] Barcode extraction failed:', error);
-
-      return {
-        cin: null,
-
-        isValidFormat: false,
-
-        rawData: null,
-      };
-    }
-  }
-
-  /**
-
-   * Detect Tunisian flag and visual features on front image
-
-   * Uses color analysis to detect red flag with white crescent
-
-   */
-
-  async detectTunisianFeatures(imageBase64: string): Promise<{
-    hasTunisianFlag: boolean;
-
-    flagConfidence: number;
-
-    hasSecurityFeatures: boolean;
-  }> {
-    try {
-      const imageBuffer = imageBase64.startsWith('data:')
-        ? Buffer.from(imageBase64.split(',')[1], 'base64')
-        : Buffer.from(imageBase64, 'base64');
-
-      // Call Python service for visual feature detection
-
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.FACE_SERVICE_URL}/detect-tunisian-features`,
-          {
-            image: imageBuffer.toString('base64'),
-          },
-          { timeout: 10000 },
-        ),
-      );
-
-      const result = response.data;
-
-      return {
-        hasTunisianFlag: result.hasTunisianFlag || false,
-
-        flagConfidence: result.flagConfidence || 0,
-
-        hasSecurityFeatures: result.hasSecurityFeatures || false,
-      };
-    } catch (error) {
-      this.logger.error('[TunisianID] Feature detection failed:', error);
-
-      return {
-        hasTunisianFlag: false,
-
-        flagConfidence: 0,
-
-        hasSecurityFeatures: false,
-      };
-    }
-  }
-
-  /**
-
-   * Comprehensive Tunisian ID verification
-
-   * Combines OCR, barcode, and visual feature verification
-
-   */
-
-  async verifyTunisianDocument(
-    cinFrontImageBase64: string,
-
-    cinBackImageBase64: string,
-
-    userProvidedCIN: string,
-  ): Promise<{
-    isValid: boolean;
-
-    reason: string;
-
-    checks: {
-      ocrCin: string | null;
-
-      barcodeCin: string | null;
-
-      hasTunisianFlag: boolean;
-
-      hasValidBarcode: boolean;
-
-      cinConsistency: boolean;
-
-      userCinMatch: boolean;
-    };
-
-    score: number;
-  }> {
-    const checks = {
-      ocrCin: null as string | null,
-
-      barcodeCin: null as string | null,
-
-      hasTunisianFlag: false,
-
-      hasValidBarcode: false,
-
-      cinConsistency: false,
-
-      userCinMatch: false,
-    };
-
-    // 1. Extract CIN from front using OCR (Tesseract)
-
-    const frontOCR = await this.extractCINFromImage(
-      cinFrontImageBase64,
-      'front',
-    );
-
-    checks.ocrCin = frontOCR.extractedCIN;
-
-    // 2. Extract CIN from barcode on back
-
-    const barcodeResult = await this.extractTunisianBarcode(cinBackImageBase64);
-
-    checks.barcodeCin = barcodeResult.cin;
-
-    checks.hasValidBarcode = barcodeResult.isValidFormat;
-
-    // 3. Detect Tunisian flag on front
-
-    const features = await this.detectTunisianFeatures(cinFrontImageBase64);
-
-    checks.hasTunisianFlag = features.hasTunisianFlag;
-
-    // 4. Cross-verify: Front OCR CIN must match Barcode CIN
-
-    if (checks.ocrCin && checks.barcodeCin) {
-      checks.cinConsistency = checks.ocrCin === checks.barcodeCin;
-    }
-
-    // 5. Verify user-provided CIN matches extracted CIN
-
-    const normalizedUser = userProvidedCIN.replace(/[\s\-]/g, '');
-
-    if (checks.ocrCin) {
-      checks.userCinMatch =
-        normalizedUser === checks.ocrCin.replace(/[\s\-]/g, '');
-    }
-
-    // Determine validity
-    // Primary gate: user-provided CIN must match OCR-extracted CIN from front
-    // Barcode and flag are advisory signals — they boost confidence but are
-    // not hard requirements (pyzbar may be absent; phone photos vary greatly)
-    const barcodeAvailable =
-      checks.hasValidBarcode && checks.barcodeCin !== null;
-
-    let score = 0;
-    if (barcodeAvailable) score += 0.3;
-    if (checks.hasTunisianFlag) score += 0.2;
-    if (checks.cinConsistency) score += 0.3; // only counted when barcode available
-    if (checks.userCinMatch) score += 0.2;
-
-    // When barcode is unavailable, reweight so OCR match alone can pass
-    let isValid: boolean;
-    let reason = 'Tunisian ID verification successful';
-
-    if (!checks.hasTunisianFlag) {
-      isValid = false;
-      reason =
-        'Tunisian flag not detected on the front of the ID card. Please retake the photo ensuring the full card is visible.';
-    } else if (!barcodeAvailable) {
-      isValid = false;
-      reason =
-        'No valid barcode detected on the back of the ID card. Please retake the back photo ensuring the barcode is clearly visible.';
-    } else if (!checks.userCinMatch) {
-      isValid = false;
-      reason = checks.ocrCin
-        ? 'Provided CIN does not match ID card'
-        : 'Could not read CIN from the front of the ID card — please retake the photo';
-    } else if (!checks.cinConsistency) {
-      isValid = false;
-      reason = 'CIN on front does not match barcode on back';
-    } else {
-      isValid = true;
-    }
-
-    this.logger.log(
-      `[TunisianID] ocr=${checks.ocrCin} barcode=${checks.barcodeCin} flag=${checks.hasTunisianFlag} valid=${isValid}`,
-    );
-
-    return {
-      isValid,
-
-      reason,
-
-      checks,
-
-      score,
-    };
   }
 }

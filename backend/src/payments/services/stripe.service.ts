@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
-import crypto from 'crypto';
 
 @Injectable()
 export class StripeService {
@@ -16,9 +15,7 @@ export class StripeService {
       this.logger.warn('STRIPE_SECRET_KEY not configured');
     }
 
-    this.stripe = new Stripe(secretKey, {
-      apiVersion: '2026-04-22.dahlia',
-    });
+    this.stripe = new Stripe(secretKey);
   }
 
   private ensureStripe() {
@@ -27,38 +24,22 @@ export class StripeService {
     }
   }
 
-  private buildIdempotencyKey(prefix: string, seed: string) {
-    const digest = crypto.createHash('sha256').update(seed).digest('hex');
-    return `${prefix}_${digest.slice(0, 32)}`;
-  }
-
   async createPaymentIntent(params: {
     orderData: Record<string, any>;
     amount: number;
     email?: string;
-    orderId?: string;
   }) {
     this.ensureStripe();
 
-    const metadata: Record<string, string> = params.orderId
-      ? { orderId: params.orderId }
-      : { orderData: JSON.stringify(params.orderData) };
-
-    const amountCents = Math.round(params.amount * 100);
-    const seed = params.orderId
-      ? `pi:${params.orderId}:${amountCents}:eur`
-      : `pi:${amountCents}:eur:${JSON.stringify(params.orderData ?? {})}`;
-
-    const paymentIntent = await this.stripe.paymentIntents.create(
-      {
-        amount: amountCents,
-        currency: 'eur',
-        metadata,
-        description: 'FiftyFood Order',
-        receipt_email: params.email || undefined,
+    const paymentIntent = await this.stripe.paymentIntents.create({
+      amount: Math.round(params.amount * 100),
+      currency: 'eur',
+      metadata: {
+        orderData: JSON.stringify(params.orderData),
       },
-      { idempotencyKey: this.buildIdempotencyKey('pi', seed) },
-    );
+      description: 'FiftyFood Order',
+      receipt_email: params.email || undefined,
+    });
 
     return {
       clientSecret: paymentIntent.client_secret,
@@ -86,7 +67,6 @@ export class StripeService {
     email?: string;
     successUrl?: string;
     cancelUrl?: string;
-    orderId?: string;
   }) {
     this.ensureStripe();
 
@@ -101,16 +81,8 @@ export class StripeService {
     const cancelUrl =
       params.cancelUrl || `${baseUrl}/payments/stripe/checkout/cancel`;
 
-    // Build metadata with orderId if provided
-    const metadata: Record<string, string> = {
-      orderData: JSON.stringify(params.orderData),
-    };
-    if (params.orderId) {
-      metadata.orderId = params.orderId;
-    }
-
-    // Only add customer_email if it's a valid non-empty string
-    const sessionConfig: Record<string, any> = {
+    // Only set customer_email if valid
+    const sessionConfig: any = {
       mode: 'payment',
       payment_method_types: ['card'],
       line_items: [
@@ -127,25 +99,17 @@ export class StripeService {
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      metadata,
+      metadata: {
+        orderData: JSON.stringify(params.orderData),
+      },
     };
 
-    if (
-      params.email &&
-      params.email.trim().length > 0 &&
-      params.email.includes('@')
-    ) {
+    // Only add customer_email if it's a valid non-empty string
+    if (params.email && params.email.trim().length > 0 && params.email.includes('@')) {
       sessionConfig.customer_email = params.email.trim();
     }
 
-    const amountCents = Math.round(params.amount * 100);
-    const seed = params.orderId
-      ? `cs:${params.orderId}:${amountCents}:eur`
-      : `cs:${amountCents}:eur:${JSON.stringify(params.orderData ?? {})}`;
-
-    const session = await this.stripe.checkout.sessions.create(sessionConfig, {
-      idempotencyKey: this.buildIdempotencyKey('cs', seed),
-    });
+    const session = await this.stripe.checkout.sessions.create(sessionConfig);
 
     return {
       sessionId: session.id,
@@ -163,7 +127,6 @@ export class StripeService {
       orderId: session.metadata?.orderId,
       paymentIntentId: session.payment_intent,
       metadata: session.metadata,
-      amount: session.amount_total ? session.amount_total / 100 : undefined,
     };
   }
 
