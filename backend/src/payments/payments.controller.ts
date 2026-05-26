@@ -6,8 +6,8 @@ import {
   Get,
   UseGuards,
   Req,
-  Headers,
   Res,
+  Headers,
   BadRequestException,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -63,17 +63,20 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeIntentDto,
   ) {
+    // Ensure items is a safe array to avoid unsafe `any` assignment
+    const items = Array.isArray(dto.items) ? (dto.items as unknown[]) : [];
     return this.paymentsService.createStripeIntent({
       clientId: req.user.sub,
       restaurantId: dto.restaurantId,
       offerId: dto.offerId,
-      items: dto.items,
+      items,
       total: dto.total,
       collectionMethod: dto.collectionMethod,
       deliveryAddress: dto.deliveryAddress,
       deliveryPhone: dto.deliveryPhone,
       deliveryFee: dto.deliveryFee,
       email: dto.email,
+      orderId: dto.orderId,
     });
   }
 
@@ -86,11 +89,13 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateStripeCheckoutDto,
   ) {
+    // Ensure items is a safe array to avoid unsafe `any` assignment
+    const items = Array.isArray(dto.items) ? (dto.items as unknown[]) : [];
     return this.paymentsService.createStripeCheckoutSession({
       clientId: req.user.sub,
       restaurantId: dto.restaurantId,
       offerId: dto.offerId,
-      items: dto.items,
+      items,
       total: dto.total,
       collectionMethod: dto.collectionMethod,
       deliveryAddress: dto.deliveryAddress,
@@ -99,6 +104,7 @@ export class PaymentsController {
       email: dto.email,
       successUrl: dto.successUrl,
       cancelUrl: dto.cancelUrl,
+      orderId: dto.orderId,
     });
   }
 
@@ -111,11 +117,12 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Body() dto: CreateKonnectPaymentDto,
   ) {
+    console.log('[KONNECT CONTROLLER] Received request:', dto);
     if (!dto.orderId || !dto.firstName || !dto.lastName || !dto.email) {
       throw new BadRequestException('Missing required fields');
     }
 
-    return this.paymentsService.createKonnectPayment({
+    const result = await this.paymentsService.createKonnectPayment({
       orderId: dto.orderId,
       userId: req.user.sub,
       firstName: dto.firstName,
@@ -123,6 +130,8 @@ export class PaymentsController {
       email: dto.email,
       phone: dto.phone,
     });
+    console.log('[KONNECT CONTROLLER] Result:', result);
+    return result;
   }
 
   // =========================
@@ -157,7 +166,11 @@ export class PaymentsController {
     @Param('paymentId') paymentId: string,
     @Param('orderId') orderId: string,
   ) {
-    return this.paymentsService.verifyKonnectPayment(paymentId, orderId, req.user.sub);
+    return this.paymentsService.verifyKonnectPayment(
+      paymentId,
+      orderId,
+      req.user.sub,
+    );
   }
 
   // =========================
@@ -177,9 +190,6 @@ export class PaymentsController {
     );
   }
 
-  // =========================
-  // STRIPE CONFIRM INTENT
-  // =========================
   @Post('confirm-stripe/:orderId/:paymentIntentId')
   @UseGuards(JwtAuthGuard)
   async confirmStripePayment(
@@ -190,7 +200,6 @@ export class PaymentsController {
     return this.paymentsService.confirmStripePayment(
       paymentIntentId,
       req.user.sub,
-      orderId,
     );
   }
 
@@ -217,12 +226,8 @@ export class PaymentsController {
     @Req() req: ReqWithUser,
     @Param('sessionId') sessionId: string,
   ) {
-    return this.paymentsService.confirmStripeCheckoutSession(
-      sessionId,
-      req.user.sub,
-    );
+    return this.paymentsService.confirmStripeCheckoutSession(sessionId);
   }
-
   // =========================
   // PAYPAL RETURN PAGES
   // =========================
@@ -248,32 +253,57 @@ export class PaymentsController {
       if (returnUrl && returnUrl.startsWith('fiftyfood://')) {
         return res.redirect(returnUrl);
       }
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      return res.redirect(
-        `${frontendUrl}/payment-success`,
-      );
+      // For web: show a success page that auto-closes the tab
+      return res.status(200).send(`
+        <html><head><title>Payment Successful</title></head>
+        <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f0fdf4;">
+          <div style="text-align:center;">
+            <div style="font-size:64px;margin-bottom:16px;">✅</div>
+            <h1 style="color:#16a34a;margin-bottom:8px;">Payment Successful!</h1>
+            <p style="color:#6b7280;">You can close this tab and return to the app.</p>
+          </div>
+          <script>setTimeout(()=>window.close(),2000);</script>
+        </body></html>
+      `);
     } catch (error) {
       // Check if returnUrl is a deep link (for mobile apps)
       const returnUrl = req.query.returnUrl as string;
       if (returnUrl && returnUrl.startsWith('fiftyfood://')) {
         return res.redirect(returnUrl);
       }
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      // If already captured, still redirect to success
-      if ((error as Error).message?.includes('ALREADY_CAPTURED') ||
-          (error as Error).message?.includes('DUPLICATE_CAPTURE')) {
-        return res.redirect(
-          `${frontendUrl}/payment-success`,
-        );
+      // If already captured, still show success
+      if (
+        (error as Error).message?.includes('ALREADY_CAPTURED') ||
+        (error as Error).message?.includes('DUPLICATE_CAPTURE') ||
+        (error as Error).message?.includes('already_processed')
+      ) {
+        return res.status(200).send(`
+          <html><head><title>Payment Successful</title></head>
+          <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#f0fdf4;">
+            <div style="text-align:center;">
+              <div style="font-size:64px;margin-bottom:16px;">✅</div>
+              <h1 style="color:#16a34a;margin-bottom:8px;">Payment Successful!</h1>
+              <p style="color:#6b7280;">You can close this tab and return to the app.</p>
+            </div>
+            <script>setTimeout(()=>window.close(),2000);</script>
+          </body></html>
+        `);
       }
-      return res.redirect(
-        `${frontendUrl}/payment-error`,
-      );
+      return res.status(200).send(`
+        <html><head><title>Payment Failed</title></head>
+        <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;background:#fef2f2;">
+          <div style="text-align:center;">
+            <div style="font-size:64px;margin-bottom:16px;">❌</div>
+            <h1 style="color:#dc2626;margin-bottom:8px;">Payment Failed</h1>
+            <p style="color:#6b7280;">Please close this tab and try again.</p>
+          </div>
+        </body></html>
+      `);
     }
   }
 
   @Get('paypal/cancel')
-  async paypalCancel(@Req() req: Request, @Res() res: Response) {
+  paypalCancel(@Req() req: Request, @Res() res: Response) {
     // Check if cancelUrl is a deep link (for mobile apps)
     const cancelUrl = req.query.cancelUrl as string;
     if (cancelUrl && cancelUrl.startsWith('fiftyfood://')) {

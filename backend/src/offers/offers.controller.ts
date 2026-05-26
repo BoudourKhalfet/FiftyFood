@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -10,6 +11,7 @@ import {
   ForbiddenException,
   UseInterceptors,
   UploadedFile,
+  UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Role } from '@prisma/client';
@@ -18,8 +20,10 @@ import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { GenerateDescriptionDto } from './dto/generate-description.dto';
+import { AiVerifyPhotoDto } from './dto/ai-verify-photo.dto';
 import { RecommendationService } from '../recommendations/recommendation.service';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -40,15 +44,14 @@ export class OffersController {
   }
 
   /**
-   * POST /offers/verify-photo
-   * [DISABLED FOR NOW] Send a base64 food photo for AI verification.
-   * This endpoint is kept for future use but not currently called.
+   * GET /offers
+   * List all active, visible offers (public endpoint)
    */
-  // @Post('verify-photo')
-  // async verifyPhoto(@Req() req: ReqWithUser, @Body() dto: VerifyPhotoDto) {
-  //   this.ensureRestaurant(req);
-  //   return this.offers.verifyPhoto(dto.image);
-  // }
+  @Public()
+  @Get()
+  async getAvailableOffers() {
+    return this.offers.getAvailableOffers();
+  }
 
   /**
    * POST /offers/generate-description
@@ -61,6 +64,97 @@ export class OffersController {
   ) {
     this.ensureRestaurant(req);
     return this.offers.generateDescription(dto.imageUrl, dto.language || 'en');
+  }
+
+  /**
+   * POST /offers/ai-verify-photo
+   * Verify a food photo with AI (food check).
+   */
+  @Post('ai-verify-photo')
+  @HttpCode(200)
+  async aiVerifyPhoto(@Req() req: ReqWithUser, @Body() dto: AiVerifyPhotoDto) {
+    this.ensureRestaurant(req);
+    try {
+      const result = await this.offers.verifyPhotoFromUrl(dto.imageUrl);
+      return {
+        isValid: result.passed === true,
+        messages: result.messages ?? [],
+        confidence: result.confidence ?? 0,
+        skipped: result.skipped ?? false,
+      };
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : 'Verification failed';
+      console.error('AI verification error:', errorMsg);
+      return {
+        isValid: false,
+        messages: [errorMsg],
+        confidence: 0,
+        skipped: false,
+      };
+    }
+  }
+
+  /**
+   * POST /offers/upload-photo
+   * Upload an offer photo
+   */
+  @Post('upload-photo')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/offer-images',
+        filename: (req, file, cb) => {
+          // Generate a unique name for each file
+          const uniqueName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${extname(file.originalname)}`;
+          cb(null, uniqueName);
+        },
+      }),
+      limits: { fileSize: 6 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        console.log(
+          'UPLOAD DEBUG mimetype:',
+          file.mimetype,
+          'filename:',
+          file.originalname,
+        );
+        if (
+          file.mimetype.startsWith('image/') ||
+          file.originalname.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)
+        ) {
+          cb(null, true);
+        } else {
+          cb(new Error('Only images are allowed!'), false);
+        }
+      },
+    }),
+  )
+  uploadOfferImage(
+    @Req() req: Request,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    try {
+      if (!file) {
+        throw new ForbiddenException('Please select an image to upload');
+      }
+
+      const configuredBaseUrl =
+        process.env.PUBLIC_BACKEND_URL || process.env.BASE_URL;
+      const protocol =
+        (req.headers['x-forwarded-proto'] as string | undefined) ||
+        req.protocol;
+      const host = req.get('host');
+      const requestBaseUrl = host ? `${protocol}://${host}` : undefined;
+      const baseUrl =
+        configuredBaseUrl || requestBaseUrl || 'http://localhost:3000';
+      return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
+    } catch (error) {
+      console.error('Upload error:', error);
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new ForbiddenException('Failed to upload image. Please try again.');
+    }
   }
 
   /**
@@ -81,6 +175,16 @@ export class OffersController {
   async getMyOffers(@Req() req: ReqWithUser) {
     this.ensureRestaurant(req);
     return this.offers.getMyOffers(req.user.sub);
+  }
+
+  /**
+   * GET /offers/recommended
+   * Personalised offer feed for the authenticated client.
+   */
+  @Get('recommended')
+  @UseGuards(JwtAuthGuard)
+  async getRecommendedOffers(@Req() req: ReqWithUser) {
+    return this.recommendations.getRecommendedOffers(req.user.sub);
   }
 
   /**
@@ -128,83 +232,16 @@ export class OffersController {
   }
 
   /**
-   * GET /offers/recommended
-   * Personalised offer feed for the authenticated client.
-   * Uses hybrid AI: content-based + collaborative filtering + contextual boosting.
-   */
-  @Get('recommended')
-  async getRecommendedOffers(@Req() req: ReqWithUser) {
-    return this.recommendations.getRecommendedOffers(req.user.sub);
-  }
-
-  /**
    * PATCH /offers/:id/decrement-quantity
    * Decrement offer quantity after a successful purchase.
    */
   @Patch(':id/decrement-quantity')
+  @UseGuards(JwtAuthGuard)
   async decrementQuantity(
+    @Req() req: ReqWithUser,
     @Param('id') id: string,
-    @Body() body: { quantity?: number },
+    @Body() body?: { quantity?: number },
   ) {
     return this.offers.decrementQuantity(id, body?.quantity ?? 1);
-  }
-
-  @Public()
-  @Get()
-  async getAvailableOffers() {
-    // No auth required (public route)
-    return this.offers.getAvailableOffers();
-  }
-
-  @Post('upload-photo')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/offer-images',
-        filename: (req, file, cb) => {
-          // Generate a unique name for each file
-          const uniqueName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${extname(file.originalname)}`;
-          cb(null, uniqueName);
-        },
-      }),
-      limits: { fileSize: 6 * 1024 * 1024 },
-      fileFilter: (req, file, cb) => {
-        console.log(
-          'UPLOAD DEBUG mimetype:',
-          file.mimetype,
-          'filename:',
-          file.originalname,
-        );
-        if (
-          file.mimetype.startsWith('image/') ||
-          file.originalname.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)
-        ) {
-          cb(null, true);
-        } else {
-          cb(new Error('Only images are allowed!'), false);
-        }
-      },
-    }),
-  )
-  uploadOfferImage(
-    @Req() req: Request,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    try {
-      if (!file) throw new ForbiddenException('No file uploaded');
-      const configuredBaseUrl =
-        process.env.PUBLIC_BACKEND_URL || process.env.BASE_URL;
-      const protocol =
-        (req.headers['x-forwarded-proto'] as string | undefined) ||
-        req.protocol;
-      const host = req.get('host');
-      const requestBaseUrl = host ? `${protocol}://${host}` : undefined;
-      const baseUrl =
-        configuredBaseUrl || requestBaseUrl || 'http://localhost:3000';
-      return { url: `${baseUrl}/uploads/offer-images/${file.filename}` };
-    } catch (error) {
-      console.error('Upload error:', error);
-      throw error;
-    }
   }
 }
