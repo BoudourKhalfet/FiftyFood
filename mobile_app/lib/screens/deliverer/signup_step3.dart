@@ -114,6 +114,11 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
                 ),
                 const SizedBox(height: 16),
                 const Text('Upload front and back photos of your CIN card:'),
+                const SizedBox(height: 6),
+                const Text(
+                  'Keep the card straight and aligned (not rotated). Make sure the full card is visible and clear.',
+                  style: TextStyle(color: Colors.black54, fontSize: 12),
+                ),
                 const SizedBox(height: 16),
 
                 // Front Photo
@@ -272,6 +277,14 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(height: 400, child: CameraPreview(controller!)),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Text(
+                  'Align the card straight (not rotated) and keep the full card in view.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -364,6 +377,29 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
     return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
   }
 
+  List<Uint8List> _generateRotationVariants(Uint8List imageBytes) {
+    final decoded = img.decodeImage(imageBytes);
+    if (decoded == null) return [imageBytes];
+
+    final variants = <Uint8List>[];
+    final angles = [0, 90, 180, 270];
+    for (final angle in angles) {
+      final rotated = angle == 0
+          ? decoded
+          : img.copyRotate(decoded, angle: angle.toDouble());
+      variants.add(Uint8List.fromList(img.encodeJpg(rotated, quality: 85)));
+    }
+
+    return variants;
+  }
+
+  int _ocrScore(String text) {
+    if (text.isEmpty) return 0;
+    final hasEightDigits = RegExp(r'\b\d{8}\b').hasMatch(text);
+    final digitCount = RegExp(r'\d').allMatches(text).length;
+    return digitCount + (hasEightDigits ? 20 : 0);
+  }
+
   Future<String?> _performOCR(Uint8List imageBytes) async {
     // ML Kit Text Recognition is not supported on Flutter Web
     if (kIsWeb) {
@@ -376,16 +412,35 @@ class _DelivererSignupStep3State extends State<DelivererSignupStep3> {
     try {
       // For mobile: Create temporary file for OCR
       final tempDir = await Directory.systemTemp.createTemp();
-      final tempFile = File('${tempDir.path}/cin.jpg');
-      await tempFile.writeAsBytes(imageBytes);
+      String? bestText;
+      var bestScore = 0;
 
-      final inputImage = InputImage.fromFile(tempFile);
-      final recognizedText = await _textRecognizer.processImage(inputImage);
+      for (final variant in _generateRotationVariants(imageBytes)) {
+        final tempFile = File('${tempDir.path}/cin.jpg');
+        await tempFile.writeAsBytes(variant);
 
-      await tempFile.delete();
+        final inputImage = InputImage.fromFile(tempFile);
+        final recognizedText = await _textRecognizer.processImage(inputImage);
+
+        await tempFile.delete();
+
+        final text = recognizedText.text;
+        if (text.isNotEmpty) {
+          final score = _ocrScore(text);
+          if (score > bestScore) {
+            bestScore = score;
+            bestText = text;
+          }
+          if (RegExp(r'\b\d{8}\b').hasMatch(text)) {
+            await tempDir.delete();
+            return text;
+          }
+        }
+      }
+
       await tempDir.delete();
 
-      return recognizedText.text;
+      return bestText;
     } catch (e) {
       print('OCR Error: $e');
       return null;

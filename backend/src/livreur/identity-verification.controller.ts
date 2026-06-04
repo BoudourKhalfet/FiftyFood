@@ -445,7 +445,7 @@ export class IdentityVerificationController {
           `[Liveness] Sampling frames ${sampleIndices.join(', ')} for face comparison`,
         );
 
-        const faceResults = await Promise.all(
+        const faceResultsSettled = await Promise.allSettled(
           sampleIndices.map((idx) =>
             this.identityVerificationService.performFaceRecognition(
               `data:image/jpeg;base64,${dto.frames[idx]}`,
@@ -453,6 +453,14 @@ export class IdentityVerificationController {
             ),
           ),
         );
+
+        const faceResults = faceResultsSettled.map((result, i) => {
+          if (result.status === 'fulfilled') return result.value;
+          this.logger.warn(
+            `[Liveness] Face compare failed for frame ${sampleIndices[i]}: ${result.reason}`,
+          );
+          return { isMatch: false, matchScore: 0 };
+        });
 
         // Require majority match (at least 2 out of 3)
         const matchCount = faceResults.filter((r) => r.isMatch).length;

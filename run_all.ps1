@@ -4,9 +4,9 @@
 Write-Host "🚀 Starting FiftyFood Applications..." -ForegroundColor Green
 Write-Host ""
 
-$BackendPath = "C:\Users\ismai\FiftyFood\backend"
-$AdminPath = "C:\Users\ismai\FiftyFood\frontend-web\admin"
-$RestaurantPath = "C:\Users\ismai\FiftyFood\frontend-web\restaurant"
+$BackendPath = Join-Path $PSScriptRoot "backend"
+$AdminPath = Join-Path $PSScriptRoot "frontend-web\admin"
+$RestaurantPath = Join-Path $PSScriptRoot "frontend-web\restaurant"
 
 # Start Backend
 Write-Host "📦 Starting Backend (Port 3000)..." -ForegroundColor Cyan

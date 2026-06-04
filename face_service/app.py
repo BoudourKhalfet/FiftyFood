@@ -49,6 +49,14 @@ def decode_base64_image(b64_string):
     return img
 
 
+def encode_image_to_base64(img):
+    """Encode numpy image array (BGR) to base64 JPEG string."""
+    ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    if not ok:
+        return None
+    return base64.b64encode(buf.tobytes()).decode('utf-8')
+
+
 def check_image_quality(img):
     """Returns (is_ok, reason)"""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -65,6 +73,63 @@ def check_image_quality(img):
     return True, "ok"
 
 
+def crop_face_region(img):
+    """Detect and crop the largest face region; return cropped image or None."""
+    try:
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        )
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        if len(faces) == 0:
+            return None
+
+        # Pick the largest face
+        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+        pad = int(max(w, h) * 0.15)
+        x0 = max(x - pad, 0)
+        y0 = max(y - pad, 0)
+        x1 = min(x + w + pad, img.shape[1])
+        y1 = min(y + h + pad, img.shape[0])
+        cropped = img[y0:y1, x0:x1]
+        if cropped.size == 0:
+            return None
+
+        # Upscale to help matching on small ID photos
+        resized = cv2.resize(cropped, (256, 256), interpolation=cv2.INTER_CUBIC)
+        return resized
+    except Exception as e:
+        print(f"[Compare] Face crop failed: {e}")
+        return None
+
+
+def estimate_face_tilt(img):
+    """Estimate face tilt angle (degrees) using eye detection; returns None if unknown."""
+    try:
+        eye_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_eye.xml'
+        )
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        eyes = eye_cascade.detectMultiScale(gray, 1.1, 5)
+        if len(eyes) < 2:
+            return None
+
+        # Pick two eyes with largest widths
+        eyes = sorted(eyes, key=lambda e: e[2], reverse=True)[:2]
+        (x1, y1, w1, h1), (x2, y2, w2, h2) = eyes
+        c1 = (x1 + w1 / 2.0, y1 + h1 / 2.0)
+        c2 = (x2 + w2 / 2.0, y2 + h2 / 2.0)
+        dx = c2[0] - c1[0]
+        dy = c2[1] - c1[1]
+        if dx == 0:
+            return 90.0
+        angle = float(np.degrees(np.arctan2(dy, dx)))
+        return angle
+    except Exception as e:
+        print(f"[Compare] Eye tilt estimation failed: {e}")
+        return None
+
+
 
 def preprocess_for_comparison(b64_string):
     """
@@ -77,8 +142,13 @@ def preprocess_for_comparison(b64_string):
         return decode_base64_to_file(b64_string)
 
     try:
+        # Light denoise + unsharp mask to improve ID photo clarity
+        denoised = cv2.fastNlMeansDenoisingColored(img, None, 5, 5, 7, 21)
+        blurred = cv2.GaussianBlur(denoised, (0, 0), 1.2)
+        sharpened = cv2.addWeighted(denoised, 1.4, blurred, -0.4, 0)
+
         # Apply CLAHE brightness normalization to reduce CIN-vs-selfie lighting gap
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        lab = cv2.cvtColor(sharpened, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
         l = clahe.apply(l)
@@ -376,24 +446,85 @@ def compare():
     if not cin_b64 or not selfie_b64:
         return jsonify({"error": "Both cinImageBase64 and selfieImageBase64 are required"}), 400
 
-    # Quality checks
+    # Decode images
     cin_img = decode_base64_image(cin_b64)
     selfie_img = decode_base64_image(selfie_b64)
 
-    cin_ok, cin_reason = check_image_quality(cin_img)
-    if not cin_ok:
-        return jsonify({"error": f"CIN photo quality issue: {cin_reason}"}), 422
-
+    # Selfie quality check (single pass)
     selfie_ok, selfie_reason = check_image_quality(selfie_img)
     if not selfie_ok:
         return jsonify({"error": f"Selfie quality issue: {selfie_reason}"}), 422
 
-    result = compare_faces(cin_b64, selfie_b64)
+    # Try CIN rotations to handle sideways ID photos
+    angles = [0, 90, 180, 270]
+    valid_variants = []
+    first_fail_reason = None
+    tilt_rejects = 0
+    for angle in angles:
+        rotated = cin_img if angle == 0 else rotate_image(cin_img, angle)
+        cin_ok, cin_reason = check_image_quality(rotated)
+        if not cin_ok:
+            if first_fail_reason is None:
+                first_fail_reason = cin_reason
+            continue
+        face_crop = crop_face_region(rotated)
+        if face_crop is not None:
+            tilt = estimate_face_tilt(face_crop)
+            if tilt is not None and abs(tilt) > 20:
+                tilt_rejects += 1
+                print(
+                    f"[Compare] CIN rotation {angle}deg rejected (tilt={tilt:.1f}deg)"
+                )
+                continue
+            cin_b64_variant = encode_image_to_base64(face_crop)
+            if cin_b64_variant:
+                valid_variants.append((angle, cin_b64_variant, True))
+                continue
 
-    if 'error' in result:
-        return jsonify(result), 422
+        cin_b64_variant = encode_image_to_base64(rotated)
+        if cin_b64_variant:
+            valid_variants.append((angle, cin_b64_variant, False))
 
-    return jsonify(result)
+    if not valid_variants and tilt_rejects > 0:
+        return jsonify({
+            "error": "CIN photo is rotated. Please retake the photo with the face upright and centered."
+        }), 422
+
+    if not valid_variants:
+        reason = first_fail_reason or "CIN photo quality issue"
+        return jsonify({"error": f"CIN photo quality issue: {reason}"}), 422
+
+    best_result = None
+    best_score = -1.0
+    best_angle = 0
+
+    for angle, cin_variant_b64, used_crop in valid_variants:
+        result = compare_faces(cin_variant_b64, selfie_b64)
+        if 'error' in result:
+            print(f"[Compare] CIN rotation {angle}deg failed: {result.get('error')}")
+            continue
+
+        score = float(result.get("matchScore", 0.0))
+        crop_note = "cropped" if used_crop else "full"
+        print(
+            f"[Compare] CIN rotation {angle}deg {crop_note} matchScore={score:.3f} "
+            f"isMatch={result.get('isMatch')}"
+        )
+
+        if result.get('isMatch'):
+            result['rotation'] = angle
+            return jsonify(result)
+
+        if score > best_score:
+            best_score = score
+            best_result = result
+            best_angle = angle
+
+    if best_result is None:
+        return jsonify({"error": "No face detected in one or both images"}), 422
+
+    best_result['rotation'] = best_angle
+    return jsonify(best_result)
 
 @app.route('/detect', methods=['POST'])
 def detect():
@@ -579,6 +710,23 @@ def deskew_image(img):
     return deskewed
 
 
+def rotate_image(img, angle):
+    """
+    Rotate image by a given angle (degrees) around its center.
+    """
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated = cv2.warpAffine(
+        img,
+        M,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    return rotated
+
+
 @app.route('/deskew', methods=['POST'])
 def deskew_endpoint():
     """
@@ -605,6 +753,34 @@ def deskew_endpoint():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/rotate', methods=['POST'])
+def rotate_endpoint():
+    """
+    POST /rotate
+    Body: { image: base64_string, angle: number }
+    Returns: { image: base64_string }  — rotated JPEG image
+    """
+    try:
+        data = request.get_json()
+        if not data or 'image' not in data:
+            return jsonify({"error": "No image provided"}), 400
+
+        angle = float(data.get('angle', 0))
+
+        img = decode_base64_image(data['image'])
+        if img is None:
+            return jsonify({"error": "Could not decode image"}), 400
+
+        result = rotate_image(img, angle)
+        _, buf = cv2.imencode('.jpg', result, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        b64 = base64.b64encode(buf.tobytes()).decode('utf-8')
+        return jsonify({"image": b64})
+
+    except Exception as e:
+        print(f"[Rotate] Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/detect-tunisian-features', methods=['POST'])
 def detect_tunisian_features():
     """
@@ -625,19 +801,68 @@ def detect_tunisian_features():
 
         img_h, img_w = img.shape[:2]
 
-        # The Tunisian flag is usually in the top-left corner of the ID card front.
-        # Expand the crop slightly to be more tolerant to framing/rotation issues.
-        # Crop to left 40% width, top 60% height to focus on that region.
-        flag_roi = img[:int(img_h * 0.6), :int(img_w * 0.40)]
+        # Convert full image to HSV for a coarse red search first
+        hsv_full = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        v_mean = float(np.mean(hsv_full[:, :, 2]))
+        sat_low = 50 if v_mean > 80 else 35
+        val_low = 45 if v_mean > 80 else 30
+
+        # Red occupies both ends of the HSV hue spectrum
+        lower_red1 = np.array([0, sat_low, val_low])
+        upper_red1 = np.array([12, 255, 255])
+        lower_red2 = np.array([170, sat_low, val_low])
+        upper_red2 = np.array([180, 255, 255])
+
+        mask1_full = cv2.inRange(hsv_full, lower_red1, upper_red1)
+        mask2_full = cv2.inRange(hsv_full, lower_red2, upper_red2)
+        red_mask_full = mask1_full | mask2_full
+
+        # Clean up mask to reduce noise
+        kernel = np.ones((5, 5), np.uint8)
+        red_mask_full = cv2.morphologyEx(red_mask_full, cv2.MORPH_OPEN, kernel)
+        red_mask_full = cv2.morphologyEx(red_mask_full, cv2.MORPH_CLOSE, kernel)
+
+        # Find candidate red region near the top-left
+        contours, _ = cv2.findContours(red_mask_full, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        best_bbox = None
+        best_score = -1.0
+        img_area = float(img_h * img_w)
+        for cnt in contours:
+            area = float(cv2.contourArea(cnt))
+            if area <= 0:
+                continue
+            area_ratio = area / img_area
+            if area_ratio < 0.002 or area_ratio > 0.08:
+                continue
+            x, y, w, h = cv2.boundingRect(cnt)
+            cx = x + w / 2.0
+            cy = y + h / 2.0
+            if cx > img_w * 0.7 or cy > img_h * 0.7:
+                continue
+            aspect = w / h if h > 0 else 0.0
+            if aspect < 0.6 or aspect > 1.6:
+                continue
+            # Score favors bigger regions closer to the top-left
+            proximity = 1.0 - ((cx / img_w) * 0.7 + (cy / img_h) * 0.3)
+            score = area_ratio * 2.0 + proximity
+            if score > best_score:
+                best_score = score
+                best_bbox = (x, y, w, h)
+
+        if best_bbox is not None:
+            x, y, w, h = best_bbox
+            pad = int(max(w, h) * 0.25)
+            x0 = max(x - pad, 0)
+            y0 = max(y - pad, 0)
+            x1 = min(x + w + pad, img_w)
+            y1 = min(y + h + pad, img_h)
+            flag_roi = img[y0:y1, x0:x1]
+        else:
+            # Fallback: use a generous top-left crop
+            flag_roi = img[:int(img_h * 0.65), :int(img_w * 0.50)]
 
         # Convert ROI to HSV for color analysis
         hsv = cv2.cvtColor(flag_roi, cv2.COLOR_BGR2HSV)
-
-        # Red occupies both ends of the HSV hue spectrum
-        lower_red1 = np.array([0,   80,  60])
-        upper_red1 = np.array([12, 255, 255])
-        lower_red2 = np.array([155, 80,  60])
-        upper_red2 = np.array([180, 255, 255])
 
         mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
         mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
@@ -648,12 +873,13 @@ def detect_tunisian_features():
         red_ratio = red_pixels / roi_pixels if roi_pixels > 0 else 0.0
 
         # White crescent sits inside the red area
-        # Loosen white detection to tolerate slightly saturated highlights
-        # which can happen under indoor lighting or phone cameras.
-        lower_white = np.array([0,   0, 160])
-        upper_white = np.array([180, 100, 255])
+        # Loosen white detection to tolerate highlights under indoor lighting
+        lower_white = np.array([0, 0, 155])
+        upper_white = np.array([180, 110, 255])
         white_mask = cv2.inRange(hsv, lower_white, upper_white)
         white_ratio = float(np.sum(white_mask > 0)) / roi_pixels if roi_pixels > 0 else 0.0
+        white_in_red = float(np.sum((white_mask > 0) & (red_mask > 0)))
+        white_in_red_ratio = white_in_red / red_pixels if red_pixels > 0 else 0.0
 
         # Security features — use full image Laplacian variance
         gray_full = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -669,9 +895,9 @@ def detect_tunisian_features():
         high_freq_ratio = high_freq_sum / total_mag if total_mag > 0 else 0.0
 
         # Flag is present when the ROI has enough red AND some white
-        # Threshold: >8% of the corner crop is red, >1% is white
-        has_red_flag = bool(red_ratio > 0.08)
-        has_white_crescent = bool(white_ratio > 0.01)
+        # Thresholds are tuned to be tolerant of framing and lighting changes
+        has_red_flag = bool(red_ratio > 0.06)
+        has_white_crescent = bool(white_in_red_ratio > 0.015 or white_ratio > 0.02)
 
         flag_confidence = 0.0
         if has_red_flag:
@@ -683,7 +909,10 @@ def detect_tunisian_features():
 
         has_security_features = bool(lap_var > 200 and high_freq_ratio > 0.15)
 
-        print(f"[FlagDetect] red_ratio={red_ratio:.3f} white_ratio={white_ratio:.3f} flag={has_red_flag and has_white_crescent}")
+        print(
+            f"[FlagDetect] red_ratio={red_ratio:.3f} white_ratio={white_ratio:.3f} white_in_red={white_in_red_ratio:.3f} "
+            f"flag={has_red_flag and has_white_crescent}"
+        )
 
         return jsonify({
             "hasTunisianFlag": bool(has_red_flag and has_white_crescent),

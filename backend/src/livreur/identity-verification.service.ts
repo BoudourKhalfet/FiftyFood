@@ -238,16 +238,17 @@ export class IdentityVerificationService implements OnModuleInit {
     side: 'front' | 'back',
   ): Promise<OCRResult> {
     try {
+      const normalizeBase64 = (b64: string) =>
+        b64.startsWith('data:') ? b64.split(',')[1] : b64;
+
       // Deskew the image before OCR to fix tilted card photos
-      let processedBase64 = imageBase64;
+      const originalBase64 = normalizeBase64(imageBase64);
+      let processedBase64 = originalBase64;
       try {
-        const rawB64 = imageBase64.startsWith('data:')
-          ? imageBase64.split(',')[1]
-          : imageBase64;
         const deskewRes = await firstValueFrom(
           this.httpService.post(
             `${this.FACE_SERVICE_URL}/deskew`,
-            { image: rawB64 },
+            { image: processedBase64 },
             { timeout: 8000 },
           ),
         );
@@ -258,10 +259,37 @@ export class IdentityVerificationService implements OnModuleInit {
         // Deskew unavailable — proceed with original image
       }
 
-      // Convert base64 to buffer
-      const imageBuffer = processedBase64.startsWith('data:')
-        ? Buffer.from(processedBase64.split(',')[1], 'base64')
-        : Buffer.from(processedBase64, 'base64');
+      const rotateImage = async (rawB64: string, angle: number) => {
+        try {
+          const rotateRes = await firstValueFrom(
+            this.httpService.post(
+              `${this.FACE_SERVICE_URL}/rotate`,
+              { image: rawB64, angle },
+              { timeout: 8000 },
+            ),
+          );
+          if (rotateRes.data?.image) {
+            return rotateRes.data.image as string;
+          }
+        } catch {
+          // Rotation unavailable — skip
+        }
+        return null;
+      };
+
+      const base64Seeds: string[] = [originalBase64];
+      if (processedBase64 && processedBase64 !== originalBase64) {
+        base64Seeds.push(processedBase64);
+      }
+
+      const base64Variants: { b64: string; angle: number }[] = [];
+      for (const seed of base64Seeds) {
+        base64Variants.push({ b64: seed, angle: 0 });
+        for (const angle of [90, 180, 270]) {
+          const rotated = await rotateImage(seed, angle);
+          if (rotated) base64Variants.push({ b64: rotated, angle });
+        }
+      }
 
       // Pass 1: Use eng only with PSM 6 (uniform block of text)
       // Arabic mode confuses digit recognition on Tunisian IDs
@@ -271,46 +299,92 @@ export class IdentityVerificationService implements OnModuleInit {
         tessedit_char_whitelist:
           '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
       } as any);
+      let fallbackText = '';
+      let fallbackConfidence = 0;
 
-      const result = await worker.recognize(imageBuffer);
-      const text = result.data.text;
-      let cin = this.extractCINFromText(text);
+      for (const variant of base64Variants) {
+        const imageBuffer = Buffer.from(variant.b64, 'base64');
 
-      // Pass 2: Try PSM 11 (sparse text) if first pass found nothing
-      if (!cin) {
+        const result = await worker.recognize(imageBuffer);
+        const text = result.data.text;
+        if (!fallbackText) {
+          fallbackText = text;
+          fallbackConfidence = result.data.confidence / 100;
+        }
+        let cin = this.extractCINFromText(text);
+        if (cin) {
+          if (variant.angle !== 0) {
+            this.logger.log(
+              `[CIN OCR] side=${side} success at rotation=${variant.angle}deg`,
+            );
+          }
+          await worker.terminate();
+          return {
+            extractedCIN: cin,
+            confidence: result.data.confidence / 100,
+            rawText: text,
+          };
+        }
+
+        // Pass 2: Try PSM 11 (sparse text) if first pass found nothing
         await worker.setParameters({
           tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
         } as any);
         const result2 = await worker.recognize(imageBuffer);
         cin = this.extractCINFromText(result2.data.text);
-      }
+        if (cin) {
+          if (variant.angle !== 0) {
+            this.logger.log(
+              `[CIN OCR] side=${side} success at rotation=${variant.angle}deg (PSM11)`,
+            );
+          }
+          await worker.terminate();
+          return {
+            extractedCIN: cin,
+            confidence: result2.data.confidence / 100,
+            rawText: result2.data.text,
+          };
+        }
 
-      // Pass 3: Try PSM 7 (single line) — CIN is often on its own line
-      if (!cin) {
+        // Pass 3: Try PSM 7 (single line) — CIN is often on its own line
         await worker.setParameters({
           tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
           tessedit_char_whitelist: '0123456789',
         } as any);
         const result3 = await worker.recognize(imageBuffer);
         cin = this.extractCINFromText(result3.data.text);
+        if (cin) {
+          if (variant.angle !== 0) {
+            this.logger.log(
+              `[CIN OCR] side=${side} success at rotation=${variant.angle}deg (PSM7)`,
+            );
+          }
+          await worker.terminate();
+          return {
+            extractedCIN: cin,
+            confidence: result3.data.confidence / 100,
+            rawText: result3.data.text,
+          };
+        }
+
+        await worker.setParameters({
+          tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+          tessedit_char_whitelist:
+            '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
+        } as any);
       }
 
       await worker.terminate();
 
-      if (cin) {
-        return {
-          extractedCIN: cin,
-          confidence: result.data.confidence / 100,
-          rawText: text,
-        };
-      }
-
+      this.logger.warn(
+        `[CIN OCR] side=${side} failed after rotations (0/90/180/270)`,
+      );
       return {
         extractedCIN: null,
 
-        confidence: 0,
+        confidence: fallbackConfidence,
 
-        rawText: text,
+        rawText: fallbackText,
       };
     } catch (error) {
       this.logger.error(`Tesseract OCR error for ${side}:`, error);
@@ -611,33 +685,78 @@ export class IdentityVerificationService implements OnModuleInit {
     rawData: string | null;
   }> {
     try {
-      const imageBuffer = imageBase64.startsWith('data:')
-        ? Buffer.from(imageBase64.split(',')[1], 'base64')
-        : Buffer.from(imageBase64, 'base64');
+      const normalizeBase64 = (b64: string) =>
+        b64.startsWith('data:') ? b64.split(',')[1] : b64;
 
-      // Call Python face service for barcode extraction
+      const rotateImage = async (rawB64: string, angle: number) => {
+        try {
+          const rotateRes = await firstValueFrom(
+            this.httpService.post(
+              `${this.FACE_SERVICE_URL}/rotate`,
+              { image: rawB64, angle },
+              { timeout: 8000 },
+            ),
+          );
+          if (rotateRes.data?.image) {
+            return rotateRes.data.image as string;
+          }
+        } catch {
+          // Rotation unavailable — skip
+        }
+        return null;
+      };
 
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.FACE_SERVICE_URL}/extract-barcode`,
-          {
-            image: imageBuffer.toString('base64'),
-          },
-          { timeout: 10000 },
-        ),
-      );
-
-      const result = response.data;
-
-      if (result.barcode && result.isTunisianFormat) {
-        return {
-          cin: result.cin,
-
-          isValidFormat: true,
-
-          rawData: result.rawData,
-        };
+      const base64Image = normalizeBase64(imageBase64);
+      const variants: { b64: string; angle: number }[] = [
+        { b64: base64Image, angle: 0 },
+      ];
+      for (const angle of [90, 180, 270]) {
+        const rotated = await rotateImage(base64Image, angle);
+        if (rotated) variants.push({ b64: rotated, angle });
       }
+
+      let lastResult: any = null;
+
+      for (const variant of variants) {
+        // Call Python face service for barcode extraction
+        const response = await firstValueFrom(
+          this.httpService.post(
+            `${this.FACE_SERVICE_URL}/extract-barcode`,
+            {
+              image: variant.b64,
+            },
+            { timeout: 10000 },
+          ),
+        );
+
+        const result = response.data;
+        lastResult = result;
+
+        if (result.barcode && result.isTunisianFormat) {
+          if (variant.angle !== 0) {
+            this.logger.log(
+              `[TunisianID] Barcode success at rotation=${variant.angle}deg`,
+            );
+          }
+          return {
+            cin: result.cin,
+
+            isValidFormat: true,
+
+            rawData: result.rawData,
+          };
+        }
+      }
+
+      this.logger.warn(
+        `[TunisianID] Barcode not detected after rotations (0/90/180/270) details=${JSON.stringify(
+          {
+            barcode: lastResult?.barcode,
+            isTunisianFormat: lastResult?.isTunisianFormat,
+            error: lastResult?.error,
+          },
+        )}`,
+      );
 
       return {
         cin: null,
@@ -835,6 +954,12 @@ export class IdentityVerificationService implements OnModuleInit {
       reason = 'CIN on front does not match barcode on back';
     } else {
       isValid = true;
+    }
+
+    if (!isValid) {
+      this.logger.warn(
+        `[TunisianID] failed reason="${reason}" ocr=${checks.ocrCin} barcode=${checks.barcodeCin} flag=${checks.hasTunisianFlag} barcodeValid=${checks.hasValidBarcode} cinMatch=${checks.userCinMatch} cinConsistency=${checks.cinConsistency}`,
+      );
     }
 
     this.logger.log(
